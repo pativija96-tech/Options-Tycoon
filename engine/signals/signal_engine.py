@@ -60,13 +60,15 @@ def run_morning_signal():
         global_data = fetch_global_data(str(output_dir))
     except Exception as e:
         logger.error(f"Data fetch failed: {e}")
-        send_signal({"action": "skip", "reason": f"Data fetch error: {str(e)[:100]}", "conditions": {}})
-        return
+        skip_card = {"action": "skip", "reason": f"Data fetch error: {str(e)[:100]}", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
+        send_signal(skip_card)
+        return skip_card
     
     if global_data.get("status") == "failed":
         logger.error("All data sources failed")
-        send_signal({"action": "skip", "reason": "All data sources failed. No signal today.", "conditions": {}})
-        return
+        skip_card = {"action": "skip", "reason": "All data sources failed. No signal today.", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
+        send_signal(skip_card)
+        return skip_card
     
     logger.info(f"Data fetched: status={global_data['status']}, errors={len(global_data.get('errors', []))}")
     
@@ -76,8 +78,9 @@ def run_morning_signal():
         pattern_result = generate_pattern_signal(global_data)
     except Exception as e:
         logger.error(f"Pattern matching failed: {e}")
-        send_signal({"action": "skip", "reason": f"Pattern matching error: {str(e)[:100]}", "conditions": {}})
-        return
+        skip_card = {"action": "skip", "reason": f"Pattern matching error: {str(e)[:100]}", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
+        send_signal(skip_card)
+        return skip_card
     
     logger.info(f"Pattern result: direction={pattern_result.get('direction')}, "
                 f"confidence={pattern_result.get('confidence')}%")
@@ -92,8 +95,9 @@ def run_morning_signal():
         trade_card = generate_trade_card(pattern_result, projected_open)
     except Exception as e:
         logger.error(f"Strategy picker failed: {e}")
-        send_signal({"action": "skip", "reason": f"Strategy error: {str(e)[:100]}", "conditions": {}})
-        return
+        skip_card = {"action": "skip", "reason": f"Strategy error: {str(e)[:100]}", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
+        send_signal(skip_card)
+        return skip_card
     
     # Add timestamp
     trade_card["timestamp"] = datetime.now().isoformat()

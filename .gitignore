@@ -47,7 +47,9 @@ config/telegram.json
 output/
 
 # --- Historical data: downloaded/generated at runtime ---
-data/historical/
+# Individual stock CSVs are excluded (user downloads them)
+data/historical/*_NS_5yr.csv
+# Exception: NIFTY data + calendars needed by signal engine on Railway (committed)
 
 # --- Virtual environments ---
 venv/

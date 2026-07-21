@@ -1,0 +1,10 @@
+[
+  {"date": "2026-02-01", "name": "Union Budget", "impact": "high"},
+  {"date": "2026-04-09", "name": "RBI Policy Decision", "impact": "high"},
+  {"date": "2026-06-06", "name": "RBI Policy Decision", "impact": "high"},
+  {"date": "2026-08-07", "name": "RBI Policy Decision", "impact": "high"},
+  {"date": "2026-10-08", "name": "RBI Policy Decision", "impact": "high"},
+  {"date": "2026-12-05", "name": "RBI Policy Decision", "impact": "high"},
+  {"date": "2026-11-03", "name": "US Elections Impact", "impact": "high"},
+  {"date": "2026-07-04", "name": "US Independence Day (Markets Closed)", "impact": "medium"}
+]
