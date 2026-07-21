@@ -55,7 +55,12 @@ def run_all_filters(global_data: dict, pattern_result: dict, trade_card: dict) -
     # Filter 7: FII Flow Alignment
     results["fii_alignment"] = _filter_fii_alignment(pattern_result)
     
-    # Calculate overall score
+    # Calculate overall score and normalize pass values to boolean
+    for v in results.values():
+        # Fix any string "True"/"False" values to proper booleans
+        if isinstance(v["pass"], str):
+            v["pass"] = v["pass"].lower() == "true"
+    
     passed = sum(1 for v in results.values() if v["pass"])
     total = len(results)
     
