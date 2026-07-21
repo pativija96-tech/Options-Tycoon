@@ -359,6 +359,30 @@ CREATE TABLE IF NOT EXISTS signal_history (
 CREATE INDEX IF NOT EXISTS idx_signal_history_date ON signal_history(signal_date);
 CREATE INDEX IF NOT EXISTS idx_signal_history_direction ON signal_history(direction);
 CREATE INDEX IF NOT EXISTS idx_signal_history_action ON signal_history(action);
+
+-- Live signal engine trades (per-user paper/live trading)
+CREATE TABLE IF NOT EXISTS live_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    date TEXT NOT NULL,
+    direction TEXT,
+    confidence INTEGER,
+    strategy TEXT,
+    legs TEXT,
+    entry_cost REAL DEFAULT 0,
+    max_loss REAL DEFAULT 0,
+    max_profit REAL DEFAULT 0,
+    sl_value REAL DEFAULT 0,
+    projected_open REAL,
+    width INTEGER,
+    status TEXT DEFAULT 'open',
+    pnl REAL,
+    nifty_close REAL,
+    exit_reason TEXT,
+    mode TEXT DEFAULT 'paper',
+    executed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    resolved_at TEXT
+);
 """
 
 # ===========================================================================
@@ -560,4 +584,28 @@ CREATE TABLE IF NOT EXISTS signal_history (
 CREATE INDEX IF NOT EXISTS idx_signal_history_date ON signal_history(signal_date);
 CREATE INDEX IF NOT EXISTS idx_signal_history_direction ON signal_history(direction);
 CREATE INDEX IF NOT EXISTS idx_signal_history_action ON signal_history(action);
+
+-- Live signal engine trades (per-user paper/live trading)
+CREATE TABLE IF NOT EXISTS live_trades (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    date TEXT NOT NULL,
+    direction TEXT,
+    confidence INTEGER,
+    strategy TEXT,
+    legs TEXT,
+    entry_cost REAL DEFAULT 0,
+    max_loss REAL DEFAULT 0,
+    max_profit REAL DEFAULT 0,
+    sl_value REAL DEFAULT 0,
+    projected_open REAL,
+    width INTEGER,
+    status TEXT DEFAULT 'open',
+    pnl REAL,
+    nifty_close REAL,
+    exit_reason TEXT,
+    mode TEXT DEFAULT 'paper',
+    executed_at TEXT NOT NULL DEFAULT NOW()::TEXT,
+    resolved_at TEXT
+);
 """
