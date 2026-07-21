@@ -314,3 +314,41 @@ async def clear_history(user_id: int):
         return {"status": "cleared", "message": "Upload history cleared."}
     finally:
         conn.close()
+
+
+# --- Trader DNA Report (merged from routes/report.py) ---
+
+@router.get("/report/{profile_id}")
+def get_trader_dna_report(profile_id: int):
+    """Generate the Devastating Report from trade history."""
+    from engine.report_generator import generate_devastating_report
+
+    conn = get_connection()
+    try:
+        trades = conn.execute(
+            "SELECT * FROM trades WHERE profile_id = ? AND status IN ('closed', 'settled') ORDER BY opened_at",
+            (profile_id,)
+        ).fetchall()
+
+        trade_list = []
+        for t in trades:
+            trade_list.append({
+                'ticker': t['ticker'],
+                'entry_time': t['opened_at'],
+                'exit_time': t['closed_at'],
+                'entry_price': t['entry_price'],
+                'exit_price': t['exit_price'] if t['exit_price'] else t['entry_price'],
+                'pnl': t['realized_pnl'] if t['realized_pnl'] else 0,
+                'quantity': 1,
+            })
+
+        if len(trade_list) < 5:
+            return {
+                "error": "Need at least 5 closed trades to generate report",
+                "trade_count": len(trade_list),
+            }
+
+        report = generate_devastating_report(trade_list)
+        return report
+    finally:
+        conn.close()

@@ -12,7 +12,7 @@ from db.database import get_connection
 from db.models import JournalUpdate, TradeCloseRequest, TradeRequest
 from data.loader import load_mock_data
 from engine.slippage import compute_slippage
-from routes.risk_guards import check_risk_gate, check_iv_crush, check_penalty_active
+from engine.risk_guards import check_risk_gate, check_iv_crush, check_penalty_active
 
 router = APIRouter()
 

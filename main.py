@@ -119,7 +119,6 @@ from routes.telemetry import router as telemetry_router
 from routes.real_trades import router as real_trades_router
 from routes.timemachine import router as timemachine_router
 from routes.simulation import router as simulation_router
-from routes.report import router as report_router
 from routes.feedback import router as feedback_router
 from routes.auth import router as auth_router
 from routes.dashboard import router as dashboard_router
@@ -133,7 +132,6 @@ app.include_router(telemetry_router, prefix="/api")
 app.include_router(real_trades_router, prefix="/api")
 app.include_router(timemachine_router, prefix="/api")
 app.include_router(simulation_router, prefix="/api")
-app.include_router(report_router, prefix="/api")
 app.include_router(feedback_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
