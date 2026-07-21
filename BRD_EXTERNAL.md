@@ -413,3 +413,102 @@ Live Signal Engine intentionally excluded — not a market-facing product.
 ---
 
 *End of BRD v3.0. Build order in Section 12 is sequential — Section 4 is a prerequisite for all other Module A work.*
+
+
+---
+
+## 13. SIGNAL ACCURACY IMPROVEMENT PLAN
+
+> **Context:** The founder intends to go live with real capital after ~30-35 paper trade days. All accuracy improvements below must be built and validated BEFORE the gate unlocks — they are prerequisites for trusting the system with real money, not post-launch enhancements.
+
+### Timeline: Build during the 30-day paper trading window (July-August 2026)
+
+| # | Improvement | Build | Priority | Deadline |
+|---|-------------|-------|----------|----------|
+| 1 | Raise minimum historical matches from 10 → 20-25 | Config change + confidence interval in pattern output | **Immediate** (this weekend) | Before trade #2 |
+| 2 | Walk-forward validation (train years 1-3, test year 4, roll forward) | Analysis script against existing 5yr CSV | **This weekend** | Before trade #5 |
+| 3 | Per-filter predictive value tracking | SQL analysis on signal_history → outcome correlation | **This weekend** | Before trade #10 |
+| 4 | Intraday high/low in EOD resolution (simulate stop-loss triggers) | Fetch OHLC in run-eod, check if SL would've hit before close | **Week 2** | Before trade #15 |
+| 5 | Calibration chart (stated confidence % vs actual win rate) | Dashboard view querying signal_history + live_trades | **Week 3** (needs 15+ resolved trades) | Before trade #20 |
+| 6 | Rolling monthly recalibration | Scheduled re-run of pattern matching against updated dataset, log when strategy assignments change | **Week 4** | Before gate unlock |
+
+### 13.1 Raise Minimum Matches (Build This Weekend)
+
+**Current:** `min_matches = 10` in `engine/signals/pattern_matcher.py`
+**Target:** `min_matches = 20` (configurable via `config/settings.json`)
+
+Additionally, report confidence interval on win rate:
+```
+"win_rate": 68%,
+"confidence_interval_95": [52%, 84%],  // Wilson score interval
+"sample_size": 25
+```
+
+This lets the founder distinguish "68% from 25 matches" (meaningful) from "70% from 11 matches" (noise).
+
+### 13.2 Walk-Forward Validation (Build This Weekend)
+
+Split `nifty_daily_5yr.csv` into rolling windows:
+- Train: Years 1-3 (bucket boundaries, direction probabilities)
+- Test: Year 4 (out-of-sample win rate)
+- Roll forward by 6 months, repeat
+
+Output: a validation report showing whether the pattern-matching edge holds on data the system didn't see during tuning. If it doesn't → the VIX/DXY bucket cutoffs need adjustment before going live.
+
+### 13.3 Per-Filter Predictive Value (Build This Weekend)
+
+Every signal already logs all 7 filter pass/fail results in `signal_history.quality_filters_json`. After 10+ resolved trades, run:
+
+```sql
+-- Does win rate actually improve with more filters passing?
+SELECT filters_passed, 
+       COUNT(*) as signals,
+       AVG(CASE WHEN lt.status = 'win' THEN 1 ELSE 0 END) as actual_win_rate
+FROM signal_history sh
+JOIN live_trades lt ON sh.signal_date = lt.date
+GROUP BY filters_passed ORDER BY filters_passed;
+```
+
+If certain filters don't discriminate (e.g., FII flow is uncorrelated with outcome), flag them for review — a filter that adds noise reduces the system's value.
+
+### 13.4 Intraday SL Simulation (Week 2)
+
+**Problem:** Paper trades resolve at EOD close only. Real trading uses intraday stop-losses. The gate validates a different behavior than live execution.
+
+**Fix:** In `run_eod`, after fetching the daily close, also fetch the day's high/low. Check:
+- For bull call spreads: did NIFTY hit below `projected_open - SL_points` at any point during the day?
+- If yes: resolve as loss at SL price, not at close price.
+
+This makes paper trade P&L more honest and the 30-trade gate more predictive of live performance.
+
+### 13.5 Calibration Chart (Week 3, After 15+ Trades)
+
+Add `/api/live/calibration` endpoint:
+- Bucket signals by stated confidence (40-55%, 55-70%, 70%+)
+- For each bucket: actual win rate from resolved `live_trades`
+- If "70%+ confidence" bucket only wins 50% in practice → the confidence score is miscalibrated → adjust pattern matcher thresholds
+
+Render as a simple bar chart on the live page (below gate metrics).
+
+### 13.6 Monthly Recalibration (Week 4)
+
+Scheduled script that:
+1. Re-downloads latest NIFTY data (extend the 5yr CSV)
+2. Re-runs pattern matching on the full updated dataset
+3. Compares: did the strategy assignments for common condition buckets change?
+4. If yes → log the change and surface it as a notification
+
+This prevents the system from going stale as market regimes shift.
+
+### 13.7 Success Criteria (Gate Unlock Readiness)
+
+Before the 30-trade gate is trusted as a "go live" signal, ALL of the following must be true:
+
+- [ ] Min matches raised to 20+ and confidence intervals displayed
+- [ ] Walk-forward validation shows positive edge on out-of-sample data
+- [ ] Per-filter analysis shows monotonic improvement (more filters → higher win rate)
+- [ ] Intraday SL simulation active in EOD resolution
+- [ ] Calibration shows confidence % is within ±10% of actual win rate per bucket
+- [ ] At least one monthly recalibration run completed
+
+If any of these fail: the gate unlock should NOT be treated as permission to go live — it means the gate itself is validating against an insufficiently honest paper model.
