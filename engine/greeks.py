@@ -6,7 +6,17 @@ using the Black-Scholes pricing model, plus IV Rank as a percentile measure.
 """
 
 import math
-from scipy.stats import norm
+
+
+# Pure Python normal distribution (replaces scipy.stats.norm)
+def _norm_cdf(x):
+    """Standard normal cumulative distribution function."""
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _norm_pdf(x):
+    """Standard normal probability density function."""
+    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
 
 
 def black_scholes_greeks(S, K, T, r=0.05, sigma=0.20, option_type='call'):
@@ -37,28 +47,28 @@ def black_scholes_greeks(S, K, T, r=0.05, sigma=0.20, option_type='call'):
 
     # Delta
     if option_type == 'call':
-        delta = norm.cdf(d1)
+        delta = _norm_cdf(d1)
     else:
-        delta = norm.cdf(d1) - 1
+        delta = _norm_cdf(d1) - 1
 
     # Gamma (same for calls and puts)
-    gamma = norm.pdf(d1) / (S * sigma * sqrt_T)
+    gamma = _norm_pdf(d1) / (S * sigma * sqrt_T)
 
     # Theta (annualized, then converted to per-day)
     if option_type == 'call':
         theta_annual = (
-            -(S * norm.pdf(d1) * sigma) / (2 * sqrt_T)
-            - r * K * math.exp(-r * T) * norm.cdf(d2)
+            -(S * _norm_pdf(d1) * sigma) / (2 * sqrt_T)
+            - r * K * math.exp(-r * T) * _norm_cdf(d2)
         )
     else:
         theta_annual = (
-            -(S * norm.pdf(d1) * sigma) / (2 * sqrt_T)
-            + r * K * math.exp(-r * T) * norm.cdf(-d2)
+            -(S * _norm_pdf(d1) * sigma) / (2 * sqrt_T)
+            + r * K * math.exp(-r * T) * _norm_cdf(-d2)
         )
     theta = theta_annual / 365  # per-day theta
 
     # Vega (per 1% IV change, i.e., divide by 100)
-    vega = S * norm.pdf(d1) * sqrt_T / 100
+    vega = S * _norm_pdf(d1) * sqrt_T / 100
 
     return {
         'delta': round(delta, 4),
