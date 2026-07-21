@@ -1,108 +1,198 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 2.0 | **Last Updated:** 2026-07-21  
-> **Status:** Live on Production (Railway + PostgreSQL)  
-> **URL:** https://options-tycoon.com  
+> **Version:** 3.0 | **Last Updated:** 2026-07-21
+> **Status:** Live on Production (Railway + PostgreSQL)
+> **URL:** https://options-tycoon.com
 > **GitHub:** https://github.com/pativija96-tech/Options-Tycoon
+> **Prepared for:** KIRO build/implementation
+> **Change from v2.0:** Splits the product into two access tiers — see Section 0.
+
+---
+
+## 0. WHAT CHANGED IN THIS VERSION (READ FIRST)
+
+v2.0 described one product with two modules at the same access level — anyone with the link could reach both DNA Intelligence and the Live Signal Engine. That's no longer the intended scope.
+
+The product is now **two tiers** with different audiences and different risk profiles:
+
+| Tier | Product | Audience | Why |
+|------|---------|----------|-----|
+| **Tier 1 — Public** | Trader DNA Intelligence | Anyone with the link, multi-user | Retrospective analysis of a user's own trade history. No advice generated, no third party directed to take action. Low regulatory exposure. |
+| **Tier 2 — Restricted** | Live Signal Engine | Founder only (single allowlisted account) | Generates specific, actionable options trade signals (strikes, sizing, entries). Once a second person receives and acts on those signals, the relationship resembles investment research/advisory activity, regulated in India (SEBI RA/IA framework). Until reviewed with a lawyer, this stays a personal trading tool. |
+
+**This is the single most important build requirement:** the Live Signal Engine must be technically inaccessible to anyone but the founder, not just "not advertised." A public URL that works for anyone who signs in does not satisfy this — see Section 4.
 
 ---
 
 ## 1. EXECUTIVE SUMMARY
 
-Options Tycoon is a **behavioral intelligence platform** for Indian retail options traders. It combines two core capabilities:
+Options Tycoon is two things under one roof:
 
-1. **Trader DNA Intelligence** — Upload broker CSV (Zerodha, Groww, Angel One) → Get behavioral analysis revealing WHY you keep losing → Track improvement weekly
-2. **Live Signal Engine** — AI-powered daily NIFTY trade signals with pattern matching, quality filters, paper trading with EOD resolution, and a 30-trade unlock gate to live trading
+1. **Trader DNA Intelligence** (public product) — Upload broker CSV → Get behavioral analysis → Track improvement weekly. Built for multi-user growth and eventual monetization.
+2. **Live Signal Engine** (personal tool, access-restricted) — AI-powered daily NIFTY trade signals with pattern matching, quality filters, paper trading with EOD resolution, and a 30-trade unlock gate to live trading via the founder's own Zerodha account. Not offered to other users.
 
-**Target Market:** Retail options traders (NSE/BSE) — primarily Zerodha/Groww/Angel One users  
-**Monetization:** Free for first 100 users → ₹499/month or ₹2999/year for premium features  
-**Stage:** Live beta, 1 active user (founder testing), Railway production
+**Target Market (Tier 1 only):** Retail options traders (NSE/BSE) — primarily Zerodha/Groww/Angel One users
+**Monetization (Tier 1 only):** Free for first 100 users → ₹499/month or ₹2999/year for premium DNA features
+**Live Signal Engine:** No monetization, no external users, no beta rollout until regulatory review is complete
+**Stage:** Live in production; DNA module open to multi-user testing; Live Signal Engine restricted to founder's account only
 
 ---
 
 ## 2. PRODUCT ARCHITECTURE
 
-### User Flows (Two Entry Points)
+### User Flows (Two Tiers, Different Access Rules)
 
 ```
-FLOW A: DNA TRACKING (Retention Product)
+TIER 1 — DNA TRACKING (Public, Multi-User, Retention Product)
 Landing → Upload CSV → Sign-In Gate → DNA Report → Dashboard → Weekly Upload Loop
+(Open to anyone with the link. No allowlist.)
 
-FLOW B: LIVE SIGNAL ENGINE (Daily Engagement)
-Dashboard → Live Signals → Generate Signal → Execute (Paper) → EOD Resolution → Gate Metrics
+TIER 2 — LIVE SIGNAL ENGINE (Restricted, Founder-Only, Personal Trading Tool)
+Dashboard (founder session only) → Live Signals → Generate Signal → Execute (Paper) → EOD Resolution → Gate Metrics
                                                                                     ↓
                                                                     30 Trades + 7 Metrics Pass
                                                                                     ↓
-                                                                        UNLOCK LIVE TRADING (Zerodha)
+                                                                UNLOCK LIVE TRADING (founder's own Zerodha only)
+
+Any non-founder account that reaches a /api/live/* route or live.html receives a 403 / redirect.
 ```
 
 ### Pages & Roles
 
-| Page | Purpose | Auth |
-|------|---------|------|
-| `/` (landing) | Marketing hook — "See why you keep losing" | No |
-| `/static/upload-free.html` | Upload broker CSV for DNA analysis | No |
-| `/static/signin.html` | Google Sign-In gate | No |
-| `/static/report.html` | DNA Report (devastating reveal) | Yes |
-| `/static/dashboard.html` | **HOME** — DNA score, trends, upload again | Yes |
-| `/static/live.html` | **LIVE SIGNALS** — daily trades, positions, EOD | Yes |
-| `/static/index.html` | Practice Arena ($10K paper trading sim) | Yes |
-| `/static/behavioral.html` | Detailed behavioral metrics | Yes |
-| `/static/timemachine.html` | Historical replay mode | Yes |
+| Page | Purpose | Auth | Access Tier |
+|------|---------|------|-------------|
+| `/` (landing) | Marketing hook | No | Public |
+| `/static/upload-free.html` | Upload broker CSV | No | Public |
+| `/static/signin.html` | Google Sign-In gate | No | Public |
+| `/static/report.html` | DNA Report reveal | Yes | Public (any signed-in user) |
+| `/static/dashboard.html` | HOME — DNA score, trends | Yes | Public — Live Signals nav link only rendered for founder |
+| `/static/live.html` | LIVE SIGNALS — trades, positions, EOD | Yes + allowlist | **Restricted — founder only** |
+| `/static/index.html` | Practice Arena ($10K sim) | Yes | Public |
+| `/static/behavioral.html` | Detailed behavioral metrics | Yes | Public |
+| `/static/timemachine.html` | Historical replay mode | Yes | Public |
 
 ---
 
 ## 3. FEATURE INVENTORY (Current State)
 
-### Module A: Live Signal Engine (PRIMARY — Daily Engagement)
+### Module A: Live Signal Engine (RESTRICTED — Founder Only)
+
+Access requirement: gated behind founder-allowlist check (Section 4). None are multi-user features.
 
 | # | Feature | Status | Description |
 |---|---------|--------|-------------|
-| A1 | Morning Signal Generation | ✅ Live | Fetches overnight US/VIX/DXY data, runs 5-year NIFTY pattern matching, picks strategy |
-| A2 | Strategy Matrix (27 combos) | ✅ Live | Maps (direction × confidence × volatility) → Bull Call, Bear Put, Iron Condor, Straddle |
-| A3 | 7 Quality Filters | ✅ Live | Historical confidence, global alignment, Gift Nifty, R:R, liquidity, event conflict, FII flow |
+| A1 | Morning Signal Generation | ✅ Live | Fetches overnight US/VIX/DXY data, runs 5-year NIFTY pattern matching |
+| A2 | Strategy Matrix (27 combos) | ✅ Live | Maps (direction × confidence × volatility) → strategy type |
+| A3 | 7 Quality Filters | ✅ Live | Historical confidence, global alignment, Gift Nifty, R:R, liquidity, event, FII |
 | A4 | Position Sizing | ✅ Live | Full/Reduced/Minimum based on filter score |
 | A5 | Iron Condor Builder | ✅ Live | 4-leg neutral strategy with dynamic strike selection |
-| A6 | Paper Trade Execution | ✅ Live | Per-user, one trade per day, saved to PostgreSQL |
+| A6 | Paper Trade Execution | ✅ Live | Founder only, one trade per day, saved to PostgreSQL |
 | A7 | EOD Resolution | ✅ Live | Fetches real NIFTY close, resolves open trades with actual P&L |
-| A8 | 7-Metric Unlock Gate | ✅ Live | Win rate, profit factor, drawdown, expectancy — all 7 must pass to unlock live |
+| A8 | 7-Metric Unlock Gate | ✅ Live | Win rate, profit factor, drawdown, expectancy — all 7 must pass |
 | A9 | Open Positions Panel | ✅ Live | Current P&L, exit suggestions, trail SL, manual exit |
-| A10 | Signal History (DB) | ✅ Live | Every generated signal saved to PostgreSQL (append-only, for model learning) |
-| A11 | Zerodha Kite OAuth | ✅ Live | Login redirect, access token handling, live price fetch |
+| A10 | Signal History (DB) | ✅ Live | Every signal saved to PostgreSQL (append-only, model learning) |
+| A11 | Zerodha Kite OAuth | ✅ Live | Founder's own login, access token, live price fetch |
 | A12 | Live Prices (Kite API) | ✅ Live | Fetches LTP for signal strikes when authenticated |
 | A13 | Stock Scanner (Watchlist) | ✅ Live | Scans 10 stocks for secondary signals with earnings catalysts |
-| A14 | Telegram Notifications | ✅ Live | Sends daily signal to Telegram channel |
-| A15 | Trade Log (per-user) | ✅ Live | Full history with win/loss, P&L, strategy breakdown |
+| A14 | Telegram Notifications | ✅ Live | Sends daily signal to founder's private chat (not broadcast) |
+| A15 | Trade Log (founder) | ✅ Live | Full history with win/loss, P&L, strategy breakdown |
+| A16 | Founder allowlist middleware | ❌ P0 — build required | Every /api/live/* route checks session email against allowlist |
+| A17 | Conditional nav rendering | ❌ P0 — build required | "Live Signals" link only renders for founder session |
+| A18 | HTTP-Only session cookies | ❌ P0 — build required | Replace localStorage auth with server-side secure cookies |
 
-### Module B: Trader DNA Intelligence (RETENTION — Weekly Upload)
-
-| # | Feature | Status | Description |
-|---|---------|--------|-------------|
-| B1 | Broker CSV Parsing | ✅ Live | Zerodha, Groww, Angel One format detection and parsing |
-| B2 | DNA Score (0-100) | ✅ Live | Composite behavioral score from discipline, patience, sizing, emotional control |
-| B3 | Pattern Detection | ✅ Live | Revenge trades, overconfidence traps, impulse exits, disposition bias |
-| B4 | Behavioral Cost (₹) | ✅ Live | Quantifies exact ₹ lost due to undisciplined trading |
-| B5 | Fix One Thing | ✅ Live | Single worst pattern → actionable focus for the week |
-| B6 | Upload History | ✅ Live | Score progression tracking over multiple uploads |
-| B7 | Google Sign-In | ✅ Live | 1-click auth, email capture, profile persistence |
-| B8 | Dashboard (Score Trends) | ✅ Live | DNA score over time, last upload info, quick upload CTA |
-
-### Module C: Practice Arena (SECONDARY — Simulator)
+### Module B: Trader DNA Intelligence (PUBLIC — Multi-User)
 
 | # | Feature | Status | Description |
 |---|---------|--------|-------------|
-| C1 | Virtual Portfolio ($10K) | ✅ Built | Game-over at $0, no reset, real stakes psychology |
-| C2 | Options Chain + Greeks | ✅ Built | Black-Scholes Delta/Gamma/Theta/Vega, 10 mock tickers |
+| B1 | Broker CSV Parsing | ✅ Live | Zerodha, Groww, Angel One format detection |
+| B2 | DNA Score (0-100) | ✅ Live | Composite behavioral score |
+| B3 | Pattern Detection | ✅ Live | Revenge, overconfidence, impulse, disposition bias |
+| B4 | Behavioral Cost (₹) | ✅ Live | Quantifies ₹ lost due to undisciplined trading |
+| B5 | Fix One Thing | ✅ Live | Single worst pattern → weekly focus |
+| B6 | Upload History | ✅ Live | Score progression tracking |
+| B7 | Google Sign-In | ✅ Live | 1-click auth, email capture |
+| B8 | Dashboard (Score Trends) | ✅ Live | DNA score over time, upload CTA |
+
+### Module C: Practice Arena (PUBLIC — Simulator)
+
+| # | Feature | Status | Description |
+|---|---------|--------|-------------|
+| C1 | Virtual Portfolio ($10K) | ✅ Built | Game-over at $0, no reset |
+| C2 | Options Chain + Greeks | ✅ Built | Black-Scholes, 10 mock tickers |
 | C3 | Strategy Builder (1-4 legs) | ✅ Built | Custom combos with P&L visualization |
-| C4 | Behavioral Metrics (Progressive) | ✅ Built | Phase A→D unlock as trades accumulate |
-| C5 | Risk Guards | ✅ Built | 5% risk gate, IV crush warning, penalty multiplier |
-| C6 | Settlement Engine | ✅ Built | Auto-close expired positions at intrinsic |
-| C7 | Time Machine | 🔧 Partial | Historical replay with day-by-day progression |
-| C8 | Compare Mode (Sim vs Real) | 🔧 Partial | Side-by-side behavioral comparison |
+| C4 | Behavioral Metrics (Progressive) | ✅ Built | Phase A→D unlock |
+| C5 | Risk Guards | ✅ Built | 5% gate, IV crush, penalty multiplier |
+| C6 | Settlement Engine | ✅ Built | Auto-close expired positions |
+| C7 | Time Machine | 🔧 Partial | Historical replay |
+| C8 | Compare Mode | 🔧 Partial | Sim vs real comparison |
 
 ---
 
-## 4. TECHNICAL ARCHITECTURE
+## 4. ACCESS CONTROL REQUIREMENT (P0 — BUILD FIRST)
+
+This is the load-bearing requirement of v3.0. Build and verify before any further Live Signal Engine work. **Allowlist and HTTP-Only cookies ship together as one P0 unit** — the allowlist's security model depends on session integrity.
+
+### 4.1 Founder Allowlist
+
+```
+FOUNDER_ALLOWED_EMAILS = ["<founder's Google account email>"]
+```
+
+Stored as a Railway environment variable, not hardcoded. Single entry. No multi-entry admin UI.
+
+### 4.2 Implementation
+
+#### 4.2.1 Kite OAuth Flow (Special Handling)
+
+`/api/live/kite-login` carries the founder allowlist check and issues a signed, single-use state parameter. `/api/live/kite-callback` validates that state instead of re-checking identity. A valid callback can only descend from an already-gated `kite-login` call — non-founders cannot reach it with a valid state.
+
+#### 4.2.2 All Other Routes (15 endpoints)
+
+Standard middleware dependency that:
+1. Confirms valid Google Sign-In session (HTTP-Only cookie, not localStorage)
+2. Confirms session email is in `FOUNDER_ALLOWED_EMAILS`
+3. If either check fails: return 403 Forbidden (generic message — don't leak whether the route exists vs. wrong account)
+
+### 4.3 HTTP-Only Session Cookies (Bundled with Allowlist)
+
+Replace current localStorage-based auth with server-side HTTP-Only secure cookies:
+- `Set-Cookie: session=<signed_token>; HttpOnly; Secure; SameSite=Strict; Path=/`
+- JavaScript cannot read or modify the session token
+- Eliminates XSS session forgery — the allowlist check is only as strong as the session mechanism
+
+### 4.4 Frontend Enforcement
+
+- `/static/live.html` redirects to dashboard if session email doesn't match allowlist
+- "Live Signals" nav item on dashboard doesn't render at all for non-founder sessions (not disabled, not hidden — absent from DOM)
+
+### 4.5 What Does NOT Need Gating
+
+- DNA Intelligence (Module B) — open to any signed-in user
+- Practice Arena (Module C) — open to any signed-in user
+
+### 4.6 Endpoint Inventory (Final Count: 17)
+
+After removing dead endpoints (`/trade-log` superseded by `/my-trades`, `/admin/all-trades` no purpose in single-user model):
+
+- **15 standard-gated routes** (allowlist middleware)
+- **2 state-parameter routes** (`kite-login`, `kite-callback` per 4.2.1)
+- **Total: 17 endpoints** under `/api/live/*`
+
+### 4.7 Verification Checklist
+
+- [ ] Sign in with non-founder Google account → `/static/live.html` redirects away
+- [ ] Non-founder session → no "Live Signals" nav link visible
+- [ ] Non-founder session → all 17 `/api/live/*` endpoints return 403
+- [ ] Founder account → full unimpeded access to all Live Signal Engine features
+- [ ] DNA Intelligence and Practice Arena unaffected for non-founder accounts
+- [ ] Session uses HTTP-Only cookies (verify: `document.cookie` in console returns nothing session-related)
+- [ ] XSS test: injected script cannot read session token
+
+**Note:** This checklist is not considered "closed" from a security standpoint until both the allowlist AND HTTP-Only cookies are deployed together.
+
+---
+
+## 5. TECHNICAL ARCHITECTURE
 
 ### Stack
 
@@ -111,241 +201,169 @@ Dashboard → Live Signals → Generate Signal → Execute (Paper) → EOD Resol
 | Backend | Python 3.11+ / FastAPI (ASGI) |
 | Frontend | Vanilla HTML/JS/CSS (no build tools) |
 | Database | PostgreSQL (Railway, production) + SQLite (local dev) |
-| Compute | SciPy (Black-Scholes), yfinance (market data), pandas/numpy (pattern matching) |
-| Broker | Kite Connect (Zerodha OAuth + live prices) |
-| Notifications | Telegram Bot API, Resend (email) |
-| Hosting | Railway.app (Singapore region) |
+| Compute | SciPy, yfinance, pandas/numpy |
+| Broker | Kite Connect (founder's account only) |
+| Notifications | Telegram (private chat), Resend (email) |
+| Hosting | Railway.app (Singapore) |
 | CDN | Cloudflare |
-| Auth | Google Sign-In (OAuth 2.0) |
+| Auth | Google Sign-In → HTTP-Only secure cookies + founder allowlist for Tier 2 |
 | Rate Limiting | slowapi |
 
 ### Database Tables (15 Total)
 
-| Table | Purpose |
-|-------|---------|
-| `profiles` | Simulator user profiles (balance, mode, penalties) |
-| `strategy_profiles` | Sub-profiles for strategy experimentation |
-| `trades` | Simulated trade records with all behavioral flags |
-| `real_trades` | Real trade journal entries (parallel mode) |
-| `behavioral_metrics` | Cached metric computations |
-| `telemetry` | Pre-trade behavioral state snapshots |
-| `earnings_calendar` | Static earnings event data |
-| `market_data_cache` | Cached market data |
-| `monthly_pnl` | Monthly P&L aggregates |
-| `users` | Google Sign-In profiles |
-| `upload_history` | DNA upload records with scores |
-| `signal_history` | **NEW** — Append-only signal archive for model learning |
-| `live_trades` | **NEW** — Per-user paper/live trade execution records |
-| `schema_version` | Migration tracking |
+| Table | Purpose | Tier |
+|-------|---------|------|
+| `profiles` | Simulator user profiles | Tier 1 (Practice Arena) |
+| `strategy_profiles` | Sub-profiles for strategy experimentation | Tier 1 |
+| `trades` | Simulated trade records with behavioral flags | Tier 1 |
+| `real_trades` | Real trade journal entries | Tier 1 |
+| `behavioral_metrics` | Cached metric computations | Tier 1 |
+| `telemetry` | Pre-trade behavioral state snapshots | Tier 1 |
+| `earnings_calendar` | Static earnings event data | Tier 2 |
+| `market_data_cache` | Cached market data | Tier 2 |
+| `monthly_pnl` | Monthly P&L aggregates | Tier 1 |
+| `users` | Google Sign-In profiles | Both |
+| `upload_history` | DNA upload records with scores | Tier 1 |
+| `signal_history` | Append-only signal archive (founder only) | Tier 2 |
+| `live_trades` | Paper/live trade records (founder only) | Tier 2 |
+| `schema_version` | Migration tracking | Both |
 
-### API Endpoints (Live Signal Engine — 18 endpoints)
+### API Endpoints — Live Signal Engine (17 endpoints, ALL founder-gated per Section 4)
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/live/signal` | Today's trade card |
 | POST | `/api/live/generate-signal` | Trigger on-demand signal generation |
-| GET | `/api/live/gate-status` | 7-metric unlock gate (computed from DB) |
-| POST | `/api/live/paper-execute` | Execute paper trade (1/day/user) |
-| GET | `/api/live/my-trades` | User's trade history |
+| GET | `/api/live/gate-status` | 7-metric unlock gate |
+| POST | `/api/live/paper-execute` | Execute paper trade (1/day) |
+| GET | `/api/live/my-trades` | Trade history |
 | GET | `/api/live/open-positions` | Open trades with live P&L + suggestions |
-| POST | `/api/live/exit-trade` | Manual exit at estimated P&L |
+| POST | `/api/live/exit-trade` | Manual exit |
 | POST | `/api/live/trail-sl` | Update stop-loss |
 | POST | `/api/live/run-eod` | EOD resolution (real NIFTY close) |
 | GET | `/api/live/eod-report` | Today's EOD report |
 | GET | `/api/live/auth-status` | Kite auth state |
-| GET | `/api/live/kite-login` | Redirect to Zerodha OAuth |
-| GET | `/api/live/kite-callback` | OAuth callback handler |
+| GET | `/api/live/kite-login` | Redirect to Zerodha OAuth (state-parameter gated) |
+| GET | `/api/live/kite-callback` | OAuth callback (state-validated per 4.2.1) |
 | GET | `/api/live/live-prices` | Kite LTP for signal strikes |
 | GET | `/api/live/settings` | Capital and risk parameters |
-| GET | `/api/live/signal-history` | Query historical signals (DB) |
+| GET | `/api/live/signal-history` | Query historical signals |
 | GET | `/api/live/signal-stats` | Aggregate signal statistics |
-| GET | `/api/live/admin/all-trades` | Admin view all users' trades |
+
+**Removed:** `/trade-log` (dead — superseded by `/my-trades`), `/admin/all-trades` (no purpose in single-user model)
 
 ---
 
-## 5. LIVE SIGNAL ENGINE — Detailed Flow
+## 6. LIVE SIGNAL ENGINE — Detailed Flow (Founder-Only)
 
 ### Morning Signal Generation (Daily @ 9:00 AM IST)
 
 ```
 Step 1: Fetch Global Data (yfinance)
 ├── S&P 500 overnight close + % change
-├── VIX level + % change  
+├── VIX level + % change
 ├── DXY (Dollar Index) + % change
 └── Gift Nifty (projected NIFTY opening)
 
 Step 2: Pattern Matching (5-year NIFTY history)
-├── Bucket today's conditions (US move, VIX regime, DXY direction)
-├── Find matching historical days (minimum 10 matches required)
-├── Calculate: direction (bullish/bearish/neutral), confidence %, expected move
+├── Bucket today's conditions
+├── Find matching historical days (min 10 required)
 └── Output: {direction, confidence, avg_move, matching_days}
 
 Step 3: Strategy Selection (27-combo matrix)
-├── Map (direction × confidence_tier × vol_regime) → strategy type
-├── Bull Call Spread (bullish, high/moderate confidence)
-├── Bear Put Spread (bearish, high/moderate confidence)
-├── Iron Condor (neutral, or low confidence any direction)
+├── Bull Call Spread (bullish)
+├── Bear Put Spread (bearish)
+├── Iron Condor (neutral / low confidence)
 └── Long Straddle (neutral + high volatility)
 
 Step 4: Trade Construction
-├── Calculate optimal strikes (round to 50-pt NIFTY strikes)
-├── Estimate premiums (Black-Scholes)
-├── Verify within 2% per-trade risk cap
-├── Calculate max profit, max loss, breakevens, R:R ratio
-└── Include Zerodha charges (brokerage + GST + STT + exchange fees)
+├── Optimal strikes, Black-Scholes premiums
+├── 2% per-trade risk cap verification
+└── Zerodha charges included
 
-Step 5: 7 Quality Filters
-├── 1. Historical Confidence (>70% with 10+ matches)
-├── 2. Global Alignment (2+ factors agree)
-├── 3. Gift Nifty Confirmation (pre-market not contradicting)
-├── 4. Risk/Reward Ratio (minimum 2:1)
-├── 5. Liquidity/Volatility (VIX 10-40 range)
-├── 6. No Event Conflict (no RBI/Budget/Election)
-├── 7. FII Flow Alignment (not contradicting)
-└── Score determines position sizing: 7/7=Full, 5-6=Reduced, 3-4=Minimum
-
-Step 6: Save to Signal History (PostgreSQL — append-only)
-Step 7: Send Telegram Notification
-Step 8: Serve via /api/live/signal
+Step 5: 7 Quality Filters → Position Sizing
+Step 6: Save to Signal History (PostgreSQL, append-only)
+Step 7: Telegram notification (founder's private chat)
+Step 8: Serve via /api/live/signal (founder-only)
 ```
 
 ### Paper Trading → Live Unlock Gate
 
 ```
-User executes paper trades daily (1/day max)
-    ↓
-EOD Resolution: Real NIFTY close resolves each trade as win/loss
-    ↓
-7 Metrics computed on trailing 30 trades:
+Founder executes paper trades daily (1/day max)
+→ EOD Resolution: Real NIFTY close → win/loss
+→ 7 Metrics on trailing 30 trades:
     1. Trade Count ≥ 30
     2. Win Rate > 50%
     3. Profit Factor > 1.5
-    4. Avg Win/Loss Ratio > 1.0
+    4. Avg Win/Loss > 1.0
     5. Max Drawdown < 15%
     6. Consecutive Losses < 5
     7. Expectancy > Rs.0
-    ↓
-ALL 7 PASS → Status changes from LOCKED to LIVE
-    ↓
-Zerodha login enabled → Real trade execution via Kite API
+→ ALL 7 PASS → LOCKED → LIVE
+→ Founder's own Zerodha execution via Kite API
 ```
 
 ---
 
-## 6. REVENUE MODEL
+## 7. REVENUE MODEL (DNA INTELLIGENCE ONLY)
 
-### Phase 1 (Current): Free for First 100 Users
-- All features free (DNA + Live Signals)
-- Goal: Capture emails, prove value, get testimonials
+Live Signal Engine: No monetization, not in scope until regulatory review.
 
-### Phase 2 (After 100 users): ₹499/month or ₹2999/year
-**Free forever:**
-- Base DNA Report (score, persona, top patterns)
-- Live signal viewing (generate + view daily)
-- Paper trading (up to 5 trades)
-
-**Premium (₹499/month):**
-- Full DNA drill-down (click pattern → see exact trades)
-- Unlimited paper trading (30 trades for unlock)
-- Live trading unlock (after gate passes)
-- Weekly upload tracking (score trends)
-- "How to fix" personalized advice cards
-- Email alerts ("Your pattern repeated today")
-- Export PDF of full report
-- Compare month vs month
-
-### Phase 3: Enterprise
-- Custom pricing for prop firms
-- Team/group features
-- White-label DNA reports
+**Phase 1 (Current):** Free for first 100 DNA users
+**Phase 2 (After 100):** ₹499/month or ₹2999/year — DNA features only
+**Phase 3:** Enterprise (prop firms, team reports)
 
 ---
 
-## 7. COMPETITIVE POSITIONING
+## 8. COMPETITIVE POSITIONING (DNA Intelligence Only)
 
-| Feature | Options Tycoon | Sensibull | Opstra | TradingView |
-|---------|---------------|-----------|--------|-------------|
+| Feature | Options Tycoon (DNA) | Sensibull | Opstra | TradingView |
+|---------|---------------------|-----------|--------|-------------|
 | Behavioral DNA from CSV | ✅ | ❌ | ❌ | ❌ |
 | Quantified ₹ cost of bad behavior | ✅ | ❌ | ❌ | ❌ |
 | Fix One Thing recommendation | ✅ | ❌ | ❌ | ❌ |
-| AI signal generation (pattern match) | ✅ | ❌ | ❌ | ❌ |
-| 7-metric unlock gate to live | ✅ | ❌ | ❌ | ❌ |
-| Paper → Live progression | ✅ | ❌ | ❌ | ❌ |
 | Options chain + Greeks | ✅ | ✅ | ✅ | ✅ |
 | Strategy builder | ✅ | ✅ | ✅ | ❌ |
-| P&L tracking | ✅ | ✅ | ✅ | ✅ |
 | Indian broker integration | Zerodha | Zerodha | Zerodha | ❌ |
 
-**Unique moat:** Nobody else in India does behavioral DNA from real broker data + AI-powered signal engine with progressive live unlock.
+Live Signal Engine intentionally excluded — not a market-facing product.
 
 ---
 
-## 8. PRODUCTION STATUS
+## 9. PRODUCTION STATUS
 
-### Infrastructure
-
-| Component | Status | Details |
-|-----------|--------|---------|
-| Railway hosting | ✅ Live | Singapore region, auto-deploy from GitHub |
-| PostgreSQL | ✅ Live | Railway managed, persistent |
-| Cloudflare CDN | ✅ Live | options-tycoon.com |
-| GitHub CI/CD | ✅ Live | Push to main → auto-deploy |
-| Google OAuth | ✅ Live | Production credentials configured |
-| Kite Connect | ✅ Live | API key in Railway env vars |
-| Telegram Bot | ✅ Live | Signal notifications active |
-| Resend Email | ✅ Live | Transactional emails configured |
-
-### Security
-
-| Layer | Status |
-|-------|--------|
-| HTTPS/TLS | ✅ (Railway + Cloudflare) |
-| Rate limiting | ✅ (slowapi, per-IP) |
-| CORS restriction | ✅ (allowed origins configured) |
-| No stack traces in prod | ✅ (global error handler) |
-| CSV injection prevention | ✅ (formula stripping) |
-| Secrets in env vars only | ✅ (no hardcoded credentials) |
-
-### Known Gaps (P0 for scale)
+### Known Gaps (Prioritized)
 
 | # | Gap | Risk | Priority |
 |---|-----|------|----------|
-| 1 | HTTP-Only cookies (currently localStorage) | Session hijacking XSS | P1 |
-| 2 | DPDPA 2-checkbox consent | Legal compliance | P0 |
-| 3 | Razorpay integration | Revenue | P2 |
-| 4 | Automated DB backups | Data loss | P1 |
-| 5 | Mobile responsiveness | UX on phones | P1 |
-| 6 | Sentry error tracking | Blind to production errors | P2 |
+| 1 | Founder-only access control + HTTP-Only cookies | Unauthorized signal access; session forgery | **P0 — ship together** |
+| 2 | Automated DB backups | Data loss (already occurred once — 4 trades lost) | P0 |
+| 3 | DPDPA 2-checkbox consent | Legal compliance (DNA module) | P0 |
+| 4 | Remove dead endpoints (`/trade-log`, `/admin/all-trades`) | Unnecessary attack surface | P0 (trivial, bundle with #1) |
+| 5 | Mobile responsiveness | UX on phones (DNA module) | P1 |
+| 6 | Razorpay integration | Revenue (DNA only) | P2 |
+| 7 | Sentry error tracking | Blind to production errors | P2 |
 
 ---
 
-## 9. KEY METRICS (Tracking)
+## 10. KEY METRICS
+
+### Tier 1 — DNA Intelligence (growth targets)
 
 | Metric | Current | Target (100 users) |
 |--------|---------|---------------------|
 | Registered users | 1 | 100 |
 | Weekly active uploads | 1 | 30 |
-| Daily signal generations | ~1 | 50+ |
-| Paper trades executed | 4 (lost in migration) | 500+ |
-| Live unlock achieved | 0 | 5-10 users |
-| Revenue | ₹0 | ₹0 (Phase 1 free) |
 | Avg DNA Score improvement | N/A | +10 pts over 4 weeks |
 
----
+### Tier 2 — Live Signal Engine (founder performance, not growth)
 
-## 10. COST STRUCTURE (100 Users)
-
-| Item | Monthly Cost |
-|------|-------------|
-| Railway hosting (Hobby) | $5-15 |
-| Railway PostgreSQL | $0 (included) |
-| Cloudflare | Free |
-| Google Sign-In | Free |
-| GitHub | Free |
-| Resend email (100/day free) | Free |
-| Telegram Bot | Free |
-| Kite Connect API | ₹2000/month (when live trading) |
-| **Total** | **$5-15 (~₹400-1200/month)** |
+| Metric | Current | Notes |
+|--------|---------|-------|
+| Paper trades executed | 0 (reset after migration) | Progressing toward 30-trade gate |
+| Live unlock achieved | 0 | Founder's own progression |
+| Revenue | ₹0 | Not monetized |
 
 ---
 
@@ -353,40 +371,45 @@ Zerodha login enabled → Real trade execution via Kite API
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| SEBI advisory language violation | Legal notice/shutdown | Observational language only, no "should/buy/sell" anywhere |
-| User data breach | Reputation, legal | PostgreSQL encrypted at rest, no PII in signals, delete account available |
-| Signal engine generates bad trades | User trust loss | 7 quality filters, position sizing, 30-trade gate before live |
-| Railway downtime | Service unavailable | Signal saved to DB on generation, ephemeral filesystem accepted |
-| Kite API subscription cost | Margin erosion | Only activated post-gate (30 winning trades) — engaged users only |
-| yfinance rate limiting | Signal generation fails | Cached data fallback, clear error messages |
+| Live Signal Engine accessed by non-founder | SEBI RA/IA regulatory exposure | **Architectural:** founder-only access control (Section 4) + HTTP-Only cookies. Not just language. |
+| Allowlist bypassed via XSS/session forgery | Same as above | HTTP-Only cookies bundled with allowlist (same P0 deploy) |
+| DNA module data breach | DPDPA violation, reputation | PostgreSQL encrypted at rest, delete account, consent checkboxes |
+| Signal engine poor trade (founder's capital) | Personal financial loss | 7 filters, position sizing, 30-trade gate. Accepted as personal risk. |
+| DB data loss | History lost (already happened once) | Automated backups — P0 |
+| Railway downtime | Service unavailable | Signals persist in DB, ephemeral filesystem accepted |
 
 ---
 
 ## 12. ROADMAP (Next 90 Days)
 
-### July 2026 (Current Sprint)
-- [x] Signal History (PostgreSQL persistence)
-- [x] Iron Condor strategy builder
-- [x] Low-confidence signal generation (no more "No Edge" gaps)
-- [x] Live Signals nav link in dashboard
-- [x] Full live.html restoration (positions, EOD, Zerodha)
-- [ ] DPDPA consent checkboxes
-- [ ] Mobile responsive pass
+### July 2026 (Current Sprint — Build Order Matters)
 
-### August 2026
-- [ ] First 10 external beta users
-- [ ] Email weekly digest ("Your score changed")
+1. [ ] **Founder allowlist + HTTP-Only cookies** (Section 4) — build first, ship together
+2. [ ] **Remove dead endpoints** (`/trade-log`, `/admin/all-trades`) — bundle with #1
+3. [ ] **Verification checklist** (Section 4.7) passed
+4. [ ] **Automated DB backups** — already burned once
+5. [ ] **DPDPA consent checkboxes** (DNA module)
+6. [x] Signal History (PostgreSQL persistence)
+7. [x] Iron Condor strategy builder
+8. [x] Low-confidence signal generation
+9. [x] Full live.html restoration (positions, EOD, Zerodha)
+10. [ ] Mobile responsive pass (DNA module)
+11. [ ] **Legal consult:** "Does a founder-only, non-monetized signal tool require RA/IA registration if ever extended to a second user?"
+
+### August 2026 (DNA Module Only)
+
+- [ ] First 10 external beta users — DNA Intelligence only
+- [ ] Email weekly digest
 - [ ] PDF export of DNA report
-- [ ] Signal performance tracking (predicted vs actual)
 - [ ] Month-over-month comparison
 
-### September 2026
+### September 2026 (DNA Module Only)
+
 - [ ] 100 user milestone
 - [ ] Razorpay payment integration
 - [ ] Premium feature gating
-- [ ] First live trading user (gate unlock)
-- [ ] Broker API auto-import (Zerodha API instead of CSV)
+- [ ] Re-evaluate Live Signal Engine multi-user rollout **only if legal consult has produced a clear answer**
 
 ---
 
-*End of BRD. This document is for external validation and investor/reviewer consumption.*
+*End of BRD v3.0. Build order in Section 12 is sequential — Section 4 is a prerequisite for all other Module A work.*
