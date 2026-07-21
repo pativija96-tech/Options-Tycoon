@@ -95,7 +95,15 @@ def get_session_info() -> dict:
 
 
 def _load_config() -> dict:
-    """Load Kite credentials."""
+    """Load Kite credentials from env vars (Railway) or config file (local dev)."""
+    import os
+    # Prefer environment variables (production on Railway)
+    api_key = os.environ.get("KITE_API_KEY", "")
+    api_secret = os.environ.get("KITE_API_SECRET", "")
+    if api_key and api_secret and "YOUR_" not in api_key:
+        return {"api_key": api_key, "api_secret": api_secret}
+    
+    # Fallback to config file (local development)
     if not CONFIG_PATH.exists():
         return {}
     with open(CONFIG_PATH) as f:
