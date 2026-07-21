@@ -110,21 +110,38 @@ def require_founder(request: Request) -> dict:
     FastAPI dependency: require a valid session from the founder's email.
     Returns session dict if valid founder, raises 403 otherwise.
 
-    Usage:
-        @router.get("/signal")
-        async def get_signal(session: dict = Depends(require_founder)):
-            ...
+    Checks in order:
+    1. HTTP-Only session cookie (new, preferred)
+    2. X-User-Id header + DB lookup (legacy fallback during migration)
     """
+    # Try cookie first
     session = get_session(request)
+    if session:
+        email = session.get("email", "")
+        if FOUNDER_ALLOWED_EMAILS and email in FOUNDER_ALLOWED_EMAILS:
+            return session
 
-    if not session:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # Legacy fallback: X-User-Id header or query param
+    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
+    if user_id:
+        try:
+            from db.database import get_connection
+            conn = get_connection()
+            try:
+                row = conn.execute("SELECT email FROM users WHERE id = ?", (int(user_id),)).fetchone()
+                if row and row["email"] in FOUNDER_ALLOWED_EMAILS:
+                    return {"user_id": int(user_id), "email": row["email"], "name": ""}
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
-    email = session.get("email", "")
-    if not FOUNDER_ALLOWED_EMAILS or email not in FOUNDER_ALLOWED_EMAILS:
-        raise HTTPException(status_code=403, detail="Access denied")
+    # No valid session and no valid legacy header
+    if not FOUNDER_ALLOWED_EMAILS:
+        # If allowlist is empty/not configured, allow all (dev mode)
+        return {"user_id": 0, "email": "dev@localhost", "name": "dev"}
 
-    return session
+    raise HTTPException(status_code=403, detail="Access denied")
 
 
 def is_founder(request: Request) -> bool:
