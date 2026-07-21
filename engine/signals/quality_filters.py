@@ -57,11 +57,10 @@ def run_all_filters(global_data: dict, pattern_result: dict, trade_card: dict) -
     
     # Calculate overall score and normalize pass values to boolean
     for v in results.values():
-        # Fix any string "True"/"False" values to proper booleans
-        if isinstance(v["pass"], str):
-            v["pass"] = v["pass"].lower() == "true"
+        # Fix any string "True"/"False" or numpy bool values to proper Python booleans
+        v["pass"] = bool(v["pass"]) if v["pass"] != "False" else False
     
-    passed = sum(1 for v in results.values() if v["pass"])
+    passed = sum(1 for v in results.values() if v["pass"] is True)
     total = len(results)
     
     # Analyze WHY filters failed — determine if it's "unclear" or "clearly risky"
