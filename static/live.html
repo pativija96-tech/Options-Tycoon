@@ -274,7 +274,9 @@ window.trailSL=function(tradeId){
 
 window.runEOD=function(){
   if(!confirm('Run End-of-Day resolution? This will resolve all open trades based on today NIFTY close.'))return;
-  fetch('/api/live/run-eod',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+  var user=JSON.parse(localStorage.getItem('ot_user')||'null');
+  var userId=user?user.user_id||user.id||'0':'0';
+  fetch('/api/live/run-eod',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
     if(d.success) alert('EOD complete. Resolved '+d.resolved+' trades. Refresh to see updated stats.');
     else alert('EOD failed: '+(d.error||'Unknown'));
   }).catch(function(e){alert('Error: '+e);});
@@ -282,8 +284,10 @@ window.runEOD=function(){
 
 window.generateSignal=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>Generating signal...</p><p style="font-size:.75rem;color:var(--muted)">Fetching global data + running pattern match (15-30s)</p></div>';
-  fetch('/api/live/generate-signal',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
-    if(d.success) fetch('/api/live/signal').then(function(r){return r.json();}).then(render);
+  var user=JSON.parse(localStorage.getItem('ot_user')||'null');
+  var userId=user?user.user_id||user.id||'0':'0';
+  fetch('/api/live/generate-signal',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+    if(d.success) fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(render);
     else document.getElementById('content').innerHTML='<div class="no-signal"><p>Failed: '+(d.error||'Unknown')+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
   }).catch(function(e){
     document.getElementById('content').innerHTML='<div class="no-signal"><p>Error: '+e+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
@@ -315,8 +319,11 @@ window.passTrade=function(){
 };
 
 // Load
-fetch('/api/live/signal').then(function(r){
+var user=JSON.parse(localStorage.getItem('ot_user')||'null');
+var userId=user?user.user_id||user.id||'0':'0';
+fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
   if(r.status===404) return null;
+  if(r.status===403) return null;
   return r.json();
 }).then(function(d){
   if(d) render(d);
@@ -377,7 +384,7 @@ fetch('/api/live/gate-status?user_id='+userId).then(function(r){return r.json();
 }).catch(function(){});
 
 // Capital info
-fetch('/api/live/settings').then(function(r){return r.json();}).then(function(s){
+fetch('/api/live/settings',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(s){
   var cap=s.capital||0;
   var riskPct=s.risk_per_trade||0.02;
   var maxRisk=cap*riskPct;
