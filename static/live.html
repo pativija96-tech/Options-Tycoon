@@ -79,11 +79,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 <body>
 <div class="container">
   <div class="header">
-    <a href="/static/dashboard.html" style="text-decoration:none;color:var(--muted);font-size:.8rem;display:flex;align-items:center;gap:4px">← Dashboard</a>
-    <div class="logo">Options<span>Tycoon</span></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <a href="/static/dashboard.html" style="text-decoration:none;font-size:.7rem;padding:5px 12px;border-radius:6px;border:1px solid var(--border);color:var(--muted)">← Home</a>
+      <div class="logo">Options<span>Tycoon</span></div>
+    </div>
     <div class="time" id="timeDisplay"></div>
   </div>
   <div id="content"><div class="no-signal"><p>Loading...</p></div></div>
+  <div id="positionsPanel" style="margin-top:16px"></div>
   <div class="track-record" id="trackRecord" style="margin-top:16px">
     <div class="stat">Capital: <span class="val" id="trCapital">--</span></div>
     <div class="stat">Risk/Trade: <span class="val" id="trRiskTrade">--</span></div>
@@ -159,7 +162,7 @@ function render(card){
   // Main card
   html+='<div class="main-card">';
   html+='<div class="play-label">TODAY\'S PLAY</div>';
-  html+='<div class="play-regime">'+esc(card.direction||'').toUpperCase()+' — '+(card.direction==='bullish'?'Bounce expected':'Downside expected')+'</div>';
+  html+='<div class="play-regime">'+esc(card.direction||'').toUpperCase()+' — '+(card.direction==='bullish'?'Bounce expected':card.direction==='bearish'?'Downside expected':'Range-bound expected')+'</div>';
   html+='<div class="play-strategy">'+(t.type||'').replace(/_/g,' ').toUpperCase()+'</div>';
 
   // Conviction bar
@@ -193,7 +196,15 @@ function render(card){
   // Legs
   var legs=t.legs||[];
   if(legs.length>0){
+    var expiryDate=t.expiry_date||'';
+    var expiryNext=t.expiry_next_week||'';
     html+='<div class="legs">';
+    if(expiryDate){
+      html+='<div style="font-size:.7rem;color:var(--muted);margin-bottom:6px">';
+      html+='Nearest: <span style="color:var(--green);font-weight:600">'+esc(expiryDate)+'</span>';
+      if(expiryNext) html+=' | Next: <span style="color:var(--blue)">'+esc(expiryNext)+'</span>';
+      html+='</div>';
+    }
     for(var i=0;i<legs.length;i++){
       var leg=legs[i];
       var aCls=leg.action==='BUY'?'buy':'sell';
@@ -204,10 +215,14 @@ function render(card){
 
   // Metrics
   html+='<div class="metrics">';
-  html+='<div class="metric"><div class="label">Risk</div><div class="value red">Rs.'+(t.max_loss||0)+'</div></div>';
-  html+='<div class="metric"><div class="label">Reward</div><div class="value green">Rs.'+(t.max_profit||0)+'</div></div>';
+  html+='<div class="metric"><div class="label">Risk (incl charges)</div><div class="value red">Rs.'+(t.net_max_loss||t.max_loss||0)+'</div></div>';
+  html+='<div class="metric"><div class="label">Reward (net)</div><div class="value green">Rs.'+(t.net_max_profit||t.max_profit||0)+'</div></div>';
   html+='<div class="metric"><div class="label">R:R</div><div class="value">'+(t.risk_reward||0)+':1</div></div>';
   html+='</div>';
+  // Charges line
+  var charges=t.charges||{};
+  if(charges.total) html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: Rs.'+charges.total+' (Brokerage Rs.'+charges.brokerage+' + GST + STT + Exchange)</div>';
+  html+='<div style="font-size:.65rem;color:var(--yellow);text-align:center;margin-top:6px;opacity:.7">Premiums are Black-Scholes estimates. Actual prices will differ. Connect Zerodha for live prices.</div>';
 
   // Why
   html+='<div class="why">'+esc(card.reasoning||'')+'</div>';
@@ -218,6 +233,7 @@ function render(card){
   html+='<button class="btn btn-execute" onclick="executeTrade()">EXECUTE</button>';
   html+='<button class="btn btn-pass" onclick="passTrade()">PASS</button>';
   html+='</div>';
+  html+='<div style="text-align:center;margin-top:10px"><button onclick="generateSignal()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Regenerate Signal</button> | <button onclick="runEOD()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Run EOD Report</button></div>';
   html+='</div>';
 
   // Stock signals
@@ -239,6 +255,31 @@ function render(card){
   document.getElementById('content').innerHTML=html;
 }
 
+window.exitTrade=function(tradeId,pnl){
+  if(!confirm('Exit trade #'+tradeId+' at estimated P&L Rs.'+pnl+'?'))return;
+  fetch('/api/live/exit-trade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trade_id:tradeId,pnl:pnl||0})}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){alert('Trade #'+tradeId+' closed. P&L: Rs.'+d.pnl);location.reload();}
+    else alert('Error: '+(d.error||'Unknown'));
+  });
+};
+
+window.trailSL=function(tradeId){
+  var newSL=prompt('Enter new SL amount (Rs.0 = breakeven):','0');
+  if(newSL===null)return;
+  fetch('/api/live/trail-sl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trade_id:tradeId,new_sl:parseFloat(newSL)||0})}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){alert('SL updated for trade #'+tradeId);location.reload();}
+    else alert('Error: '+(d.error||'Unknown'));
+  });
+};
+
+window.runEOD=function(){
+  if(!confirm('Run End-of-Day resolution? This will resolve all open trades based on today NIFTY close.'))return;
+  fetch('/api/live/run-eod',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if(d.success) alert('EOD complete. Resolved '+d.resolved+' trades. Refresh to see updated stats.');
+    else alert('EOD failed: '+(d.error||'Unknown'));
+  }).catch(function(e){alert('Error: '+e);});
+};
+
 window.generateSignal=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>Generating signal...</p><p style="font-size:.75rem;color:var(--muted)">Fetching global data + running pattern match (15-30s)</p></div>';
   fetch('/api/live/generate-signal',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
@@ -250,14 +291,22 @@ window.generateSignal=function(){
 };
 
 window.loginKite=function(){
-  alert('Kite Connect not activated yet. Once subscribed, this will redirect to Zerodha login for live trading.');
+  window.location.href='/api/live/kite-login';
 };
 
 window.executeTrade=function(){
   if(!confirm('Paper Execute this trade?'))return;
-  fetch('/api/live/paper-execute',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
-    if(d.success) alert('Trade logged. Check EOD for results.');
-    else alert('Error: '+(d.error||'Unknown'));
+  var user=JSON.parse(localStorage.getItem('ot_user')||'null');
+  var userId=user?user.user_id||user.id||'0':'0';
+  fetch('/api/live/paper-execute',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){
+      alert('Trade logged for your account.');
+      // Disable execute button to prevent double-click
+      var btn=document.querySelector('.btn-execute');
+      if(btn){btn.disabled=true;btn.textContent='EXECUTED';btn.style.opacity='0.4';}
+    } else {
+      alert(d.error||'Unknown error');
+    }
   });
 };
 
@@ -276,18 +325,26 @@ fetch('/api/live/signal').then(function(r){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
 });
 
-// Track record
-fetch('/api/live/gate-status').then(function(r){return r.json();}).then(function(g){
-  var md=g.metrics_detail||{};
-  var total=g.total_trades||0;
+// Track record (per-user)
+var user=JSON.parse(localStorage.getItem('ot_user')||'null');
+var userId=user?user.user_id||user.id||'0':'0';
+fetch('/api/live/my-trades?user_id='+userId).then(function(r){return r.json();}).then(function(d){
+  var total=d.total||0;
+  var wins=d.wins||0;
   var remaining=Math.max(0,30-total);
+  var winRate=total>0?Math.round(wins/total*100)+'%':'--';
   document.getElementById('trTotal').textContent=total;
-  document.getElementById('trWinRate').textContent=md.win_rate||'--';
-  document.getElementById('trPnl').textContent=md.expectancy||'--';
+  document.getElementById('trWinRate').textContent=winRate;
   document.getElementById('trRemaining').textContent=remaining>0?remaining+' more':'READY';
   document.getElementById('trRemaining').style.color=remaining>0?'var(--yellow)':'var(--green)';
-  var gatesPassed=0;
+}).catch(function(){});
+
+// Gate status (per-user from DB)
+fetch('/api/live/gate-status?user_id='+userId).then(function(r){return r.json();}).then(function(g){
+  var md=g.metrics_detail||{};
   var metrics=g.metrics||{};
+  document.getElementById('trPnl').textContent=md.expectancy||'--';
+  var gatesPassed=0;
   for(var k in metrics){if(metrics[k])gatesPassed++;}
   document.getElementById('trGates').textContent=gatesPassed+'/7';
   document.getElementById('trGates').style.color=gatesPassed>=7?'var(--green)':gatesPassed>=5?'var(--yellow)':'var(--red)';
@@ -327,6 +384,36 @@ fetch('/api/live/settings').then(function(r){return r.json();}).then(function(s)
   document.getElementById('trCapital').textContent='Rs.'+cap.toLocaleString();
   document.getElementById('trRiskTrade').textContent='Rs.'+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
   document.getElementById('trDailyRisk').textContent='Rs.0 / Rs.'+(cap*(s.risk_per_day||0.05)).toLocaleString();
+}).catch(function(){});
+
+// Open Positions
+fetch('/api/live/open-positions?user_id='+userId).then(function(r){return r.json();}).then(function(d){
+  var positions=d.positions||[];
+  if(positions.length===0){document.getElementById('positionsPanel').innerHTML='';return;}
+  var html='<div style="padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
+  html+='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">OPEN POSITIONS ('+positions.length+')</div>';
+  for(var i=0;i<positions.length;i++){
+    var p=positions[i];
+    var pnlColor=p.current_pnl>0?'var(--green)':p.current_pnl<0?'var(--red)':'var(--muted)';
+    var sugColor=p.suggestion_type==='exit'?'var(--green)':p.suggestion_type==='trail'?'var(--yellow)':p.suggestion_type==='exit_loss'?'var(--red)':'var(--muted)';
+    html+='<div style="padding:10px;margin:6px 0;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid var(--border)">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center">';
+    html+='<span style="font-weight:600;font-size:.85rem">#'+p.id+' '+(p.strategy||'').replace(/_/g,' ').toUpperCase()+'</span>';
+    html+='<span style="font-family:var(--mono);font-weight:700;color:'+pnlColor+'">P&L: Rs.'+(p.current_pnl||'--')+'</span>';
+    html+='</div>';
+    html+='<div style="font-size:.72rem;color:'+sugColor+';margin:6px 0;font-weight:600">'+esc(p.suggestion)+'</div>';
+    html+='<div style="display:flex;gap:6px;margin-top:6px">';
+    if(p.suggestion_type==='exit'||p.suggestion_type==='exit_loss'){
+      html+='<button onclick="exitTrade('+p.id+','+p.current_pnl+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--green);background:rgba(16,185,129,.1);color:var(--green);cursor:pointer">Exit Now</button>';
+    }
+    if(p.suggestion_type==='trail'||p.current_pnl>0){
+      html+='<button onclick="trailSL('+p.id+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--yellow);background:rgba(234,179,8,.1);color:var(--yellow);cursor:pointer">Trail SL</button>';
+    }
+    html+='<button onclick="exitTrade('+p.id+','+p.current_pnl+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--muted);background:transparent;color:var(--muted);cursor:pointer">Close</button>';
+    html+='</div></div>';
+  }
+  html+='</div>';
+  document.getElementById('positionsPanel').innerHTML=html;
 }).catch(function(){});
 
 })();
