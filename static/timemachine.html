@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Time Machine</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        .page-layout {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            background: var(--bg-primary);
+        }
+        .page-content {
+            padding: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+            overflow-y: auto;
+        }
+        .page-header {
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+        }
+        .tm-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .tm-section h3 {
+            margin-bottom: 14px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+        }
+        .tm-select-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .tm-select-row select {
+            flex: 1;
+            min-width: 200px;
+            max-width: 350px;
+        }
+        /* Progress Bar */
+        .tm-progress {
+            margin-top: 16px;
+        }
+        .tm-progress-bar {
+            height: 10px;
+            background: var(--bg-input);
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        .tm-progress-fill {
+            height: 100%;
+            background: var(--blue);
+            border-radius: 5px;
+            transition: width 0.3s ease;
+        }
+        .tm-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+        }
+        /* Speed Controls */
+        .tm-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+        .tm-controls .btn {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+        .tm-controls .btn.active {
+            background: var(--blue);
+            color: #fff;
+            border-color: var(--blue);
+        }
+        .tm-speed-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        /* Session Info */
+        .tm-session-info {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            font-size: 13px;
+            color: var(--text-secondary);
+            padding: 12px 16px;
+            background: var(--bg-input);
+            border-radius: var(--radius);
+            margin-bottom: 16px;
+        }
+        .tm-session-info strong {
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+        }
+        /* Chain Table */
+        .tm-chain-wrap {
+            overflow-x: auto;
+            margin-top: 16px;
+        }
+        .tm-chain-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .tm-chain-table th {
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            padding: 10px 12px;
+            text-align: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .tm-chain-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid rgba(45, 55, 72, 0.4);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            text-align: center;
+        }
+        .tm-chain-table .strike-col {
+            background: rgba(41, 121, 255, 0.05);
+            font-weight: 700;
+            color: var(--blue);
+        }
+        .tm-chain-table .call-side { color: var(--green); }
+        .tm-chain-table .put-side { color: var(--red); }
+        .hidden { display: none; }
+        .tm-current-date {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            color: var(--text-primary);
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-layout">
+
+    <!-- Navigation -->
+    <nav class="app-nav">
+        <a href="/static/index.html" class="nav-link">Trading</a>
+        <a href="/static/behavioral.html" class="nav-link">Behavioral</a>
+        <a href="/static/history.html" class="nav-link">History</a>
+        <a href="/static/compare.html" class="nav-link">Compare</a>
+        <a href="/static/timemachine.html" class="nav-link active">Time Machine</a>
+        <a href="/static/upload.html" class="nav-link">Upload</a>
+        <a href="/static/report.html" class="nav-link">Report</a>
+        <a href="/static/profile.html" class="nav-link">Profile</a>
+    </nav>
+
+    <!-- Content -->
+    <div class="page-content">
+        <h1 class="page-header">Time Machine — Historical Replay</h1>
+
+        <!-- Selection Section -->
+        <div class="tm-section" id="tm-setup">
+            <h3>Select a Historical Window</h3>
+            <div class="tm-select-row">
+                <select id="tm-scenario-select">
+                    <option value="">Loading scenarios...</option>
+                </select>
+                <button class="btn btn-primary" id="btn-begin-replay" onclick="beginReplay()">Begin Replay</button>
+            </div>
+            <p style="font-size: 12px; color: var(--text-secondary); margin-top: 10px;">
+                Choose a ticker and date range to replay historical market data day by day.
+            </p>
+        </div>
+
+        <!-- Active Session -->
+        <div class="tm-section hidden" id="tm-active-session">
+            <h3>Active Session</h3>
+
+            <!-- Session Info -->
+            <div class="tm-session-info" id="tm-session-info">
+                <span>Session: <strong id="tm-ticker">—</strong></span>
+                <span>Day <strong id="tm-current-day">0</strong> of <strong id="tm-total-days">0</strong></span>
+                <span><strong id="tm-percent">0%</strong> complete</span>
+            </div>
+
+            <!-- Current Date -->
+            <div style="margin-bottom: 12px;">
+                <span class="tm-current-date" id="tm-date-display">—</span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="tm-progress">
+                <div class="tm-progress-bar">
+                    <div class="tm-progress-fill" id="tm-progress-fill" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Speed Controls -->
+            <div class="tm-controls">
+                <span class="tm-speed-label">Speed:</span>
+                <button class="btn btn-secondary" id="btn-auto" onclick="setAutoMode()">Auto 1d/10s</button>
+                <button class="btn btn-secondary active" id="btn-manual" onclick="setManualMode()">Manual Step</button>
+                <button class="btn btn-primary" id="btn-advance" onclick="advanceDay()">Advance Day →</button>
+                <button class="btn btn-cancel" onclick="endSession()">End Session</button>
+            </div>
+        </div>
+
+        <!-- Options Chain for Current Day -->
+        <div class="tm-section hidden" id="tm-chain-section">
+            <h3>Options Chain — <span id="tm-chain-date">—</span></h3>
+            <div class="tm-chain-wrap">
+                <table class="tm-chain-table">
+                    <thead>
+                        <tr>
+                            <th>Call Bid/Ask</th>
+                            <th>Call Δ</th>
+                            <th>Call θ</th>
+                            <th>Strike</th>
+                            <th>Put Bid/Ask</th>
+                            <th>Put Δ</th>
+                            <th>Put θ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tm-chain-tbody">
+                        <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Start a replay to see the chain</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <span class="disclaimer-text">⚠️ 100% Simulated Paper-Trading. No Real Money. No Financial Advice.</span>
+    </footer>
+</div>
+
+<script src="/static/js/app.js"></script>
+<script>
+    let sessionActive = false;
+    let autoInterval = null;
+    let currentSession = null;
+
+    async function initPage() {
+        const savedId = localStorage.getItem('ot_profile_id');
+        if (!savedId) {
+            await loadProfile();
+        } else {
+            APP_STATE.profileId = savedId;
+        }
+
+        if (!APP_STATE.profileId) return;
+
+        await loadScenarios();
+    }
+
+    async function loadScenarios() {
+        const select = document.getElementById('tm-scenario-select');
+        try {
+            const data = await api.get('timemachine/scenarios');
+            const scenarios = data.scenarios || data || [];
+
+            if (scenarios.length === 0) {
+                select.innerHTML = '<option value="">No scenarios available</option>';
+                return;
+            }
+
+            select.innerHTML = '<option value="">— Select a scenario —</option>' +
+                scenarios.map(s => `<option value="${s.id || s.ticker}">${s.ticker || s.name} | ${s.start_date} → ${s.end_date} (${s.days || '?'} days)</option>`).join('');
+        } catch (e) {
+            console.error('Failed to load scenarios:', e.message);
+            select.innerHTML = '<option value="">Failed to load scenarios</option>';
+        }
+    }
+
+    async function beginReplay() {
+        const select = document.getElementById('tm-scenario-select');
+        const scenarioId = select.value;
+        if (!scenarioId) {
+            alert('Please select a scenario first.');
+            return;
+        }
+
+        const btn = document.getElementById('btn-begin-replay');
+        btn.disabled = true;
+
+        try {
+            const result = await api.post('timemachine/start', {
+                profile_id: APP_STATE.profileId,
+                scenario_id: scenarioId,
+            });
+
+            currentSession = result;
+            sessionActive = true;
+            showActiveSession();
+            updateSessionDisplay();
+            loadDayChain();
+        } catch (e) {
+            alert('Failed to start replay: ' + e.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function showActiveSession() {
+        document.getElementById('tm-setup').classList.add('hidden');
+        document.getElementById('tm-active-session').classList.remove('hidden');
+        document.getElementById('tm-chain-section').classList.remove('hidden');
+    }
+
+    function hideActiveSession() {
+        document.getElementById('tm-setup').classList.remove('hidden');
+        document.getElementById('tm-active-session').classList.add('hidden');
+        document.getElementById('tm-chain-section').classList.add('hidden');
+    }
+
+    function updateSessionDisplay() {
+        if (!currentSession) return;
+
+        const currentDay = currentSession.current_day || 1;
+        const totalDays = currentSession.total_days || 1;
+        const pct = Math.round((currentDay / totalDays) * 100);
+
+        document.getElementById('tm-ticker').textContent = currentSession.ticker || '—';
+        document.getElementById('tm-current-day').textContent = currentDay;
+        document.getElementById('tm-total-days').textContent = totalDays;
+        document.getElementById('tm-percent').textContent = pct + '%';
+        document.getElementById('tm-progress-fill').style.width = pct + '%';
+        document.getElementById('tm-date-display').textContent = currentSession.current_date || '—';
+        document.getElementById('tm-chain-date').textContent = currentSession.current_date || '—';
+    }
+
+    async function advanceDay() {
+        if (!sessionActive || !currentSession) return;
+
+        try {
+            const result = await api.post('timemachine/advance', {
+                profile_id: APP_STATE.profileId,
+                session_id: currentSession.session_id || currentSession.id,
+            });
+
+            currentSession = result;
+
+            if (result.completed || result.current_day > result.total_days) {
+                sessionActive = false;
+                stopAutoMode();
+                alert('Replay complete! All days have been processed.');
+                hideActiveSession();
+                return;
+            }
+
+            updateSessionDisplay();
+            loadDayChain();
+        } catch (e) {
+            console.error('Failed to advance day:', e.message);
+            alert('Error advancing: ' + e.message);
+        }
+    }
+
+    async function loadDayChain() {
+        if (!currentSession) return;
+
+        const tbody = document.getElementById('tm-chain-tbody');
+
+        try {
+            const data = await api.get(`timemachine/chain?session_id=${currentSession.session_id || currentSession.id}`);
+            const chain = data.chain || [];
+
+            if (chain.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No chain data for this day</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = chain.map(row => `
+                <tr>
+                    <td class="call-side">${row.call_bid.toFixed(2)} / ${row.call_ask.toFixed(2)}</td>
+                    <td class="call-side">${formatNumber(row.call_delta, 3)}</td>
+                    <td class="call-side">${formatNumber(row.call_theta, 3)}</td>
+                    <td class="strike-col">${row.strike.toFixed(1)}</td>
+                    <td class="put-side">${row.put_bid.toFixed(2)} / ${row.put_ask.toFixed(2)}</td>
+                    <td class="put-side">${formatNumber(row.put_delta, 3)}</td>
+                    <td class="put-side">${formatNumber(row.put_theta, 3)}</td>
+                </tr>
+            `).join('');
+        } catch (e) {
+            console.error('Failed to load chain:', e.message);
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Failed to load chain data</td></tr>';
+        }
+    }
+
+    function setAutoMode() {
+        document.getElementById('btn-auto').classList.add('active');
+        document.getElementById('btn-manual').classList.remove('active');
+        document.getElementById('btn-advance').classList.add('hidden');
+
+        stopAutoMode();
+        autoInterval = setInterval(() => {
+            if (sessionActive) {
+                advanceDay();
+            } else {
+                stopAutoMode();
+            }
+        }, 10000); // 1 day per 10 seconds
+    }
+
+    function setManualMode() {
+        document.getElementById('btn-manual').classList.add('active');
+        document.getElementById('btn-auto').classList.remove('active');
+        document.getElementById('btn-advance').classList.remove('hidden');
+        stopAutoMode();
+    }
+
+    function stopAutoMode() {
+        if (autoInterval) {
+            clearInterval(autoInterval);
+            autoInterval = null;
+        }
+    }
+
+    async function endSession() {
+        if (!confirm('End current replay session?')) return;
+
+        sessionActive = false;
+        stopAutoMode();
+        currentSession = null;
+        hideActiveSession();
+
+        // Optionally notify server
+        try {
+            await api.post('timemachine/end', { profile_id: APP_STATE.profileId });
+        } catch (e) {
+            console.debug('End session notification failed:', e.message);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', initPage);
+</script>
+
+</body>
+</html>

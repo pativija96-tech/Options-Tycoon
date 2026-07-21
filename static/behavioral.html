@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Redirecting...</title>
+    <script>
+        // Redirect to dashboard (behavioral metrics are now in the DNA report)
+        const user = localStorage.getItem('ot_user');
+        if (user) {
+            window.location.href = '/static/dashboard.html';
+        } else {
+            window.location.href = '/static/landing.html';
+        }
+    </script>
+</head>
+<body><p>Redirecting...</p></body>
+</html>

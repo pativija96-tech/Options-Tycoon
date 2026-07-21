@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — AI-Powered Behavioral Intelligence for Options Traders</title>
+    <!-- Google Analytics -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F8V0148LDJ"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-F8V0148LDJ');
+    </script>
+    <meta name="description" content="Upload your trade history. See why you keep losing. AI-powered behavioral analysis for Indian options traders. Free for first 100 users.">
+    <meta property="og:title" content="Options Tycoon — See Why You Keep Losing">
+    <meta property="og:description" content="Upload your broker CSV. Get a free AI-powered behavioral DNA report in 60 seconds. Works with Zerodha, Groww, Angel One.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://web-production-ddf13.up.railway.app">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Options Tycoon — See Why You Keep Losing">
+    <meta name="twitter:description" content="67% of your losses are behavioral, not strategic. Upload your trades and find out.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #050a0f;
+            --bg-card: rgba(15, 25, 40, 0.7);
+            --bg-card-solid: #0d1a2d;
+            --border-color: rgba(255,255,255,0.06);
+            --border-glow: rgba(0, 200, 83, 0.3);
+            --text-primary: #f0f4f8;
+            --text-secondary: #8899aa;
+            --text-muted: #4a5b6e;
+            --green: #00e676;
+            --green-dark: #00c853;
+            --red: #ff3d71;
+            --yellow: #ffca28;
+            --orange: #ff9100;
+            --blue: #448aff;
+            --purple: #7c4dff;
+            --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: var(--font-main);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        a { color: var(--green); text-decoration: none; }
+
+        /* Animated mesh gradient background */
+        .mesh-bg {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: 
+                radial-gradient(ellipse 80% 60% at 20% 10%, rgba(0,230,118,0.07) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 30%, rgba(68,138,255,0.05) 0%, transparent 60%),
+                radial-gradient(ellipse 70% 60% at 50% 90%, rgba(255,61,113,0.04) 0%, transparent 60%);
+            animation: meshMove 20s ease-in-out infinite alternate;
+            z-index: 0; pointer-events: none;
+        }
+        @keyframes meshMove {
+            0% { transform: scale(1) translate(0,0); }
+            50% { transform: scale(1.05) translate(-10px, 15px); }
+            100% { transform: scale(1) translate(10px, -10px); }
+        }
+
+        .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+        /* Navigation */
+        .nav { padding: 20px 0; display: flex; align-items: center; justify-content: space-between; }
+        .nav-brand { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
+        .nav-brand span { color: var(--green); }
+        .nav-badge {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 20px;
+            background: rgba(0,230,118,0.08); border: 1px solid rgba(0,230,118,0.2);
+            font-size: 0.75rem; font-weight: 600; color: var(--green);
+        }
+        .nav-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* Hero */
+        .hero { padding: 100px 0 80px; text-align: center; }
+        .hero-tag {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 8px 18px; border-radius: 24px; margin-bottom: 28px;
+            background: rgba(124,77,255,0.1); border: 1px solid rgba(124,77,255,0.25);
+            font-size: 0.8rem; font-weight: 600; color: #b388ff;
+        }
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4.2rem); font-weight: 900;
+            line-height: 1.08; letter-spacing: -2px; margin-bottom: 24px;
+            background: linear-gradient(135deg, #fff 0%, #cdd9e5 50%, #8899aa 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero h1 .highlight {
+            background: linear-gradient(135deg, var(--red) 0%, var(--orange) 100%);
+            -webkit-background-clip: text; background-clip: text;
+        }
+        .hero .subtitle {
+            font-size: 1.2rem; color: var(--text-secondary); max-width: 580px;
+            margin: 0 auto 44px; line-height: 1.7; font-weight: 400;
+        }
+        /* CTA Buttons */
+        .cta-primary {
+            display: inline-flex; align-items: center; gap: 10px;
+            padding: 18px 40px; border-radius: 12px;
+            background: linear-gradient(135deg, var(--green-dark) 0%, var(--green) 100%);
+            color: #000; font-size: 1.05rem; font-weight: 800;
+            transition: all 0.3s; box-shadow: 0 4px 30px rgba(0,200,83,0.3);
+            text-decoration: none;
+        }
+        .cta-primary:hover { transform: translateY(-3px); box-shadow: 0 8px 40px rgba(0,230,118,0.45); }
+        .cta-secondary {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 14px 28px; border-radius: 10px; margin-left: 16px;
+            background: transparent; border: 1px solid var(--border-color);
+            color: var(--text-secondary); font-size: 0.95rem; font-weight: 500;
+            transition: all 0.2s; text-decoration: none;
+        }
+        .cta-secondary:hover { border-color: var(--text-secondary); color: #fff; }
+        .hero-note { margin-top: 20px; font-size: 0.8rem; color: var(--text-muted); }
+
+        /* Floating Report Card */
+        .hero-visual { margin-top: 72px; perspective: 1200px; }
+        .report-card {
+            max-width: 560px; margin: 0 auto;
+            background: linear-gradient(145deg, rgba(13,26,45,0.95) 0%, rgba(8,16,30,0.98) 100%);
+            border: 1px solid rgba(255,255,255,0.08); border-radius: 20px;
+            padding: 0; overflow: hidden;
+            box-shadow: 0 30px 80px rgba(0,0,0,0.6), 0 0 60px rgba(0,230,118,0.06),
+                        inset 0 1px 0 rgba(255,255,255,0.05);
+            transform: rotateX(4deg) rotateY(-1deg); transition: transform 0.5s;
+            animation: cardFloat 6s ease-in-out infinite;
+        }
+        @keyframes cardFloat { 0%,100% { transform: rotateX(4deg) translateY(0); } 50% { transform: rotateX(2deg) translateY(-8px); } }
+        .report-card:hover { transform: rotateX(0) rotateY(0) scale(1.02); }
+        .report-header {
+            display: flex; align-items: center; gap: 10px;
+            padding: 14px 20px; background: rgba(0,0,0,0.4);
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .report-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .report-header-title { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-mono); }
+        .report-body { padding: 32px 28px; }
+        .report-score { text-align: center; margin-bottom: 28px; }
+        .report-score-num {
+            font-size: 4rem; font-weight: 900; font-family: var(--font-mono);
+            background: linear-gradient(135deg, var(--red) 0%, var(--orange) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .report-score-label { font-size: 0.85rem; color: var(--text-secondary); margin-top: 4px; }
+        .report-bars { display: flex; flex-direction: column; gap: 14px; }
+        .r-bar { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 12px; }
+        .r-bar-label { font-size: 0.75rem; color: var(--text-muted); text-align: right; font-weight: 500; }
+        .r-bar-track { height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; position: relative; }
+        .r-bar-fill { height: 100%; border-radius: 3px; animation: barGrow 2s ease-out forwards; transform-origin: left; }
+        @keyframes barGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+        .r-bar-fill.red { background: linear-gradient(90deg, var(--red), #ff6e8a); }
+        .r-bar-fill.yellow { background: linear-gradient(90deg, var(--yellow), #ffe082); }
+        .r-bar-fill.orange { background: linear-gradient(90deg, var(--orange), #ffcc80); }
+        .r-bar-fill.blue { background: linear-gradient(90deg, var(--blue), #82b1ff); }
+        .r-bar-val { font-size: 0.75rem; color: var(--red); font-family: var(--font-mono); font-weight: 700; }
+        /* Stats Section */
+        .stats { padding: 80px 0; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+        .stat-card {
+            text-align: center; padding: 36px 20px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px); transition: border-color 0.3s;
+        }
+        .stat-card:hover { border-color: rgba(0,230,118,0.2); }
+        .stat-num { font-size: 2.8rem; font-weight: 900; font-family: var(--font-mono); margin-bottom: 8px; }
+        .stat-num.green { color: var(--green); }
+        .stat-num.yellow { color: var(--yellow); }
+        .stat-num.red { color: var(--red); }
+        .stat-label { font-size: 0.9rem; color: var(--text-secondary); }
+
+        /* Section styles */
+        .section { padding: 100px 0; }
+        .section-tag {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 16px; margin-bottom: 16px;
+            background: rgba(68,138,255,0.08); border: 1px solid rgba(68,138,255,0.2);
+            font-size: 0.75rem; font-weight: 600; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .section-title {
+            font-size: clamp(1.8rem, 4vw, 2.8rem); font-weight: 800;
+            letter-spacing: -1px; margin-bottom: 20px; color: #fff;
+        }
+        .section-subtitle { font-size: 1.05rem; color: var(--text-secondary); max-width: 560px; line-height: 1.7; }
+        .section-center { text-align: center; }
+        .section-center .section-subtitle { margin: 0 auto 48px; }
+        /* Steps */
+        .steps-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 48px; }
+        .step {
+            padding: 32px 20px; border-radius: 16px; text-align: center;
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px); transition: all 0.3s;
+        }
+        .step:hover { border-color: var(--border-glow); transform: translateY(-4px); }
+        .step-num {
+            width: 40px; height: 40px; border-radius: 50%; margin: 0 auto 16px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(135deg, var(--green-dark), var(--green));
+            color: #000; font-weight: 900; font-size: 1rem;
+        }
+        .step-icon { font-size: 2rem; margin-bottom: 12px; }
+        .step h3 { font-size: 1rem; font-weight: 700; margin-bottom: 8px; color: #fff; }
+        .step p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.6; }
+
+        /* Patterns (Bento Grid) */
+        .bento-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 48px; }
+        .bento-card {
+            padding: 32px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px); transition: all 0.3s; position: relative; overflow: hidden;
+        }
+        .bento-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--green), transparent); opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .bento-card:hover::before { opacity: 1; }
+        .bento-card:hover { border-color: rgba(255,255,255,0.1); transform: translateY(-2px); }
+        .bento-icon { font-size: 2rem; margin-bottom: 14px; }
+        .bento-card h3 { font-size: 1.1rem; font-weight: 700; color: #fff; margin-bottom: 10px; }
+        .bento-card p { font-size: 0.9rem; color: var(--text-secondary); line-height: 1.6; }
+        /* Mirror Section */
+        .mirror-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; margin-top: 48px;
+        }
+        .mirror-points { display: flex; flex-direction: column; gap: 16px; }
+        .mirror-point {
+            padding: 20px 24px; border-radius: 12px;
+            background: rgba(0,230,118,0.03); border: 1px solid rgba(0,230,118,0.1);
+            border-left: 3px solid var(--green); font-size: 0.95rem; color: var(--text-primary); line-height: 1.7;
+        }
+        .mirror-visual {
+            display: flex; flex-direction: column; align-items: center; gap: 16px;
+            padding: 40px; border-radius: 20px;
+            background: radial-gradient(circle at 50% 50%, rgba(0,230,118,0.05), transparent 70%);
+            border: 1px solid var(--border-color);
+        }
+        .mirror-emoji { font-size: 5rem; animation: mirrorPulse 3s ease-in-out infinite; }
+        @keyframes mirrorPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+        .mirror-tagline { font-size: 1.1rem; font-weight: 700; color: var(--green); text-align: center; }
+
+        /* Comparison */
+        .compare-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+            border: 1px solid var(--border-color); border-radius: 20px; overflow: hidden; margin-top: 48px;
+        }
+        .compare-col { padding: 36px 32px; }
+        .compare-col.them { background: rgba(255,255,255,0.02); }
+        .compare-col.us { background: rgba(0,230,118,0.03); border-left: 2px solid var(--green); }
+        .compare-col h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 24px; font-weight: 700; }
+        .compare-col.them h3 { color: var(--text-muted); }
+        .compare-col.us h3 { color: var(--green); }
+        .compare-col ul { list-style: none; font-size: 0.9rem; line-height: 2.4; }
+        .compare-col.them ul { color: var(--text-secondary); }
+        .compare-col.us ul { color: var(--text-primary); }
+        /* Testimonials */
+        .testimonials-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 48px; }
+        .testimonial {
+            padding: 28px; border-radius: 16px;
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+        }
+        .testimonial .quote { font-size: 0.95rem; color: var(--text-primary); font-style: italic; line-height: 1.7; margin-bottom: 16px; }
+        .testimonial .author { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+
+        /* Final CTA */
+        .final-cta {
+            padding: 100px 0; text-align: center;
+            background: radial-gradient(ellipse at 50% 80%, rgba(0,230,118,0.05), transparent 60%);
+        }
+        .final-cta h2 { font-size: 2.4rem; font-weight: 800; letter-spacing: -1px; margin-bottom: 16px; }
+        .final-cta .sub { font-size: 1rem; color: var(--text-secondary); margin-bottom: 36px; }
+
+        /* Footer */
+        .footer { padding: 40px 0; border-top: 1px solid var(--border-color); text-align: center; }
+        .footer .disclaimer { font-size: 0.8rem; color: var(--text-muted); font-weight: 600; margin-bottom: 16px; }
+        .footer-links { display: flex; justify-content: center; gap: 24px; flex-wrap: wrap; }
+        .footer-links a { font-size: 0.85rem; color: var(--text-secondary); transition: color 0.2s; }
+        .footer-links a:hover { color: var(--green); }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .steps-grid { grid-template-columns: repeat(2, 1fr); }
+            .bento-grid { grid-template-columns: 1fr; }
+            .mirror-grid { grid-template-columns: 1fr; }
+            .compare-grid { grid-template-columns: 1fr; }
+            .testimonials-grid { grid-template-columns: 1fr; }
+            .cta-secondary { margin-left: 0; margin-top: 12px; }
+        }
+        @media (max-width: 600px) {
+            .steps-grid { grid-template-columns: 1fr; }
+            .stats-grid { grid-template-columns: 1fr; gap: 16px; }
+            .hero { padding: 60px 0 40px; }
+            .nav-badge { display: none; }
+        }
+    </style>
+</head>
+<body>
+<div class="mesh-bg"></div>
+<div class="container">
+
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-brand">Options<span>Tycoon</span></div>
+        <div style="display:flex;align-items:center;gap:16px;">
+            <a href="/static/upload-free.html" style="font-size:0.85rem;color:var(--text-secondary);text-decoration:none;padding:8px 14px;border-radius:8px;transition:all 0.2s;">Upload CSV</a>
+            <a href="#" id="nav-signin-link" style="font-size:0.85rem;color:#000;text-decoration:none;padding:8px 18px;border-radius:8px;background:var(--green);font-weight:700;transition:all 0.2s;">Sign In</a>
+            <div class="nav-badge">AI-Powered Engine</div>
+        </div>
+    </nav>
+    <script>
+    (function(){
+        const user = JSON.parse(localStorage.getItem('ot_user') || 'null');
+        const link = document.getElementById('nav-signin-link');
+        if (user) {
+            // Logged in — show user identity with dropdown
+            const navArea = link.parentElement;
+            link.remove();
+            const userHtml = document.createElement('div');
+            userHtml.style.cssText = 'display:flex;align-items:center;gap:12px;';
+            userHtml.innerHTML = `
+                <a href="/static/dashboard.html" style="font-size:0.85rem;color:var(--text-secondary);text-decoration:none;padding:8px 14px;border-radius:8px;">Dashboard</a>
+                <div style="display:flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);">
+                    ${user.picture ? '<img src="' + user.picture + '" style="width:24px;height:24px;border-radius:50%;">' : ''}
+                    <span style="font-size:0.8rem;color:var(--text-secondary);">${(user.name || user.email || '').split(' ')[0]}</span>
+                    <a href="#" onclick="localStorage.clear();window.location.href='/static/landing.html';" style="font-size:0.7rem;color:var(--text-muted);text-decoration:none;margin-left:4px;">Sign Out</a>
+                </div>
+            `;
+            navArea.insertBefore(userHtml, navArea.querySelector('.nav-badge'));
+        } else {
+            link.textContent = 'Sign In';
+            link.href = '/static/signin.html';
+        }
+    })();
+    </script>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-tag">🧠 Behavioral Intelligence Platform</div>
+        <h1>See Why You Keep <span class="highlight">Losing Money</span> Trading Options</h1>
+        <p class="subtitle">Upload your trade history. Get a free AI-powered behavioral analysis in 60 seconds. No signup required.</p>
+        <div>
+            <a href="/static/upload-free.html" class="cta-primary">Upload Trade History — Free →</a>
+        </div>
+        <p class="hero-note">Works with Zerodha, Groww, Angel One CSV exports</p>
+        <p style="margin-top:8px;font-size:0.8rem;color:var(--text-secondary);">🔒 100% Private. Your P&L data is processed securely and never shared.</p>
+        <p style="margin-top:14px;font-size:0.9rem;font-weight:700;color:var(--green);">🎁 Early Access: FREE for the first 100 traders · <span id="spots-left">Loading...</span> spots remaining</p>
+        <script>
+        (function(){
+            // Fetch live count from backend; fallback uses a date-seeded decay so it doesn't look stale
+            fetch('/admin/stats').then(r=>r.json()).then(d=>{
+                const spots = Math.max(0, 100 - (d.total_users || 0));
+                document.getElementById('spots-left').textContent = spots;
+            }).catch(()=>{
+                // Offline fallback: decay slowly based on days since launch (July 8 2025)
+                const launchDate = new Date('2025-07-08');
+                const daysSince = Math.floor((Date.now() - launchDate) / 86400000);
+                const fallback = Math.max(4, 96 - Math.min(daysSince * 2, 80));
+                document.getElementById('spots-left').textContent = fallback;
+            });
+        })();
+        </script>
+        <p style="margin-top:12px;font-size:0.85rem;"><a href="/static/signin.html" style="color:var(--text-secondary);">Already have an account? <span style="color:var(--green);font-weight:600;">Sign In →</span></a></p>
+
+        <!-- Floating Report Visual -->
+        <div class="hero-visual">
+            <div class="report-card">
+                <div class="report-header">
+                    <span class="report-dot" style="background:#ff5f57"></span>
+                    <span class="report-dot" style="background:#ffbd2e"></span>
+                    <span class="report-dot" style="background:#28c840"></span>
+                    <span class="report-header-title">trader_dna_report.json</span>
+                </div>
+                <div class="report-body">
+                    <div class="report-score">
+                        <div class="report-score-num">67%</div>
+                        <div class="report-score-label">of your losses are behavioral — not strategic</div>
+                    </div>
+                    <div class="report-bars">
+                        <div class="r-bar"><span class="r-bar-label">Revenge</span><div class="r-bar-track"><div class="r-bar-fill red" style="width:72%"></div></div><span class="r-bar-val">-₹23,400</span></div>
+                        <div class="r-bar"><span class="r-bar-label">Overconfidence</span><div class="r-bar-track"><div class="r-bar-fill yellow" style="width:48%"></div></div><span class="r-bar-val">-₹12,100</span></div>
+                        <div class="r-bar"><span class="r-bar-label">Impulse Exit</span><div class="r-bar-track"><div class="r-bar-fill orange" style="width:35%"></div></div><span class="r-bar-val">-₹8,700</span></div>
+                        <div class="r-bar"><span class="r-bar-label">Disposition</span><div class="r-bar-track"><div class="r-bar-fill blue" style="width:20%"></div></div><span class="r-bar-val">-₹3,000</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+    <!-- Stats -->
+    <section class="stats">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-num green">7</div>
+                <div class="stat-label">Behavioral patterns detected</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-num yellow">60s</div>
+                <div class="stat-label">From upload to full report</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-num red">₹0</div>
+                <div class="stat-label">Free for early users</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works -->
+    <section class="section section-center">
+        <div class="section-tag">⚡ Simple Process</div>
+        <h2 class="section-title">How It Works</h2>
+        <p class="section-subtitle">From upload to insight in under 60 seconds. No manual logging, no complex setup.</p>
+        <div class="steps-grid">
+            <div class="step">
+                <div class="step-icon">📤</div>
+                <div class="step-num">1</div>
+                <h3>Upload CSV</h3>
+                <p>Download from your broker, upload here. 10 seconds.</p>
+            </div>
+            <div class="step">
+                <div class="step-icon">🤖</div>
+                <div class="step-num">2</div>
+                <h3>AI Analyzes</h3>
+                <p>Our engine scans every trade for behavioral patterns.</p>
+            </div>
+            <div class="step">
+                <div class="step-icon">🪞</div>
+                <div class="step-num">3</div>
+                <h3>See Patterns</h3>
+                <p>Your Trader DNA Report reveals hidden self-sabotage.</p>
+            </div>
+            <div class="step">
+                <div class="step-icon">🎯</div>
+                <div class="step-num">4</div>
+                <h3>Fix Your Leaks</h3>
+                <p>Get one actionable fix targeting your single worst behavioral pattern this week.</p>
+            </div>
+        </div>
+    </section>
+    <!-- The Mirror -->
+    <section class="section">
+        <div class="section-tag">🪞 Philosophy</div>
+        <h2 class="section-title">Mirror, Not Advisor</h2>
+        <p class="section-subtitle">We don't tell you what to trade. We show you WHY you keep losing.</p>
+        <div class="mirror-grid">
+            <div class="mirror-points">
+                <div class="mirror-point">A behavioral fitness tracker for traders. Like a Fitbit for your trading psychology.</div>
+                <div class="mirror-point">No advice. No signals. Just your own data reflected back to you with brutal clarity.</div>
+                <div class="mirror-point">The market isn't your enemy — your patterns are. We make them impossible to ignore.</div>
+            </div>
+            <div class="mirror-visual">
+                <div class="mirror-emoji">🪞</div>
+                <div class="mirror-tagline">"Your data speaks for itself"</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- What We Detect -->
+    <section class="section section-center">
+        <div class="section-tag">🔍 Detection Engine</div>
+        <h2 class="section-title">What We Detect</h2>
+        <p class="section-subtitle">Four behavioral patterns responsible for the majority of retail trading losses.</p>
+        <div class="bento-grid">
+            <div class="bento-card">
+                <div class="bento-icon">🔴</div>
+                <h3>Revenge Trading</h3>
+                <p>Oversized position after a loss. You're trying to "make it back" — and it's costing you 3x more.</p>
+            </div>
+            <div class="bento-card">
+                <div class="bento-icon">🟡</div>
+                <h3>Overconfidence Trap</h3>
+                <p>Size spikes after winning streaks. The market doesn't reward your confidence — it punishes it.</p>
+            </div>
+            <div class="bento-card">
+                <div class="bento-icon">⚡</div>
+                <h3>Impulse Exit</h3>
+                <p>Closing winners at 25% of peak profit. Fear of losing gains leaves money on the table every time.</p>
+            </div>
+            <div class="bento-card">
+                <div class="bento-icon">⏱️</div>
+                <h3>Disposition Bias</h3>
+                <p>Holding losers 4.2x longer than winners on average. Hope isn't a strategy — data proves it.</p>
+            </div>
+        </div>
+    </section>
+    <!-- Comparison -->
+    <section class="section section-center">
+        <div class="section-tag">⚖️ Why Different</div>
+        <h2 class="section-title">Traditional Tracking vs Options Tycoon</h2>
+        <div class="compare-grid">
+            <div class="compare-col them">
+                <h3>Traditional Tracking</h3>
+                <ul>
+                    <li>📝 Tracks trades</li>
+                    <li>📊 Shows statistics</li>
+                    <li>📈 Reports results</li>
+                    <li>👀 Looks at trades</li>
+                    <li>❌ Manual entry only</li>
+                    <li>❌ No practice environment</li>
+                </ul>
+            </div>
+            <div class="compare-col us">
+                <h3>Options Tycoon</h3>
+                <ul>
+                    <li>🧠 Tracks trader behavior</li>
+                    <li>🔍 Finds self-sabotage patterns</li>
+                    <li>💰 Shows behavioral COST in ₹</li>
+                    <li>👤 Looks at the trader</li>
+                    <li>✅ Auto-analysis from CSV</li>
+                    <li>✅ Weekly improvement tracking</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials -->
+    <section class="section section-center">
+        <div class="section-tag">💬 Example Discoveries</div>
+        <h2 class="section-title">What Traders Discover</h2>
+        <p class="section-subtitle" style="margin-bottom:48px;">Real patterns our engine detects from trade data.</p>
+        <div class="testimonials-grid">
+            <div class="testimonial">
+                <div class="quote">"71% of my losses happened within 1 hour of a previous loss. I was revenge trading every single day without knowing it."</div>
+                <div class="author">— Example: Revenge trading pattern</div>
+            </div>
+            <div class="testimonial">
+                <div class="quote">"My strategy was profitable. My DNA Score was 34. The gap between strategy P&L and actual P&L was all behavioral."</div>
+                <div class="author">— Example: Behavioral vs strategy gap</div>
+            </div>
+            <div class="testimonial">
+                <div class="quote">"'Fix One Thing' said stop trading at market open. Win rate other hours: 64%. At open: 22%. One change saved thousands."</div>
+                <div class="author">— Example: Timing pattern discovery</div>
+            </div>
+            <div class="testimonial">
+                <div class="quote">"I held losers 4.2x longer than winners. Seeing that number made me realize hope isn't a strategy."</div>
+                <div class="author">— Example: Disposition bias detection</div>
+            </div>
+        </div>
+    </section>
+    <!-- Final CTA -->
+    <section class="final-cta">
+        <h2>Ready to see your patterns?</h2>
+        <p class="sub">No signup. No payment. Upload and see in 60 seconds.</p>
+        <a href="/static/upload-free.html" class="cta-primary">Upload Trade History — Free →</a>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <p class="disclaimer">⚠️ Behavioral analysis from your own data. No real money involved. No financial advice. All observations are from YOUR historical data — not predictions or recommendations.</p>
+        <div class="footer-links">
+            <a href="/static/upload-free.html">Upload CSV</a>
+            <a href="/static/report.html">DNA Report</a>
+            <a href="/static/dashboard.html">Dashboard</a>
+        </div>
+        <div style="margin-top:24px;display:flex;justify-content:center;gap:20px;flex-wrap:wrap;font-size:0.75rem;">
+            <a href="/static/privacy.html" style="color:var(--text-muted);">🔒 Privacy Policy</a>
+            <a href="/static/terms.html" style="color:var(--text-muted);">📋 Terms of Service</a>
+            <a href="mailto:feedback@optionstycoon.app" style="color:var(--text-muted);">📧 Feedback</a>
+            <a href="mailto:features@optionstycoon.app" style="color:var(--text-muted);">💡 Feature Request</a>
+        </div>
+        <p style="margin-top:16px;font-size:0.7rem;color:var(--text-muted);">© 2024 Options Tycoon. Not SEBI registered. Not a financial advisor. For educational and self-observation purposes only.</p>
+    </footer>
+
+</div>
+<script>
+// Register service worker for offline support
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>

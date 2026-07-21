@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Compare Mode</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        .page-layout {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            height: 100vh;
+            background: var(--bg-primary);
+        }
+        .page-content {
+            padding: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+            overflow-y: auto;
+        }
+        .page-header {
+            font-size: 1.5rem;
+            margin-bottom: 24px;
+            color: var(--text-primary);
+        }
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            gap: 0;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+        }
+        .compare-col {
+            padding: 20px;
+        }
+        .compare-col-header {
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .compare-col.sim .compare-col-header { color: var(--blue); }
+        .compare-col.real .compare-col-header { color: var(--green); }
+        .compare-col.delta { 
+            background: rgba(26, 35, 50, 0.5);
+            border-left: 1px solid var(--border-color);
+            border-right: 1px solid var(--border-color);
+            min-width: 120px;
+        }
+        .compare-col.delta .compare-col-header { color: var(--text-muted); }
+        .compare-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(45, 55, 72, 0.3);
+        }
+        .compare-row:last-child { border-bottom: none; }
+        .compare-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .compare-value {
+            font-size: 15px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            color: var(--text-primary);
+        }
+        .compare-value.worse { color: var(--red); }
+        .compare-value.better { color: var(--green); }
+        .compare-value.neutral { color: var(--text-muted); }
+        .no-real-trades {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+        .no-real-trades .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .no-real-trades p {
+            margin-top: 8px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="page-layout">
+
+    <!-- Navigation -->
+    <nav class="app-nav">
+        <a href="/static/index.html" class="nav-link">Trading</a>
+        <a href="/static/behavioral.html" class="nav-link">Behavioral</a>
+        <a href="/static/history.html" class="nav-link">History</a>
+        <a href="/static/compare.html" class="nav-link active">Compare</a>
+        <a href="/static/timemachine.html" class="nav-link">Time Machine</a>
+        <a href="/static/upload.html" class="nav-link">Upload</a>
+        <a href="/static/report.html" class="nav-link">Report</a>
+        <a href="/static/profile.html" class="nav-link">Profile</a>
+    </nav>
+
+    <!-- Content -->
+    <div class="page-content">
+        <h1 class="page-header">Compare Mode — Sim vs Real</h1>
+
+        <div id="compare-container">
+            <div class="no-real-trades">
+                <div class="icon">⏳</div>
+                Loading comparison data...
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+        <span class="disclaimer-text">⚠️ 100% Simulated Paper-Trading. No Real Money. No Financial Advice.</span>
+    </footer>
+</div>
+
+<script src="/static/js/app.js"></script>
+<script>
+    async function initPage() {
+        const savedId = localStorage.getItem('ot_profile_id');
+        if (!savedId) {
+            await loadProfile();
+        } else {
+            APP_STATE.profileId = savedId;
+        }
+
+        if (!APP_STATE.profileId) return;
+
+        await loadCompareData();
+    }
+
+    async function loadCompareData() {
+        const container = document.getElementById('compare-container');
+
+        try {
+            const data = await api.get(`compare/${APP_STATE.profileId}`);
+            renderCompare(data);
+        } catch (e) {
+            console.error('Failed to load compare data:', e.message);
+            container.innerHTML = `
+                <div class="no-real-trades">
+                    <div class="icon">📊</div>
+                    <strong>Start logging real trades to enable Compare Mode</strong>
+                    <p>Switch to "Sim + Real Trade Journal" mode in your Profile settings, then log real trades alongside your simulated ones.</p>
+                </div>
+            `;
+        }
+    }
+
+    function renderCompare(data) {
+        const container = document.getElementById('compare-container');
+        const sim = data.simulated || {};
+        const real = data.real || {};
+
+        if (!real.trade_count || real.trade_count === 0) {
+            container.innerHTML = `
+                <div class="no-real-trades">
+                    <div class="icon">📊</div>
+                    <strong>Start logging real trades to enable Compare Mode</strong>
+                    <p>Switch to "Sim + Real Trade Journal" mode in your Profile settings, then log real trades alongside your simulated ones.</p>
+                </div>
+            `;
+            return;
+        }
+
+        const metrics = [
+            { label: 'Trade Count', simVal: sim.trade_count || 0, realVal: real.trade_count || 0, format: 'number', higherBetter: true },
+            { label: 'Win Rate', simVal: sim.win_rate || 0, realVal: real.win_rate || 0, format: 'percent', higherBetter: true },
+            { label: 'Discipline %', simVal: sim.discipline || 0, realVal: real.discipline || 0, format: 'percent', higherBetter: true },
+            { label: 'Patience', simVal: sim.patience || 0, realVal: real.patience || 0, format: 'seconds', higherBetter: true },
+            { label: 'Sizing', simVal: sim.sizing || 0, realVal: real.sizing || 0, format: 'decimal', higherBetter: false },
+            { label: 'Emotional Reactivity', simVal: sim.emotional_reactivity || 0, realVal: real.emotional_reactivity || 0, format: 'number', higherBetter: false },
+            { label: 'Total P&L', simVal: sim.total_pnl || 0, realVal: real.total_pnl || 0, format: 'currency', higherBetter: true },
+        ];
+
+        const simRows = metrics.map(m => `
+            <div class="compare-row">
+                <span class="compare-label">${m.label}</span>
+                <span class="compare-value">${formatMetric(m.simVal, m.format)}</span>
+            </div>
+        `).join('');
+
+        const realRows = metrics.map(m => `
+            <div class="compare-row">
+                <span class="compare-label">${m.label}</span>
+                <span class="compare-value">${formatMetric(m.realVal, m.format)}</span>
+            </div>
+        `).join('');
+
+        const deltaRows = metrics.map(m => {
+            const delta = m.realVal - m.simVal;
+            const isWorse = m.higherBetter ? delta < 0 : delta > 0;
+            const cls = delta === 0 ? 'neutral' : (isWorse ? 'worse' : 'better');
+            return `
+                <div class="compare-row">
+                    <span class="compare-label">Δ</span>
+                    <span class="compare-value ${cls}">${formatDelta(delta, m.format)}</span>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="compare-grid">
+                <div class="compare-col sim">
+                    <div class="compare-col-header">Simulated Trading</div>
+                    ${simRows}
+                </div>
+                <div class="compare-col delta">
+                    <div class="compare-col-header">Δ Difference</div>
+                    ${deltaRows}
+                </div>
+                <div class="compare-col real">
+                    <div class="compare-col-header">Real Trading</div>
+                    ${realRows}
+                </div>
+            </div>
+        `;
+    }
+
+    function formatMetric(value, format) {
+        switch (format) {
+            case 'currency': return formatCurrency(value);
+            case 'percent': return value.toFixed(1) + '%';
+            case 'seconds': return value.toFixed(0) + 's';
+            case 'decimal': return value.toFixed(2);
+            case 'number': return value.toString();
+            default: return value.toString();
+        }
+    }
+
+    function formatDelta(value, format) {
+        const sign = value > 0 ? '+' : '';
+        switch (format) {
+            case 'currency': return (value >= 0 ? '+' : '') + formatCurrency(value);
+            case 'percent': return sign + value.toFixed(1) + '%';
+            case 'seconds': return sign + value.toFixed(0) + 's';
+            case 'decimal': return sign + value.toFixed(2);
+            case 'number': return sign + value.toString();
+            default: return sign + value.toString();
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', initPage);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — My Account</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F8V0148LDJ"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-F8V0148LDJ');</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0e14;
+            --bg-sidebar: #0d1218;
+            --bg-card: #111820;
+            --bg-card-hover: #151d27;
+            --border: rgba(255,255,255,0.06);
+            --border-active: rgba(0,230,118,0.3);
+            --text: #e8edf3;
+            --text2: #8899aa;
+            --muted: #4a5b6e;
+            --green: #00e676;
+            --red: #ff3d71;
+            --yellow: #ffca28;
+            --blue: #448aff;
+            --font: 'Inter', -apple-system, sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; min-height: 100vh; }
+
+        /* App Layout — Sidebar + Main */
+        .app-layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+        /* Sidebar */
+        .sidebar {
+            background: var(--bg-sidebar); border-right: 1px solid var(--border);
+            padding: 28px 20px; display: flex; flex-direction: column;
+            position: sticky; top: 0; height: 100vh; overflow-y: auto;
+        }
+        .sidebar-brand { font-size: 1.1rem; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 32px; }
+        .sidebar-brand span { color: var(--green); }
+
+        /* User Profile Card */
+        .user-card {
+            display: flex; align-items: center; gap: 12px;
+            padding: 16px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; margin-bottom: 28px;
+        }
+        .user-avatar { width: 42px; height: 42px; border-radius: 50%; border: 2px solid var(--green); }
+        .user-info { flex: 1; min-width: 0; }
+        .user-name { font-size: 0.9rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-email { font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .user-badge { font-size: 0.6rem; color: var(--green); background: rgba(0,230,118,0.1); padding: 2px 8px; border-radius: 10px; margin-top: 4px; display: inline-block; }
+
+        /* Sidebar Nav */
+        .sidebar-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+        .sidebar-link {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px; border-radius: 8px; font-size: 0.85rem;
+            color: var(--text2); text-decoration: none; transition: all 0.2s;
+        }
+        .sidebar-link:hover { background: var(--bg-card); color: var(--text); }
+        .sidebar-link.active { background: rgba(0,230,118,0.08); color: var(--green); border: 1px solid rgba(0,230,118,0.15); }
+        .sidebar-link .icon { font-size: 1.1rem; width: 20px; text-align: center; }
+        .sidebar-footer { margin-top: auto; padding-top: 20px; border-top: 1px solid var(--border); }
+        .sidebar-footer a { font-size: 0.75rem; color: var(--muted); text-decoration: none; display: block; padding: 6px 0; }
+        .sidebar-footer a:hover { color: var(--text2); }
+
+        /* Main Content */
+        .main { padding: 32px 40px; overflow-y: auto; }
+        .page-header { margin-bottom: 28px; }
+        .page-header h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }
+        .page-header p { font-size: 0.85rem; color: var(--text2); margin-top: 4px; }
+        .secured-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.7rem; color: var(--green); background: rgba(0,230,118,0.06); padding: 4px 10px; border-radius: 12px; margin-top: 8px; }
+
+        /* Stats Cards */
+        .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 28px; }
+        .stat-card {
+            padding: 22px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 12px; transition: border-color 0.2s;
+        }
+        .stat-card:hover { border-color: var(--border-active); transform: translateY(-2px); cursor: pointer; }
+        .stat-card .label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .stat-card .value { font-size: 2rem; font-weight: 900; font-family: var(--mono); }
+        .stat-card .change { font-size: 0.75rem; margin-top: 6px; }
+        .stat-card .change.up { color: var(--green); }
+        .stat-card .change.down { color: var(--red); }
+        .stat-card .change.neutral { color: var(--muted); }
+
+        /* Fix One Thing */
+        .fix-card {
+            padding: 22px 24px; background: var(--bg-card); border: 1px solid rgba(0,230,118,0.15);
+            border-left: 3px solid var(--green); border-radius: 12px; margin-bottom: 28px;
+        }
+        .fix-card .tag { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1px; color: var(--green); font-weight: 700; margin-bottom: 8px; }
+        .fix-card .action { font-size: 1.05rem; font-weight: 700; margin-bottom: 6px; }
+        .fix-card .reason { font-size: 0.8rem; color: var(--text2); line-height: 1.6; }
+
+        /* History Table */
+        .section-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .table-wrap { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 28px; }
+        .data-table { width: 100%; border-collapse: collapse; }
+        .data-table th { text-align: left; padding: 12px 16px; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); }
+        .data-table td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
+        .data-table tr:last-child td { border-bottom: none; }
+        .data-table .score { font-family: var(--mono); font-weight: 700; }
+        .data-table .positive { color: var(--green); }
+        .data-table .negative { color: var(--red); }
+
+        /* Upload CTA */
+        .upload-card {
+            text-align: center; padding: 32px; background: var(--bg-card);
+            border: 1px dashed rgba(0,230,118,0.2); border-radius: 12px;
+        }
+        .upload-card h3 { font-size: 1rem; margin-bottom: 8px; }
+        .upload-card p { font-size: 0.8rem; color: var(--text2); margin-bottom: 16px; }
+        .upload-btn {
+            display: inline-block; padding: 12px 28px; background: var(--green);
+            color: #000; font-weight: 800; font-size: 0.85rem; border-radius: 8px;
+            text-decoration: none; transition: all 0.2s;
+        }
+        .upload-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(0,230,118,0.3); }
+
+        /* Score Trend */
+        .trend-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 28px; }
+        .trend-bars { display: flex; align-items: flex-end; gap: 4px; height: 100px; padding: 8px 0; }
+        .trend-bar { flex: 1; border-radius: 4px 4px 0 0; min-width: 20px; position: relative; cursor: pointer; transition: opacity 0.2s; }
+        .trend-bar:hover { opacity: 0.8; }
+        .trend-labels { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text2); margin-top: 12px; font-weight: 600; }
+
+        /* Empty state */
+        .empty-state { text-align: center; padding: 60px 20px; }
+        .empty-state .emoji { font-size: 3rem; margin-bottom: 16px; }
+        .empty-state h2 { font-size: 1.2rem; margin-bottom: 8px; }
+        .empty-state p { font-size: 0.85rem; color: var(--text2); margin-bottom: 24px; max-width: 360px; margin-left: auto; margin-right: auto; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .app-layout { grid-template-columns: 1fr; }
+            .sidebar { display: none; }
+            .main { padding: 20px 16px; }
+            .stats-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-layout">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-brand">Options<span>Tycoon</span></div>
+        <div class="user-card" id="user-card"></div>
+        <nav class="sidebar-nav">
+            <a href="/static/dashboard.html" class="sidebar-link active"><span class="icon">📊</span> Dashboard</a>
+            <a href="/static/upload-free.html" class="sidebar-link"><span class="icon">📤</span> Upload CSV</a>
+            <a href="/static/report.html?source=free" class="sidebar-link"><span class="icon">📄</span> Latest Report</a>
+        </nav>
+        <div class="sidebar-footer">
+            <a href="/static/privacy.html">🔒 Privacy Policy</a>
+            <a href="/static/terms.html">📋 Terms of Service</a>
+            <a href="#" onclick="if(confirm('Clear all your upload history? Your account stays active.')){clearHistory()}">🧹 Clear History</a>
+            <a href="#" onclick="signOut()">👋 Sign Out</a>
+            <a href="#" onclick="if(confirm('Permanently delete your account and all data?')){deleteAccount()}" style="color:var(--red);">🗑️ Delete Account</a>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main">
+        <div id="dashboard-content">
+            <div class="empty-state"><div class="emoji">📊</div><h2>Loading...</h2></div>
+        </div>
+    </main>
+
+</div>
+
+<script>
+function formatINR(n) {
+    if (n == null) return '₹0';
+    const sign = n < 0 ? '-' : '';
+    return sign + '₹' + Math.abs(Math.round(n)).toLocaleString('en-IN');
+}
+function getScoreColor(score) {
+    if (score >= 70) return 'var(--green)';
+    if (score >= 45) return 'var(--yellow)';
+    return 'var(--red)';
+}
+
+async function renderDashboard() {
+    const user = JSON.parse(localStorage.getItem('ot_user') || 'null');
+    let history = JSON.parse(localStorage.getItem('ot_upload_history') || '[]');
+    let latestReport = JSON.parse(localStorage.getItem('ot_free_report') || 'null');
+
+    // Try to load upload history from server (persists across devices/logouts)
+    if (user && user.user_id && history.length === 0) {
+        try {
+            const serverResp = await fetch(`/api/dashboard/history/${user.user_id}`);
+            if (serverResp.ok) {
+                const serverData = await serverResp.json();
+                if (serverData.uploads && serverData.uploads.length > 0) {
+                    // Convert server format to localStorage format
+                    history = serverData.uploads.map(u => ({
+                        date: u.upload_date ? new Date(u.upload_date).toLocaleDateString('en-IN', {day:'numeric',month:'short',year:'numeric'}) : '—',
+                        trades_count: u.trades_count,
+                        dna_score: u.dna_score,
+                        behavioral_pct: u.behavioral_pct,
+                        total_pnl: u.total_pnl,
+                        persona: u.persona,
+                        fix_one_thing: u.fix_one_thing,
+                    }));
+                    // Cache back to localStorage
+                    localStorage.setItem('ot_upload_history', JSON.stringify(history));
+                }
+            }
+        } catch(e) { /* non-blocking */ }
+    }
+
+    // Try to load full report from server if not in localStorage
+    if (user && user.user_id && !latestReport) {
+        try {
+            const reportResp = await fetch(`/api/dashboard/latest-report/${user.user_id}`);
+            if (reportResp.ok) {
+                const serverReport = await reportResp.json();
+                if (serverReport && !serverReport.error) {
+                    latestReport = serverReport;
+                    localStorage.setItem('ot_free_report', JSON.stringify(serverReport));
+                }
+            }
+        } catch(e) { /* non-blocking */ }
+    }
+
+    // Render user card in sidebar
+    if (user) {
+        document.getElementById('user-card').innerHTML = `
+            ${user.picture ? `<img src="${user.picture}" class="user-avatar" alt="">` : `<div class="user-avatar" style="background:var(--green);display:flex;align-items:center;justify-content:center;font-weight:800;color:#000;">${(user.name || 'U')[0]}</div>`}
+            <div class="user-info">
+                <div class="user-name">${user.name || 'Trader'}</div>
+                <div class="user-email">${user.email || ''}</div>
+                <div class="user-badge">Free Plan · Early Access</div>
+            </div>
+        `;
+    }
+
+    const container = document.getElementById('dashboard-content');
+
+    // Empty state
+    if (!latestReport && history.length === 0) {
+        container.innerHTML = `
+            <div class="page-header">
+                <h1>Welcome, ${user ? (user.name || '').split(' ')[0] : 'Trader'}</h1>
+                <p>Your behavioral intelligence account is ready.</p>
+                <div class="secured-badge">🔒 Your data is private and encrypted</div>
+            </div>
+            <div class="empty-state">
+                <div class="emoji">📤</div>
+                <h2>Upload your first trade history</h2>
+                <p>Get your Trader DNA Score and start tracking behavioral improvement week over week.</p>
+                <a href="/static/upload-free.html" class="upload-btn">Upload CSV →</a>
+            </div>
+        `;
+        return;
+    }
+
+    // Has data
+    const report = latestReport ? (latestReport.report || latestReport) : null;
+    const pz = report ? (report.page_zero || {}) : {};
+    const fixOne = report ? (report.fix_one_thing || {}) : {};
+    const score = pz.dna_score || 0;
+    const persona = pz.persona || {};
+
+    let html = '';
+
+    // Page header
+    html += `<div class="page-header">
+        <h1>Welcome back, ${user ? (user.name || '').split(' ')[0] : 'Trader'}</h1>
+        <p>Your behavioral intelligence dashboard · Last upload: ${history.length > 0 ? history[history.length-1].date : 'N/A'}</p>
+        <div class="secured-badge">🔒 Your data is private and encrypted</div>
+    </div>`;
+
+    // Stats row
+    html += `<div class="stats-row">
+        <a href="/static/report.html?source=free" style="text-decoration:none;color:inherit;" class="stat-card">
+            <div class="label">DNA Score</div>
+            <div class="value" style="color:${getScoreColor(score)}">${score}<span style="font-size:1rem;color:var(--muted)">/100</span></div>
+            ${history.length > 1 ? (() => {
+                const prev = history[history.length - 2];
+                const diff = score - (prev.dna_score || 0);
+                if (diff > 0) return `<div class="change up">↑ ${diff} pts</div>`;
+                if (diff < 0) return `<div class="change down">↓ ${Math.abs(diff)} pts</div>`;
+                return `<div class="change neutral">— No change</div>`;
+            })() : `<div class="change neutral">Upload again to track</div>`}
+        </a>
+        <a href="/static/report.html?source=free" style="text-decoration:none;color:inherit;" class="stat-card">
+            <div class="label">Behavioral Loss</div>
+            <div class="value" style="color:var(--red)">${pz.behavioral_pct || 0}%</div>
+            <div class="change neutral">of losses are behavioral</div>
+        </a>
+        <a href="/static/report.html?source=free" style="text-decoration:none;color:inherit;" class="stat-card">
+            <div class="label">Persona</div>
+            <div class="value" style="font-size:1.2rem;">${persona.name || '—'}</div>
+            <div class="change neutral">${pz.total_trades || 0} trades analyzed</div>
+        </a>
+    </div>`;
+
+    // Fix One Thing
+    if (fixOne.action) {
+        html += `<div class="fix-card">
+            <div class="tag">🎯 Fix One Thing This Week</div>
+            <div class="action">${fixOne.action}</div>
+            <div class="reason">${fixOne.reason || ''}</div>
+        </div>`;
+    }
+
+    // Score Trend
+    if (history.length > 1) {
+        const latest = history[history.length - 1];
+        const prev = history[history.length - 2];
+        const scoreDiff = (latest.dna_score || 0) - (prev.dna_score || 0);
+
+        html += `<div class="trend-section">
+            <div class="section-title">📈 Score Trend</div>
+            ${scoreDiff > 0 ? `<p style="font-size:0.8rem;color:var(--green);margin-bottom:12px;">Improving: ${prev.dna_score} → ${latest.dna_score} (+${scoreDiff})</p>` :
+              scoreDiff < 0 ? `<p style="font-size:0.8rem;color:var(--red);margin-bottom:12px;">Declined: ${prev.dna_score} → ${latest.dna_score} (${scoreDiff})</p>` :
+              `<p style="font-size:0.8rem;color:var(--muted);margin-bottom:12px;">Stable at ${latest.dna_score}/100</p>`}
+            <div style="position:relative;">
+                <div style="position:absolute;left:0;top:0;bottom:30px;width:30px;display:flex;flex-direction:column;justify-content:space-between;font-size:0.6rem;color:var(--muted);text-align:right;padding-right:6px;">
+                    <span>100</span><span>50</span><span>0</span>
+                </div>
+                <div style="margin-left:34px;">
+                    <div class="trend-bars" style="height:120px;align-items:flex-end;">`;
+        const maxScore = 100;
+        history.forEach(h => {
+            const s = h.dna_score || 0;
+            const height = Math.max(12, (s / maxScore) * 110);
+            html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;">
+                <span style="font-size:0.75rem;font-weight:700;color:${getScoreColor(s)};margin-bottom:4px;">${s}</span>
+                <div style="width:60%;max-width:60px;height:${height}px;background:${getScoreColor(s)};border-radius:4px 4px 0 0;opacity:0.85;"></div>
+            </div>`;
+        });
+        html += `</div>
+                    <div style="display:flex;justify-content:space-around;margin-top:8px;">`;
+        history.forEach(h => {
+            html += `<span style="font-size:0.7rem;color:var(--text2);font-weight:500;flex:1;text-align:center;">${h.date || ''}</span>`;
+        });
+        html += `</div>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    // Upload History
+    if (history.length > 0) {
+        html += `<div class="section-title">📋 Upload History</div>
+            <p style="font-size:0.75rem;color:var(--muted);margin-bottom:12px;">Each upload is analyzed independently. For best results, upload non-overlapping date ranges.</p>
+            <div class="table-wrap"><table class="data-table">
+                <thead><tr><th>Date</th><th>Trades</th><th>Score</th><th>Behavioral</th><th>P&L</th></tr></thead>
+                <tbody>`;
+        [...history].reverse().forEach(h => {
+            html += `<tr>
+                <td>${h.date || '—'}</td>
+                <td>${h.trades_count || '—'}</td>
+                <td class="score" style="color:${getScoreColor(h.dna_score || 0)}">${h.dna_score || '—'}</td>
+                <td>${h.behavioral_pct || '—'}%</td>
+                <td class="${(h.total_pnl || 0) >= 0 ? 'positive' : 'negative'}">${h.total_pnl != null ? ((h.total_pnl >= 0 ? '+' : '-') + '₹' + Math.abs(Math.round(h.total_pnl)).toLocaleString('en-IN')) : '—'}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+    }
+
+    // Behavioral Patterns (expandable drill-down)
+    const patterns = report ? (report.all_patterns || []) : [];
+    if (patterns.length > 0) {
+        const iconMap = {'Revenge Trading':'🔴','Overconfidence':'🟡','Disposition Bias':'⏱️','Loss Snowball':'🌊','Bad Timing':'⏰','Over-Trading':'⚡'};
+        html += `<div class="section-title">🔍 Behavioral Patterns Detected</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:28px;">`;
+        patterns.forEach((p, idx) => {
+            const icon = iconMap[p.name] || '📊';
+            const hasDrill = p.drill_down && p.drill_down.length > 0;
+            const hasFix = p.how_to_fix && p.how_to_fix.length > 0;
+            const clickable = hasDrill || hasFix;
+            html += `<div style="padding:18px;background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--red);border-radius:10px;${clickable?'cursor:pointer;':''}" ${clickable ? `onclick="toggleDashDrill('ddrill-${idx}')"` : ''}>
+                <div style="font-size:1.5rem;margin-bottom:8px;">${icon}</div>
+                <div style="font-size:0.75rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">${p.name}</div>
+                <div style="font-size:1.4rem;font-weight:900;font-family:var(--mono);color:var(--red);margin-bottom:8px;">${formatINR(p.cost)}</div>
+                <div style="font-size:0.8rem;color:var(--text2);line-height:1.5;margin-bottom:8px;">${p.description || ''}</div>
+                <div style="font-size:0.7rem;color:var(--muted);">${p.count} trade${p.count===1?'':'s'} flagged${clickable ? ' · <span style="color:var(--green);font-weight:600;">Click to see details ↓</span>' : ''}</div>
+                ${clickable ? `<div id="ddrill-${idx}" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+                    ${hasFix ? `<div style="background:rgba(0,230,118,0.04);border:1px solid rgba(0,230,118,0.15);border-radius:8px;padding:12px;margin-bottom:10px;">
+                        <div style="font-size:0.65rem;font-weight:700;color:var(--green);text-transform:uppercase;margin-bottom:6px;">💡 How to Fix</div>
+                        <div style="font-size:0.78rem;color:var(--text2);line-height:1.6;">${p.how_to_fix}</div>
+                    </div>` : ''}
+                    ${hasDrill ? p.drill_down.map(d => `<div style="padding:8px 10px;margin-bottom:4px;font-size:0.75rem;background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:6px;color:var(--text2);line-height:1.4;">${d.what_happened}</div>`).join('') : ''}
+                </div>` : ''}
+            </div>`;
+        });
+        html += `</div>`;
+    }
+
+    // Upload CTA
+    html += `<div class="upload-card">
+        <h3>Upload New Trade Data</h3>
+        <p>Upload this week's trades to see if your patterns are improving.</p>
+        <a href="/static/upload-free.html" class="upload-btn">Upload CSV →</a>
+    </div>`;
+
+    container.innerHTML = html;
+}
+
+function toggleDashDrill(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function clearHistory() {
+    const userId = localStorage.getItem('ot_user_id');
+    if (userId) {
+        try {
+            await fetch(`/api/dashboard/clear-history/${userId}`, { method: 'DELETE' });
+        } catch(e) {}
+    }
+    localStorage.removeItem('ot_upload_history');
+    localStorage.removeItem('ot_free_report');
+    window.location.reload();
+}
+
+function signOut() {
+    localStorage.removeItem('ot_user');
+    localStorage.removeItem('ot_user_id');
+    // Keep upload history and report — they reload from server on next login
+    window.location.href = '/static/landing.html';
+}
+
+async function deleteAccount() {
+    const userId = localStorage.getItem('ot_user_id');
+    if (!userId) { signOut(); return; }
+    try {
+        await fetch(`/api/dashboard/delete-account/${userId}`, { method: 'DELETE' });
+    } catch(e) {}
+    localStorage.clear();
+    alert('Your account and all data have been deleted.');
+    window.location.href = '/static/landing.html';
+}
+
+// Auth check
+const user = localStorage.getItem('ot_user');
+if (!user) {
+    window.location.href = '/static/signin.html';
+} else {
+    renderDashboard();
+}
+</script>
+</body>
+</html>

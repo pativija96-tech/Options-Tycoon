@@ -1,0 +1,19 @@
+{
+  "stocks": [
+    {"symbol": "RELIANCE.NS", "name": "Reliance Industries", "lot_size": 250},
+    {"symbol": "TCS.NS", "name": "Tata Consultancy Services", "lot_size": 175},
+    {"symbol": "HDFCBANK.NS", "name": "HDFC Bank", "lot_size": 550},
+    {"symbol": "INFY.NS", "name": "Infosys", "lot_size": 400},
+    {"symbol": "ICICIBANK.NS", "name": "ICICI Bank", "lot_size": 700},
+    {"symbol": "SBIN.NS", "name": "State Bank of India", "lot_size": 750},
+    {"symbol": "BHARTIARTL.NS", "name": "Bharti Airtel", "lot_size": 475},
+    {"symbol": "ITC.NS", "name": "ITC", "lot_size": 1600},
+    {"symbol": "TATAMOTORS.NS", "name": "Tata Motors", "lot_size": 1100},
+    {"symbol": "BAJFINANCE.NS", "name": "Bajaj Finance", "lot_size": 125}
+  ],
+  "max_daily_signals": 3,
+  "min_stock_confidence": 60,
+  "min_index_confidence": 55,
+  "earnings_lookback_days": 2,
+  "earnings_lookahead_days": 1
+}

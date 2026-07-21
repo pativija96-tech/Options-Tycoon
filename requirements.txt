@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pydantic
+aiofiles
+python-multipart
+httpx
+psycopg2-binary
+slowapi
+alembic

@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Your Trader DNA Report</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F8V0148LDJ"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-F8V0148LDJ');</script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050a0f;
+            --bg-card: rgba(15,25,40,0.85);
+            --border: rgba(255,255,255,0.06);
+            --text: #f0f4f8;
+            --text2: #8899aa;
+            --muted: #4a5b6e;
+            --green: #00e676;
+            --red: #ff3d71;
+            --yellow: #ffca28;
+            --orange: #ff9100;
+            --blue: #448aff;
+            --purple: #b388ff;
+            --font: 'Inter', -apple-system, sans-serif;
+            --mono: 'JetBrains Mono', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+        .mesh-bg {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: 
+                radial-gradient(ellipse 80% 60% at 20% 10%, rgba(255,61,113,0.04) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 50% at 80% 40%, rgba(124,77,255,0.04) 0%, transparent 60%),
+                radial-gradient(ellipse 70% 60% at 50% 90%, rgba(0,230,118,0.03) 0%, transparent 60%);
+            animation: meshMove 20s ease-in-out infinite alternate;
+            z-index: 0; pointer-events: none;
+        }
+        @keyframes meshMove {
+            0% { transform: scale(1) translate(0,0); }
+            50% { transform: scale(1.05) translate(-10px, 15px); }
+            100% { transform: scale(1) translate(10px, -10px); }
+        }
+        .container { max-width: 1100px; margin: 0 auto; padding: 40px 40px 80px; position: relative; z-index: 1; }
+
+        /* Page 0 — Gut Punch */
+        .page-zero {
+            text-align: center; padding: 40px 40px 32px;
+            background: radial-gradient(ellipse at 50% 30%, rgba(255,61,113,0.08), transparent 60%);
+            border: 1px solid var(--border); border-radius: 24px; margin-bottom: 40px;
+        }
+        .dna-score { font-size: 5.5rem; font-weight: 900; font-family: var(--mono); line-height: 1; }
+        .dna-label { font-size: 0.85rem; color: var(--text2); margin: 4px 0 20px; }
+        .persona-badge {
+            display: inline-block; padding: 8px 24px; border-radius: 24px;
+            background: rgba(255,61,113,0.1); border: 1px solid rgba(255,61,113,0.3);
+            font-size: 1.1rem; font-weight: 800; color: var(--red); margin-bottom: 10px;
+        }
+        .persona-desc { font-size: 0.9rem; color: var(--text2); margin-bottom: 24px; max-width: 500px; margin-left: auto; margin-right: auto; }
+        .cost-line { font-size: 1.4rem; font-weight: 900; color: var(--red); font-family: var(--mono); }
+        .cost-sub { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+        .pct-line {
+            font-size: 2.4rem; font-weight: 900; font-family: var(--mono); margin-top: 16px;
+            background: linear-gradient(135deg, var(--red) 0%, var(--orange) 100%);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .pct-sub { font-size: 0.85rem; color: var(--text2); }
+
+        /* Sections */
+        .section { margin-bottom: 36px; }
+        .section-label {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 14px; border-radius: 16px; margin-bottom: 20px;
+            background: rgba(68,138,255,0.08); border: 1px solid rgba(68,138,255,0.2);
+            font-size: 0.75rem; font-weight: 600; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .section-title { font-size: 1.4rem; font-weight: 800; margin-bottom: 16px; }
+
+        /* Story */
+        .story-box {
+            padding: 32px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; position: relative; overflow: hidden; backdrop-filter: blur(10px);
+        }
+        .story-box::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, var(--orange), var(--red), var(--purple));
+        }
+        .story-quote { font-size: 3rem; color: var(--orange); opacity: 0.3; font-family: serif; line-height: 1; margin-bottom: 12px; }
+        .story-text { font-size: 1rem; color: var(--text2); line-height: 2; }
+
+        /* Pattern Boxes (2-col grid like old design) */
+        .pattern-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .pattern-box {
+            padding: 28px; background: var(--bg-card); border-radius: 16px;
+            border: 1px solid var(--border); border-left: 4px solid var(--red);
+            backdrop-filter: blur(10px); transition: all 0.3s; position: relative; overflow: hidden;
+        }
+        .pattern-box::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--red), transparent); opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .pattern-box:hover::before { opacity: 1; }
+        .pattern-box:hover { border-color: rgba(255,255,255,0.1); transform: translateY(-2px); }
+        .pattern-box.snowball { border-left-color: var(--orange); }
+        .pattern-box.snowball::before { background: linear-gradient(90deg, transparent, var(--orange), transparent); }
+        .pattern-box.timing { border-left-color: var(--yellow); }
+        .pattern-box.timing::before { background: linear-gradient(90deg, transparent, var(--yellow), transparent); }
+        .pattern-box.overconfidence { border-left-color: var(--yellow); }
+        .pattern-box.disposition { border-left-color: var(--blue); }
+        .pattern-box.overtrading { border-left-color: var(--purple); }
+        .pattern-box-icon { font-size: 1.8rem; margin-bottom: 12px; }
+        .pattern-box-name { font-size: 0.85rem; font-weight: 600; color: var(--text2); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .pattern-box-cost { font-size: 1.6rem; font-weight: 900; font-family: var(--mono); color: var(--red); margin-bottom: 10px; }
+        .pattern-box-desc { font-size: 0.85rem; color: var(--text2); line-height: 1.6; }
+        .pattern-box-count { font-size: 0.7rem; color: var(--muted); margin-top: 8px; }
+        @media (max-width: 600px) { .pattern-grid { grid-template-columns: 1fr; } }
+        @media (min-width: 900px) { .pattern-grid { grid-template-columns: 1fr 1fr 1fr; } }
+        /* When pattern is expanded, make it span full width on desktop */
+        .pattern-box.expanded { grid-column: 1 / -1; }
+        .insight-card { padding: 24px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; margin-bottom: 16px; }
+        .insight-type { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--blue); font-weight: 600; margin-bottom: 6px; }
+        .insight-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 10px; }
+        .insight-text { font-size: 0.9rem; color: var(--text2); line-height: 1.7; }
+
+        /* Prediction */
+        .prediction-card {
+            padding: 28px; background: var(--bg-card); border: 1px solid rgba(124,77,255,0.2);
+            border-radius: 16px; position: relative; overflow: hidden;
+        }
+        .prediction-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, var(--purple), var(--blue));
+        }
+        .prediction-item { padding: 10px 0; font-size: 0.9rem; color: var(--text); border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 10px; }
+        .prediction-item:last-child { border-bottom: none; }
+        .prediction-note { font-size: 0.75rem; color: var(--muted); margin-top: 16px; font-style: italic; padding-top: 12px; border-top: 1px solid var(--border); }
+
+        /* Fix Value */
+        .fix-card {
+            padding: 24px; background: var(--bg-card); border: 1px solid rgba(0,230,118,0.15);
+            border-left: 4px solid var(--green); border-radius: 12px; margin-bottom: 12px;
+        }
+        .fix-pattern { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+        .fix-saving { font-size: 1.5rem; font-weight: 900; font-family: var(--mono); color: var(--green); }
+        .fix-desc { font-size: 0.8rem; color: var(--text2); margin-top: 6px; line-height: 1.5; }
+        .fix-total {
+            text-align: center; padding: 24px; font-size: 1.2rem; font-weight: 800;
+            color: var(--green); margin-top: 16px; background: rgba(0,230,118,0.05);
+            border: 1px solid rgba(0,230,118,0.15); border-radius: 12px;
+        }
+
+        /* Charges Table */
+        .charges-summary {
+            padding: 28px; background: var(--bg-card); border: 1px solid var(--border);
+            border-radius: 16px; position: relative; overflow: hidden;
+        }
+        .charges-summary::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+            background: linear-gradient(90deg, var(--yellow), var(--red));
+        }
+        .charges-headline { font-size: 0.95rem; color: var(--text2); line-height: 1.7; margin-bottom: 20px; }
+        .charges-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+        .charges-stat { text-align: center; padding: 16px 12px; background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 10px; }
+        .charges-stat-val { font-size: 1.3rem; font-weight: 800; font-family: var(--mono); }
+        .charges-stat-label { font-size: 0.7rem; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .trade-table { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 20px; }
+        .trade-table th { text-align: left; padding: 10px 8px; color: var(--muted); border-bottom: 1px solid var(--border); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.65rem; }
+        .trade-table td { padding: 10px 8px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 0.8rem; }
+        .trade-table .positive { color: var(--green); }
+        .trade-table .negative { color: var(--red); }
+
+        /* CTA */
+        .cta-section { text-align: center; padding: 40px 20px; }
+        .cta-btn { display: inline-block; padding: 16px 36px; background: var(--green); color: #000; font-weight: 800; font-size: 1rem; border-radius: 12px; text-decoration: none; transition: all 0.3s; }
+        .cta-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,230,118,0.3); }
+        .cta-secondary { display: block; margin-top: 12px; font-size: 0.8rem; color: var(--muted); text-decoration: none; }
+
+        /* Deep dive toggle */
+        .deep-dive-toggle { display: block; width: 100%; padding: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; color: var(--text2); font-size: 0.85rem; cursor: pointer; text-align: center; margin-top: 24px; }
+        .deep-dive-content { display: none; margin-top: 16px; }
+        .deep-dive-content.open { display: block; }
+
+        /* Drill-down panels */
+        .pattern-box.clickable { cursor: pointer; }
+        .pattern-box.clickable:hover { border-color: rgba(0,230,118,0.3); }
+        .drill-down-panel {
+            margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border);
+            animation: slideDown 0.3s ease-out;
+        }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .how-to-fix {
+            background: rgba(0,230,118,0.04); border: 1px solid rgba(0,230,118,0.15);
+            border-radius: 10px; padding: 16px; margin-bottom: 14px;
+        }
+        .fix-header { font-size: 0.75rem; font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .fix-body { font-size: 0.82rem; color: var(--text2); line-height: 1.7; }
+        .drill-trades { margin-top: 10px; }
+        .drill-header { font-size: 0.75rem; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+        .drill-item {
+            padding: 10px 12px; margin-bottom: 6px; font-size: 0.8rem;
+            background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+            border-radius: 8px; color: var(--text2); line-height: 1.5;
+        }
+        .drill-item .positive { color: var(--green); }
+        .drill-item .negative { color: var(--red); }
+
+        /* Disclaimer */
+        .disclaimer { text-align: center; font-size: 0.75rem; color: var(--muted); padding: 24px 0; border-top: 1px solid var(--border); margin-top: 40px; }
+
+        /* Loading */
+        .loading { text-align: center; padding: 100px 20px; }
+        .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--green); border-radius: 50%; animation: spin 0.7s linear infinite; margin: 0 auto 16px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error-state { text-align: center; padding: 80px 20px; color: var(--red); }
+
+        @media (max-width: 600px) {
+            .dna-score { font-size: 4rem; }
+            .charges-grid { grid-template-columns: 1fr 1fr !important; }
+            .pattern-grid { grid-template-columns: 1fr !important; }
+            .page-zero { padding: 40px 16px; }
+            .container { padding: 20px 16px 60px; }
+            .pct-line { font-size: 1.8rem; }
+            .cost-line { font-size: 1.1rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="mesh-bg"></div>
+<div style="max-width:1100px;margin:0 auto;padding:20px 40px;display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1;">
+    <a href="/static/dashboard.html" id="report-logo-link" style="font-size:1.3rem;font-weight:800;letter-spacing:-0.5px;color:var(--text);text-decoration:none;">Options<span style="color:var(--green)">Tycoon</span></a>
+    <div style="display:flex;align-items:center;gap:16px;">
+        <a href="/static/dashboard.html" style="font-size:0.85rem;color:var(--text2);text-decoration:none;padding:8px 14px;border-radius:8px;">← My Account</a>
+        <a href="/static/upload-free.html" style="font-size:0.85rem;color:var(--text2);text-decoration:none;padding:8px 14px;border-radius:8px;">Upload New</a>
+        <div style="display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:20px;background:rgba(0,230,118,0.08);border:1px solid rgba(0,230,118,0.2);font-size:0.75rem;font-weight:600;color:var(--green);">
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;"></span>
+            AI-Powered Engine
+        </div>
+    </div>
+</div>
+<script>
+(function(){
+    const user = localStorage.getItem('ot_user');
+    if (!user) { document.getElementById('report-logo-link').href = '/static/landing.html'; }
+})();
+</script>
+<div class="container">
+    <div id="loading" class="loading"><div class="spinner"></div><p style="color:var(--text2)">Loading your report...</p></div>
+    <div id="error" class="error-state" style="display:none"></div>
+    <div id="report" style="display:none"></div>
+</div>
+
+<script>
+function downloadPDF() {
+    const style = document.createElement('style');
+    style.id = 'print-style';
+    style.textContent = `
+        @media print {
+            .mesh-bg { display: none !important; }
+            body { background: #0a0f14 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .cta-section { display: none !important; }
+            .disclaimer { page-break-before: avoid; }
+            .pattern-box { break-inside: avoid; }
+            .section { break-inside: avoid; }
+        }
+    `;
+    document.head.appendChild(style);
+    window.print();
+    setTimeout(() => style.remove(), 1000);
+}
+
+function shareWhatsApp() {
+    const data = JSON.parse(localStorage.getItem('ot_free_report') || '{}');
+    const report = data.report || data;
+    const pz = report.page_zero || {};
+    const text = `My Trader DNA Score: ${pz.dna_score || '?'}/100. ${pz.behavioral_pct || '?'}% of my losses are behavioral. Persona: "${(pz.persona || {}).name || '?'}". Get your free report: https://web-production-ddf13.up.railway.app`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+function sendFeedback(rating) {
+    document.getElementById('feedback-thanks').style.display = 'block';
+    // Log to server (non-blocking)
+    fetch('/api/feedback', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({rating: rating, user_id: localStorage.getItem('ot_user_id') || null})
+    }).catch(() => {});
+}
+
+function shareTwitter() {
+    const data = JSON.parse(localStorage.getItem('ot_free_report') || '{}');
+    const report = data.report || data;
+    const pz = report.page_zero || {};
+    const text = `Just got my Trader DNA Score: ${pz.dna_score || '?'}/100 🧬\n\n${pz.behavioral_pct || '?'}% of my losses are behavioral, not the market.\n\nFree analysis: https://web-production-ddf13.up.railway.app\n\n#OptionsTycoon #TradingPsychology`;
+    window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+function toggleDrill(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const box = el.closest('.pattern-box');
+    if (el.style.display === 'none') {
+        el.style.display = 'block';
+        if (box) box.classList.add('expanded');
+    } else {
+        el.style.display = 'none';
+        if (box) box.classList.remove('expanded');
+    }
+}
+
+function formatINR(n) {
+    if (n == null) return '₹0';
+    const sign = n < 0 ? '-' : '';
+    return sign + '₹' + Math.abs(Math.round(n)).toLocaleString('en-IN');
+}
+
+function sanitize(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function renderReport(data) {
+    document.getElementById('loading').style.display = 'none';
+    const el = document.getElementById('report');
+    el.style.display = 'block';
+
+    const r = data.report || data;
+    const pz = r.page_zero || r.headline || {};
+    const persona = pz.persona || r.worst_enemy || {};
+    const story = r.story || '';
+    const insights = r.insights || [];
+    const prediction = r.prediction || {};
+    const fixValue = r.fix_value || {};
+    const charges = (r.deep_dive || {}).charges || {};
+    const patterns = r.all_patterns || [];
+    const calm = r.calm_vs_emotional || {};
+
+    // DNA Score color
+    const score = pz.dna_score || 0;
+    const scoreColor = score >= 70 ? 'var(--green)' : score >= 45 ? 'var(--yellow)' : 'var(--red)';
+    const pct = pz.behavioral_pct || pz.behavioral_loss_pct || 0;
+    const cost = pz.total_behavioral_cost || pz.behavioral_loss_amount || 0;
+
+    let html = '';
+
+    // === PAGE ZERO ===
+    html += `<div class="page-zero">
+        <div style="font-size:0.85rem;color:var(--text2);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px;">Your Trader DNA Score</div>
+        <div class="dna-score" style="color:${scoreColor}">${score}<span style="font-size:2rem;color:var(--muted)">/100</span></div>
+        <div class="dna-label">${score <= 30 ? 'Critical — needs immediate attention' : score <= 50 ? 'Below average — significant room to improve' : score <= 70 ? 'Developing — on the right track' : 'Strong discipline'}</div>
+        <div class="persona-badge">${persona.name || 'Unknown'}</div>
+        <div class="persona-desc">${persona.description || ''}</div>
+        <div class="pct-line">${pct}%</div>
+        <div class="pct-sub">of your losses are behavioral — not the market</div>
+        <div class="cost-line" style="margin-top:20px">${formatINR(cost)}</div>
+        <div class="cost-sub">Estimated behavioral cost from ${pz.total_trades || 0} trades</div>
+        ${pz.first_date && pz.last_date ? `<div style="margin-top:12px;font-size:0.8rem;color:var(--muted);font-family:var(--mono);">Analysis period: ${pz.first_date} — ${pz.last_date} (${pz.trading_days} trading day${pz.trading_days === 1 ? '' : 's'})</div>` : ''}
+        ${story ? `<div style="margin-top:28px;padding-top:24px;border-top:1px solid var(--border);text-align:left;max-width:640px;margin-left:auto;margin-right:auto;">
+            <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px;">📖 Your Trading Story</div>
+            <div style="font-size:0.9rem;color:var(--text2);line-height:1.9;">${story}</div>
+        </div>` : ''}
+    </div>`;
+
+    // === FIX ONE THING (immediately after Page Zero) ===
+    const fixOne = r.fix_one_thing || {};
+    if (fixOne.action) {
+        html += `<div class="section" style="margin-top:40px;">
+            <div style="padding:28px 32px;background:linear-gradient(135deg,rgba(0,230,118,0.06),rgba(68,138,255,0.04));border:2px solid rgba(0,230,118,0.2);border-radius:16px;position:relative;overflow:hidden;">
+                <div style="position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,var(--green),var(--blue));"></div>
+                <div style="font-size:0.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--green);font-weight:700;margin-bottom:10px;">🎯 Fix One Thing This Week</div>
+                <div style="font-size:1.2rem;font-weight:800;color:var(--text);margin-bottom:8px;">${fixOne.action}</div>
+                <div style="font-size:0.85rem;color:var(--text2);line-height:1.7;margin-bottom:12px;">${fixOne.reason || ''}</div>
+                ${fixOne.metric ? `<div style="font-size:0.9rem;font-weight:700;color:var(--green);">Potential impact: ${fixOne.metric}</div>` : ''}
+            </div>
+        </div>`;
+    }
+
+    // === TRADING OVERVIEW ===
+    const overview = r.trading_overview || {};
+    if (overview.net_pnl !== undefined) {
+        const netColor = overview.net_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+        html += `<div class="section" style="margin-top:40px;"><div class="section-label">📊 Trading Overview</div>
+            <div class="charges-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
+                <div class="charges-stat"><div class="charges-stat-val" style="color:${netColor}">${formatINR(overview.net_pnl)}</div><div class="charges-stat-label">Net P&L</div></div>
+                <div class="charges-stat"><div class="charges-stat-val">${overview.win_rate}%</div><div class="charges-stat-label">Win Rate (${overview.win_count}W / ${overview.loss_count}L)</div></div>
+                <div class="charges-stat"><div class="charges-stat-val" style="color:var(--green)">${formatINR(overview.avg_win)}</div><div class="charges-stat-label">Avg Win</div></div>
+                <div class="charges-stat"><div class="charges-stat-val" style="color:var(--red)">${formatINR(overview.avg_loss)}</div><div class="charges-stat-label">Avg Loss</div></div>
+            </div>
+            <div class="charges-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px;">
+                <div class="charges-stat"><div class="charges-stat-val">${overview.risk_reward || '—'}</div><div class="charges-stat-label">Risk/Reward Ratio</div></div>
+                <div class="charges-stat"><div class="charges-stat-val">${overview.avg_hold_hours || '—'}h</div><div class="charges-stat-label">Avg Hold Time</div></div>
+                <div class="charges-stat"><div class="charges-stat-val">${overview.trades_per_day}</div><div class="charges-stat-label">Trades/Day</div></div>
+                <div class="charges-stat"><div class="charges-stat-val" style="color:${overview.net_pnl >= 0 ? 'var(--green)' : 'var(--red)'}">₹${Math.abs(Math.round((overview.net_pnl || 0) / (pz.trading_days || 1))).toLocaleString('en-IN')}</div><div class="charges-stat-label">${overview.net_pnl >= 0 ? 'Avg Daily Gain' : 'Avg Daily Loss'}</div></div>
+            </div>`;
+
+        // Best/Worst trade + day
+        html += `<div class="charges-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px;">`;
+        if (overview.best_trade) {
+            html += `<div class="charges-stat" style="text-align:left;padding:16px 20px;">
+                <div class="charges-stat-label" style="margin-bottom:6px;">🏆 Best Trade</div>
+                <div style="font-size:1.1rem;font-weight:800;color:var(--green)">${formatINR(overview.best_trade.pnl)}</div>
+                <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">${overview.best_trade.ticker} · ${overview.best_trade.date}</div>
+            </div>`;
+        }
+        if (overview.worst_trade) {
+            html += `<div class="charges-stat" style="text-align:left;padding:16px 20px;">
+                <div class="charges-stat-label" style="margin-bottom:6px;">💀 Worst Trade</div>
+                <div style="font-size:1.1rem;font-weight:800;color:var(--red)">${formatINR(overview.worst_trade.pnl)}</div>
+                <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">${overview.worst_trade.ticker} · ${overview.worst_trade.date}</div>
+            </div>`;
+        }
+        html += `</div>`;
+
+        // Best/Worst day
+        if (overview.best_day || overview.worst_day) {
+            html += `<div class="charges-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px;">`;
+            if (overview.best_day) {
+                html += `<div class="charges-stat" style="text-align:left;padding:16px 20px;">
+                    <div class="charges-stat-label" style="margin-bottom:6px;">📈 Best Day</div>
+                    <div style="font-size:1.1rem;font-weight:800;color:var(--green)">${formatINR(overview.best_day.pnl)}</div>
+                    <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">${overview.best_day.date}</div>
+                </div>`;
+            }
+            if (overview.worst_day) {
+                html += `<div class="charges-stat" style="text-align:left;padding:16px 20px;">
+                    <div class="charges-stat-label" style="margin-bottom:6px;">📉 Worst Day</div>
+                    <div style="font-size:1.1rem;font-weight:800;color:var(--red)">${formatINR(overview.worst_day.pnl)}</div>
+                    <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">${overview.worst_day.date}</div>
+                </div>`;
+            }
+            html += `</div>`;
+        }
+
+        // Day of Week
+        if (overview.best_dow || overview.worst_dow) {
+            html += `<div class="charges-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:20px;">`;
+            if (overview.best_dow) {
+                html += `<div class="charges-stat" style="text-align:left;padding:16px 20px;">
+                    <div class="charges-stat-label" style="margin-bottom:6px;">✅ Best Day of Week</div>
+                    <div style="font-size:1rem;font-weight:700;">${overview.best_dow.day}</div>
+                    <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">${overview.best_dow.win_rate}% WR · ${formatINR(overview.best_dow.total_pnl)} · ${overview.best_dow.count} trades</div>
+                </div>`;
+            }
+            if (overview.worst_dow) {
+                html += `<div class="charges-stat" style="text-align:left;padding:16px 20px;">
+                    <div class="charges-stat-label" style="margin-bottom:6px;">❌ Worst Day of Week</div>
+                    <div style="font-size:1rem;font-weight:700;">${overview.worst_dow.day}</div>
+                    <div style="font-size:0.75rem;color:var(--muted);margin-top:4px;">${overview.worst_dow.win_rate}% WR · ${formatINR(overview.worst_dow.total_pnl)} · ${overview.worst_dow.count} trades</div>
+                </div>`;
+            }
+            html += `</div>`;
+        }
+
+        // Instrument breakdown
+        if (overview.instrument_summary && overview.instrument_summary.length > 0) {
+            html += `<div style="margin-top:16px;"><div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);font-weight:600;margin-bottom:12px;">Instrument Breakdown</div>`;
+            html += `<table class="trade-table"><thead><tr><th>Symbol</th><th>Trades</th><th>Win Rate</th><th>Net P&L</th></tr></thead><tbody>`;
+            overview.instrument_summary.forEach(ins => {
+                const cls = ins.total_pnl >= 0 ? 'positive' : 'negative';
+                html += `<tr><td>${ins.ticker}</td><td>${ins.count}</td><td>${ins.win_rate}%</td><td class="${cls}">${formatINR(ins.total_pnl)}</td></tr>`;
+            });
+            html += `</tbody></table></div>`;
+        }
+
+        // Equity Curve (simple text-based mini chart)
+        if (overview.equity_curve && overview.equity_curve.length > 1) {
+            const maxPnl = Math.max(...overview.equity_curve.map(e => e.cumulative_pnl));
+            const minPnl = Math.min(...overview.equity_curve.map(e => e.cumulative_pnl));
+            const range = maxPnl - minPnl || 1;
+            html += `<div style="margin-top:24px;"><div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--muted);font-weight:600;margin-bottom:12px;">Equity Curve (Cumulative P&L)</div>`;
+            html += `<div style="display:flex;align-items:flex-end;gap:2px;height:80px;padding:8px 0;border-bottom:1px solid var(--border);">`;
+            overview.equity_curve.forEach(point => {
+                const normalized = ((point.cumulative_pnl - minPnl) / range) * 100;
+                const barColor = point.cumulative_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+                const barHeight = Math.max(4, normalized * 0.7);
+                html += `<div style="flex:1;height:${barHeight}px;background:${barColor};border-radius:2px;opacity:0.7;" title="${point.date}: ${formatINR(point.cumulative_pnl)}"></div>`;
+            });
+            html += `</div>`;
+            html += `<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted);margin-top:4px;"><span>${overview.equity_curve[0].date}</span><span>${overview.equity_curve[overview.equity_curve.length-1].date}</span></div>`;
+            html += `</div>`;
+        }
+
+        html += `</div>`;  // Close trading overview section
+    }
+
+    // === INSIGHTS (Boxing Grid) ===
+    if (insights.length > 0) {
+        const insightIcons = {'timing':'⏰','instrument':'📈','sequence':'📊','ceiling':'🚧','hourly_wage':'💸','charges':'🧾'};
+        const insightColors = {'timing':'var(--yellow)','instrument':'var(--green)','sequence':'var(--blue)','ceiling':'var(--orange)','hourly_wage':'var(--red)','charges':'var(--purple)'};
+        html += `<div class="section" style="margin-top:60px;"><div class="section-label">💡 Eye-Opening Insights</div><div class="pattern-grid">`;
+        insights.forEach(ins => {
+            const icon = insightIcons[ins.type] || '💡';
+            const color = insightColors[ins.type] || 'var(--blue)';
+            html += `<div class="pattern-box" style="border-left-color:${color}">
+                <div class="pattern-box-icon">${icon}</div>
+                <div class="pattern-box-name">${ins.title || ''}</div>
+                <div class="pattern-box-desc" style="color:var(--text2);font-size:0.85rem;line-height:1.7">${ins.text || ''}</div>
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+
+    // === PATTERNS BREAKDOWN (Boxing Grid with Drill-Down) ===
+    if (patterns.length > 0) {
+        const iconMap = {'Revenge Trading':'🔴','Overconfidence':'🟡','Disposition Bias':'⏱️','Loss Snowball':'🌊','Bad Timing':'⏰','Over-Trading':'⚡'};
+        const clsMap = {'Revenge Trading':'revenge','Overconfidence':'overconfidence','Disposition Bias':'disposition','Loss Snowball':'snowball','Bad Timing':'timing','Over-Trading':'overtrading'};
+        html += `<div class="section"><div class="section-label">🔍 Behavioral Patterns Detected</div><div class="pattern-grid">`;
+        patterns.forEach((p, idx) => {
+            const icon = iconMap[p.name] || '📊';
+            const cls = clsMap[p.name] || '';
+            const hasDrill = p.drill_down && p.drill_down.length > 0;
+            const hasFix = p.how_to_fix && p.how_to_fix.length > 0;
+            const clickable = hasDrill || hasFix;
+            html += `<div class="pattern-box ${cls} ${clickable ? 'clickable' : ''}" ${clickable ? `onclick="toggleDrill('drill-${idx}')"` : ''}>
+                <div class="pattern-box-icon">${icon}</div>
+                <div class="pattern-box-name">${p.name}</div>
+                <div class="pattern-box-cost">${formatINR(p.cost)}</div>
+                <div class="pattern-box-desc">${p.description || ''}</div>
+                <div class="pattern-box-count">${p.count} trade${p.count===1?'':'s'} flagged${clickable ? ' · <span style="color:var(--green);font-weight:600;">Click to see details ↓</span>' : ''}</div>
+                ${clickable ? `<div class="drill-down-panel" id="drill-${idx}" style="display:none">
+                    ${hasFix ? `<div class="how-to-fix">
+                        <div class="fix-header">💡 How to Fix</div>
+                        <div class="fix-body">${p.how_to_fix}</div>
+                    </div>` : ''}
+                    ${hasDrill ? `<div class="drill-trades">
+                        <div class="drill-header">📋 Exact Trades</div>
+                        ${p.drill_down.map(d => {
+                            // If this drill item has sub-trades (timing pattern), render them
+                            let subTrades = '';
+                            if (d.trades && d.trades.length > 0) {
+                                subTrades = '<div style="margin:6px 0 0 12px;">' + d.trades.map(t => 
+                                    '<div style="font-size:0.75rem;color:var(--text2);padding:3px 0;border-bottom:1px solid var(--border);">' +
+                                    (t.date ? '<span style="color:var(--muted)">' + t.date + '</span> · ' : '') +
+                                    t.ticker + ' · <span class="' + (t.pnl >= 0 ? 'positive' : 'negative') + '">' + formatINR(t.pnl) + '</span></div>'
+                                ).join('') + '</div>';
+                            }
+                            return '<div class="drill-item">' + d.what_happened + subTrades + '</div>';
+                        }).join('')}
+                    </div>` : ''}
+                </div>` : ''}
+            </div>`;
+        });
+        html += `</div></div>`;
+    }
+
+    // === PREDICTION ===
+    if (prediction.predictions && prediction.predictions.length > 0) {
+        html += `<div class="section"><div class="section-label">⚠️ Pattern Triggers to Watch</div>
+            <div class="prediction-card">`;
+        prediction.predictions.forEach(p => {
+            html += `<div class="prediction-item">${p}</div>`;
+        });
+        html += `<div class="prediction-note">${prediction.note || ''}</div></div></div>`;
+    }
+
+    // === CALM VS EMOTIONAL ===
+    if (calm.calm_count > 0) {
+        html += `<div class="section"><div class="section-label">🧘 Calm vs Emotional Trades</div>
+            <div class="charges-grid">
+                <div class="charges-stat"><div class="charges-stat-val" style="color:var(--green)">${calm.calm_win_rate}%</div><div class="charges-stat-label">Calm Win Rate (${calm.calm_count} trades)</div></div>
+                <div class="charges-stat"><div class="charges-stat-val" style="color:var(--red)">${calm.emotional_win_rate}%</div><div class="charges-stat-label">Emotional Win Rate (${calm.emotional_count} trades)</div></div>
+                <div class="charges-stat"><div class="charges-stat-val" style="color:${calm.calm_avg_pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${formatINR(calm.calm_avg_pnl)}</div><div class="charges-stat-label">Avg Calm P&L/Trade</div></div>
+            </div>
+            ${calm.insight ? `<div style="margin-top:16px;padding:16px 20px;background:rgba(68,138,255,0.04);border:1px solid rgba(68,138,255,0.15);border-radius:10px;font-size:0.85rem;color:var(--text2);line-height:1.7;">${calm.insight}</div>` : ''}
+        </div>`;
+    }
+
+    // === FIX VALUE ===
+    if (fixValue.top_fixes && fixValue.top_fixes.length > 0) {
+        html += `<div class="section"><div class="section-label">💰 The Value of Fixing This</div>
+            <div style="font-size:0.8rem;color:var(--muted);margin-bottom:20px;line-height:1.6;">Projected savings based on your ${pz.total_trades || 0} trades extrapolated to monthly/yearly rates. Actual results depend on trade frequency and market conditions.</div>`;
+        fixValue.top_fixes.forEach(f => {
+            html += `<div class="fix-card">
+                <div class="fix-pattern">${f.pattern}</div>
+                <div class="fix-saving">${formatINR(f.yearly_saving)}/year</div>
+                <div class="fix-desc">${f.description}</div>
+            </div>`;
+        });
+        if (fixValue.total_yearly_savings) {
+            html += `<div class="fix-total">Total estimated savings: ${formatINR(fixValue.total_yearly_savings)}/year</div>`;
+        }
+        html += `</div>`;
+    }
+
+    // === CHARGES ===
+    if (charges.total_charges) {
+        html += `<div class="section"><div class="section-label">💸 Your Break-Even Tax (Trading Charges)</div>
+            <div class="charges-summary">
+                <div class="charges-headline">${charges.insight || ''}</div>
+                <div class="charges-grid">
+                    <div class="charges-stat"><div class="charges-stat-val">${formatINR(charges.total_charges)}</div><div class="charges-stat-label">Total Charges</div></div>
+                    <div class="charges-stat"><div class="charges-stat-val">${formatINR(charges.avg_per_trade)}</div><div class="charges-stat-label">Per Trade</div></div>
+                    <div class="charges-stat"><div class="charges-stat-val">${charges.real_win_rate}%</div><div class="charges-stat-label">Real Win Rate</div></div>
+                </div>`;
+
+        // Trade table
+        if (charges.trade_table && charges.trade_table.length > 0) {
+            html += `<table class="trade-table"><thead><tr><th>Symbol</th><th>P&L</th><th>Charges</th><th>Net P&L</th></tr></thead><tbody>`;
+            charges.trade_table.forEach(t => {
+                const cls = t.net_pnl >= 0 ? 'positive' : 'negative';
+                html += `<tr><td>${t.ticker.substring(0,12)}</td><td class="${t.pnl_before_charges>=0?'positive':'negative'}">${formatINR(t.pnl_before_charges)}</td><td style="color:var(--muted)">-${formatINR(t.charges)}</td><td class="${cls}">${formatINR(t.net_pnl)}</td></tr>`;
+            });
+            html += `</tbody></table>`;
+        }
+        html += `</div></div>`;
+    }
+
+    // === CTA ===
+    html += `<div class="cta-section">
+        <h2 style="font-size:1.5rem;margin-bottom:12px;">Track Your Improvement</h2>
+        <p style="color:var(--text2);margin-bottom:24px;font-size:0.9rem;">Upload weekly. Watch your DNA Score improve. Get a new "Fix One Thing" each week.</p>
+        <a href="/static/dashboard.html" class="cta-btn">Go to Dashboard →</a>
+        <a href="/static/upload-free.html" class="cta-secondary">Upload New Data →</a>
+        <div style="margin-top:24px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+            <button onclick="downloadPDF()" style="background:none;border:1px solid var(--border);color:var(--text2);padding:10px 20px;border-radius:8px;font-size:0.85rem;cursor:pointer;">📄 Download PDF</button>
+            <button onclick="shareWhatsApp()" style="background:none;border:1px solid rgba(37,211,102,0.3);color:#25d366;padding:10px 20px;border-radius:8px;font-size:0.85rem;cursor:pointer;">💬 Share on WhatsApp</button>
+            <button onclick="shareTwitter()" style="background:none;border:1px solid rgba(29,161,242,0.3);color:#1da1f2;padding:10px 20px;border-radius:8px;font-size:0.85rem;cursor:pointer;">🐦 Share on Twitter</button>
+        </div>
+    </div>`;
+
+    // === FEEDBACK ===
+    html += `<div style="text-align:center;margin-top:32px;padding:24px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px;">
+        <p style="font-size:0.9rem;font-weight:600;margin-bottom:12px;">Was this report accurate?</p>
+        <p style="font-size:0.8rem;color:var(--text2);margin-bottom:16px;">Help us improve by rating your experience</p>
+        <div style="display:flex;justify-content:center;gap:12px;">
+            <button onclick="sendFeedback('accurate')" style="padding:10px 24px;background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:var(--green);border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;">👍 Yes, spot on</button>
+            <button onclick="sendFeedback('partial')" style="padding:10px 24px;background:rgba(255,202,40,0.1);border:1px solid rgba(255,202,40,0.3);color:var(--yellow);border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;">🤔 Partially</button>
+            <button onclick="sendFeedback('inaccurate')" style="padding:10px 24px;background:rgba(255,61,113,0.1);border:1px solid rgba(255,61,113,0.3);color:var(--red);border-radius:8px;font-size:0.85rem;font-weight:600;cursor:pointer;">👎 Not really</button>
+        </div>
+        <p id="feedback-thanks" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--green);">Thanks for your feedback! This helps us improve.</p>
+    </div>`;
+
+    // === DISCLAIMER ===
+    html += `<div class="disclaimer">
+        <p>⚠️ ${r.disclaimer || 'This is YOUR data reflected back. Not financial advice. All decisions remain yours.'}</p>
+        <div style="margin-top:16px;display:flex;justify-content:center;gap:20px;flex-wrap:wrap;font-size:0.75rem;">
+            <a href="mailto:feedback@optionstycoon.app" style="color:var(--muted);text-decoration:none;">📧 Feedback</a>
+            <a href="mailto:features@optionstycoon.app" style="color:var(--muted);text-decoration:none;">💡 Feature Request</a>
+            <a href="#" onclick="alert('Privacy: We store only your email and uploaded trade data. Never shared with third parties. Never access your broker. Delete anytime by emailing us.')" style="color:var(--muted);text-decoration:none;">🔒 Privacy</a>
+            <a href="#" onclick="alert('Terms: Behavioral observations only. NOT financial advice. Not SEBI registered. Do not make trading decisions based on this.')" style="color:var(--muted);text-decoration:none;">📋 Terms</a>
+        </div>
+        <p style="margin-top:12px;font-size:0.65rem;color:var(--muted);">© 2024 Options Tycoon · Not SEBI registered · Not a financial advisor · Educational self-observation only</p>
+    </div>`;
+
+    el.innerHTML = html;
+}
+
+// === LOAD REPORT ===
+(async function() {
+    const params = new URLSearchParams(window.location.search);
+    const source = params.get('source');
+
+    if (source === 'free') {
+        const stored = localStorage.getItem('ot_free_report');
+        if (stored) {
+            try { renderReport(JSON.parse(stored)); return; }
+            catch(e) { document.getElementById('error').textContent = 'Report corrupted. Re-upload.'; document.getElementById('error').style.display='block'; }
+        }
+    }
+
+    // Try profile-based
+    const pid = params.get('profile_id') || localStorage.getItem('ot_profile_id');
+    if (pid) {
+        try {
+            const res = await fetch(`/api/report/${pid}`);
+            if (res.ok) { renderReport(await res.json()); return; }
+        } catch(e) {}
+    }
+
+    // Last resort: check localStorage
+    const fr = localStorage.getItem('ot_free_report');
+    if (fr) { try { renderReport(JSON.parse(fr)); return; } catch(e) {} }
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('error').innerHTML = `
+        <div style="text-align:center;padding:60px 20px;">
+            <div style="font-size:3rem;margin-bottom:16px;">📤</div>
+            <h2 style="font-size:1.4rem;margin-bottom:12px;color:var(--text);">No report yet</h2>
+            <p style="color:var(--text2);margin-bottom:24px;max-width:400px;margin-left:auto;margin-right:auto;">Upload your broker trade history to get your Trader DNA Report. Takes 60 seconds.</p>
+            <a href="/static/upload-free.html" style="display:inline-block;padding:14px 32px;background:var(--green);color:#000;font-weight:800;border-radius:10px;text-decoration:none;">Upload CSV →</a>
+        </div>
+    `;
+    document.getElementById('error').style.display = 'block';
+})();
+</script>
+</body>
+</html>

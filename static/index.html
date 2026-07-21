@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Simulated Trading Sandbox</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+<!-- ======================================================================
+     3-PANE LAYOUT
+     ====================================================================== -->
+<div class="app-layout">
+
+    <!-- ===== TOP NAV BAR ===== -->
+    <nav class="app-nav">
+        <a href="/static/index.html" class="nav-link active">Trading</a>
+        <a href="/static/behavioral.html" class="nav-link">Behavioral</a>
+        <a href="/static/history.html" class="nav-link">History</a>
+        <a href="/static/compare.html" class="nav-link">Compare</a>
+        <a href="/static/timemachine.html" class="nav-link">Time Machine</a>
+        <a href="/static/upload.html" class="nav-link">Upload</a>
+        <a href="/static/report.html" class="nav-link">Report</a>
+        <a href="/static/profile.html" class="nav-link">Profile</a>
+    </nav>
+
+    <!-- ===== LEFT PANE: Search & Strategies ===== -->
+    <aside class="pane pane-left">
+        <!-- Ticker Search -->
+        <input type="text" id="ticker-search" placeholder="Search ticker (e.g. NIFTY)">
+        <ul class="ticker-list" id="ticker-list">
+            <li class="empty-state">Loading tickers...</li>
+        </ul>
+
+        <div class="section-divider"></div>
+
+        <!-- Strategy Templates -->
+        <div class="section-header">Strategy Templates</div>
+
+        <div class="strategy-card" onclick="applyStrategy('iron-condor')">
+            <div class="strategy-card-name">🦅 Iron Condor</div>
+            <div class="strategy-card-desc">Sell OTM call & put spreads. Profit from low volatility and time decay.</div>
+        </div>
+
+        <div class="strategy-card" onclick="applyStrategy('vertical-spread')">
+            <div class="strategy-card-name">📊 Vertical Spread</div>
+            <div class="strategy-card-desc">Directional bet with capped risk. Buy one strike, sell another.</div>
+        </div>
+
+        <div class="strategy-card" onclick="applyStrategy('straddle')">
+            <div class="strategy-card-name">⚡ Straddle</div>
+            <div class="strategy-card-desc">Buy ATM call + put. Profit from big moves in either direction.</div>
+        </div>
+
+        <div class="strategy-card" onclick="applyStrategy('strangle')">
+            <div class="strategy-card-name">🌀 Strangle</div>
+            <div class="strategy-card-desc">Buy OTM call + put. Cheaper than straddle, needs larger move.</div>
+        </div>
+    </aside>
+
+    <!-- ===== CENTER PANE: Options Chain & Builder ===== -->
+    <main class="pane pane-center">
+        <!-- Ticker Title -->
+        <h2 id="chain-ticker-title" style="margin-bottom: 12px;">Select a ticker to begin</h2>
+
+        <!-- Daily Focus Banner (Phase 10 — Req 77) -->
+        <div id="daily-focus-banner" class="daily-focus-banner" style="display:none;">
+            <span class="focus-label">🪞 Mirror's Daily Focus:</span>
+            <span class="focus-text" id="daily-focus-text"></span>
+            <button class="focus-dismiss" onclick="dismissDailyFocus()">✕</button>
+        </div>
+
+        <!-- Market Timer -->
+        <div id="market-timer" class="market-timer">Market: --:-- | Closes in --:--</div>
+
+        <!-- Live Price Chart -->
+        <canvas id="price-chart" width="760" height="120"></canvas>
+
+        <!-- Expiration Tabs -->
+        <div class="expiry-tabs" id="expiry-tabs">
+            <span class="text-muted" style="padding: 6px 12px; font-size: 12px;">No expirations loaded</span>
+        </div>
+
+        <!-- Options Chain Table -->
+        <div class="chain-table-wrap">
+            <table class="chain-table">
+                <thead>
+                    <tr>
+                        <th>Call Bid/Ask</th>
+                        <th>Call Δ</th>
+                        <th>Call Θ</th>
+                        <th class="strike-col">Strike</th>
+                        <th>Put Bid/Ask</th>
+                        <th>Put Δ</th>
+                        <th>Put Θ</th>
+                    </tr>
+                </thead>
+                <tbody id="chain-tbody">
+                    <tr>
+                        <td colspan="7" class="empty-state">Select a ticker to view the options chain</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Strategy Builder -->
+        <div class="strategy-builder">
+            <h3>🛠️ Strategy Builder</h3>
+
+            <!-- Legs Container -->
+            <div id="legs-container">
+                <div class="empty-state">Click "Add Leg" or choose a strategy template</div>
+            </div>
+
+            <!-- Add Leg Button -->
+            <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center;">
+                <button class="btn btn-secondary btn-sm" onclick="addLeg()">+ Add Leg</button>
+                <span class="text-muted" style="font-size: 11px;">Max 4 legs</span>
+            </div>
+
+            <!-- Strategy Summary -->
+            <div class="strategy-summary">
+                <div class="summary-item">
+                    <div class="summary-label">Net Debit/Credit</div>
+                    <div class="summary-value" id="summary-net">₹0.00</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Max Profit</div>
+                    <div class="summary-value text-green" id="summary-max-profit">₹0.00</div>
+                </div>
+                <div class="summary-item">
+                    <div class="summary-label">Max Loss</div>
+                    <div class="summary-value text-red" id="summary-max-loss">₹0.00</div>
+                </div>
+            </div>
+
+            <!-- Deploy Button -->
+            <div style="margin-top: 16px; text-align: center;">
+                <button class="btn btn-deploy btn-block" id="btn-deploy" onclick="deployTrade()">
+                    🚀 Deploy Credits
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===== RIGHT PANE: HUD ===== -->
+    <aside class="pane pane-right">
+        <!-- Balance -->
+        <div class="hud-section">
+            <div class="hud-section-title">Balance <button id="mute-toggle" onclick="toggleMute()" style="background:none; border:none; cursor:pointer; font-size:16px; float:right;">🔊</button></div>
+            <div class="hud-balance mono" id="hud-balance">₹10,000.00</div>
+            <div id="hud-game-over" class="hidden" style="margin-top: 6px; color: var(--red); font-weight: 700; font-size: 13px;">
+                ☠️ GAME OVER — Balance depleted
+            </div>
+        </div>
+
+        <!-- Key Stats -->
+        <div class="hud-section">
+            <div class="hud-section-title">Stats</div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">Open Positions</span>
+                <span class="hud-stat-value mono" id="hud-open-positions">0</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">Unrealized P&L</span>
+                <span class="hud-stat-value mono" id="hud-unrealized-pnl">₹0.00</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">IV Rank</span>
+                <span class="hud-stat-value mono" id="hud-iv-rank">—</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">Total Trades</span>
+                <span class="hud-stat-value mono" id="hud-total-trades">0</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">Phase</span>
+                <span class="hud-stat-value" id="hud-phase">Phase A</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">Streak</span>
+                <span class="streak-badge" id="hud-streak">—</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-stat-label">XP / Level</span>
+                <span class="hud-stat-value mono" id="hud-xp">0 XP (Lv 1)</span>
+            </div>
+        </div>
+
+        <!-- Behavioral Gauges -->
+        <div class="hud-section">
+            <div class="hud-section-title">Behavioral Profile</div>
+
+            <div class="gauge">
+                <div class="gauge-label">
+                    <span class="gauge-name">Discipline</span>
+                    <span class="gauge-value" id="gauge-discipline-val">—</span>
+                </div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill green" id="gauge-discipline" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="gauge">
+                <div class="gauge-label">
+                    <span class="gauge-name">Patience</span>
+                    <span class="gauge-value" id="gauge-patience-val">—</span>
+                </div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill green" id="gauge-patience" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="gauge">
+                <div class="gauge-label">
+                    <span class="gauge-name">Sizing</span>
+                    <span class="gauge-value" id="gauge-sizing-val">—</span>
+                </div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill green" id="gauge-sizing" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div class="gauge">
+                <div class="gauge-label">
+                    <span class="gauge-name">Emotional Control</span>
+                    <span class="gauge-value" id="gauge-emotional-val">—</span>
+                </div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill green" id="gauge-emotional" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Open Positions Mini-List -->
+        <div class="hud-section">
+            <div class="hud-section-title">Open Positions</div>
+            <div id="hud-positions-list">
+                <div class="empty-state">No open positions</div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ===== FOOTER ===== -->
+    <footer class="app-footer">
+        <span class="disclaimer-text">⚠️ 100% Simulated Paper-Trading. No Real Money. No Financial Advice.</span>
+    </footer>
+</div>
+
+<!-- ======================================================================
+     DISCLAIMER MODAL (First Visit)
+     ====================================================================== -->
+<div class="modal-overlay hidden" id="disclaimer-modal">
+    <div class="modal">
+        <h2>⚠️ Educational Simulation Only</h2>
+        <p>
+            <strong>Options Tycoon</strong> is a 100% simulated paper-trading sandbox designed
+            for educational purposes only. No real money is involved, no real trades are placed,
+            and nothing in this application constitutes financial advice.
+        </p>
+        <p>
+            All market data is synthetic/mock data. Performance in this simulation does not
+            predict or guarantee results in real markets.
+        </p>
+        <p style="color: var(--orange); font-weight: 600;">
+            By proceeding, you acknowledge this is purely educational and simulated.
+        </p>
+        <button class="btn btn-primary" onclick="dismissDisclaimer()">
+            ✅ I Understand — Enter Simulation
+        </button>
+    </div>
+</div>
+
+<!-- ======================================================================
+     SCRIPTS
+     ====================================================================== -->
+<script src="/static/js/sounds.js"></script>
+<script src="/static/js/app.js"></script>
+<script src="/static/js/simulation.js"></script>
+<script src="/static/js/feedback.js"></script>
+
+</body>
+</html>

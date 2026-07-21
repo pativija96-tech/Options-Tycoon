@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Test Scripts for Testers</title>
+    <style>
+        :root { --bg: #0f1419; --card: #1a2332; --border: #2d3748; --green: #00c853; --text: #e0e0e0; --muted: #8b9bb4; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, sans-serif; background: var(--bg); color: var(--text); padding: 40px 24px; line-height: 1.7; }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { font-size: 2rem; margin-bottom: 8px; }
+        .subtitle { color: var(--muted); margin-bottom: 40px; }
+        .test-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 24px; margin-bottom: 20px; }
+        .test-card h3 { color: var(--green); font-size: 1rem; margin-bottom: 12px; }
+        .test-card .test-id { font-size: 0.75rem; color: var(--muted); margin-bottom: 8px; }
+        .steps { padding-left: 20px; }
+        .steps li { margin-bottom: 8px; font-size: 0.9rem; color: var(--muted); }
+        .steps li strong { color: var(--text); }
+        .expected { margin-top: 12px; padding: 10px 14px; background: rgba(0,200,83,0.05); border-left: 3px solid var(--green); border-radius: 4px; font-size: 0.85rem; }
+        .expected-label { font-size: 0.7rem; text-transform: uppercase; color: var(--green); letter-spacing: 0.5px; margin-bottom: 4px; }
+        a { color: var(--green); }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🧪 Test Scripts</h1>
+    <p class="subtitle">Follow each test case. Use the 🐛 button (bottom-right of every page) to report issues.</p>
+
+    <div class="test-card">
+        <div class="test-id">TS-01 | Landing Page</div>
+        <h3>Test: Landing Page Load & Navigation</h3>
+        <ol class="steps">
+            <li>Open the homepage URL</li>
+            <li>Verify headline "See Why You Keep Losing Money" appears</li>
+            <li>Verify stats section shows (4,200+ | 72% | 38%)</li>
+            <li>Click "Upload Your Trade History — Free" button</li>
+            <li><strong>Expected:</strong> Opens the upload page</li>
+            <li>Go back, click "Skip upload — try the simulator"</li>
+            <li><strong>Expected:</strong> Opens the trading page with 3 panes</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>All links work. Page loads in under 3 seconds. No broken layout.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-02 | CSV Upload & Report</div>
+        <h3>Test: Upload CSV and View Devastating Report</h3>
+        <ol class="steps">
+            <li>Go to the Upload page</li>
+            <li>Click "Download sample file" to get the sample CSV</li>
+            <li>Upload the sample CSV file</li>
+            <li>Wait for analysis (should take <5 seconds)</li>
+            <li><strong>Expected:</strong> Redirects to Report page</li>
+            <li>Verify "80.4%" appears as behavioral loss percentage</li>
+            <li>Verify "Revenge Trading: ₹43,500" card appears</li>
+            <li>Scroll down — check all sections load (worst day, time patterns, metrics)</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Report shows non-zero percentages. All 4 pattern cards visible. No loading errors.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-03 | Trading Simulation</div>
+        <h3>Test: Execute a Trade with Live Prices</h3>
+        <ol class="steps">
+            <li>Go to Trading page (index.html)</li>
+            <li>Click "BANKNIFTY" from the ticker list</li>
+            <li><strong>Expected:</strong> Options chain loads, prices start ticking every 2-3s, chart appears</li>
+            <li>Click the "Iron Condor" strategy card</li>
+            <li><strong>Expected:</strong> Strategy builder populates with 4 legs, correct strikes from dropdown</li>
+            <li>Click "Deploy Credits"</li>
+            <li><strong>Expected:</strong> Confirmation modal appears showing behavioral state + "Would you do this with real money?"</li>
+            <li>Click "Yes — Deploy Credits"</li>
+            <li><strong>Expected:</strong> Sound plays, balance decreases, position appears in HUD</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Trade executes. Balance updates. Position visible. No JS errors in console.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-04 | Close Position</div>
+        <h3>Test: Close a Position and Tag Outcome</h3>
+        <ol class="steps">
+            <li>After executing a trade (TS-03), find the position in "Open Positions" (HUD right side)</li>
+            <li>Click the "Close" button on the position</li>
+            <li><strong>Expected:</strong> Modal appears with dropdown (Success/Failure/Slippage)</li>
+            <li>Select "Success" and click "Confirm Close"</li>
+            <li><strong>Expected:</strong> Position disappears, balance updates, green flash, sound plays</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Position closes. P&L recorded. Flash animation visible.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-05 | Behavioral Dashboard</div>
+        <h3>Test: View Behavioral Profile</h3>
+        <ol class="steps">
+            <li>Navigate to "Behavioral" page from the nav bar</li>
+            <li><strong>Expected:</strong> DNA Score (big number) visible at top</li>
+            <li><strong>Expected:</strong> Strategy vs Behavior split shows 3 numbers</li>
+            <li><strong>Expected:</strong> "Fix One Thing First" section has text</li>
+            <li><strong>Expected:</strong> Phase indicator shows current phase</li>
+            <li><strong>Expected:</strong> 4 gauge bars visible with values</li>
+            <li>Scroll down — equity curve chart should show a line</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>All sections load with data. No "—" placeholders (if 25+ trades exist). Gauges colored correctly.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-06 | Trade History</div>
+        <h3>Test: View Trade History with Flags</h3>
+        <ol class="steps">
+            <li>Navigate to "History" page</li>
+            <li><strong>Expected:</strong> Table shows all executed trades</li>
+            <li>Look for colored badges (REVENGE in red, OVERCONFIDENCE in orange)</li>
+            <li>Click a trade row to expand it</li>
+            <li><strong>Expected:</strong> Leg details and journal note visible</li>
+            <li>Click "Export CSV" button</li>
+            <li><strong>Expected:</strong> CSV file downloads</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Trades display. Flags visible on flagged trades. Export works.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-07 | Profile Management</div>
+        <h3>Test: Profile CRUD & Mode Switch</h3>
+        <ol class="steps">
+            <li>Navigate to "Profile" page</li>
+            <li>Verify current profile info shows (name, balance, phase)</li>
+            <li>Click "Sim + Real Trade Journal" mode button</li>
+            <li><strong>Expected:</strong> Mode switches without error</li>
+            <li>Enter a name and click "Create Profile"</li>
+            <li><strong>Expected:</strong> New profile appears in list</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Mode toggles. New profile creates. No "Method Not Allowed" errors.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-08 | One-Click Trading</div>
+        <h3>Test: Click Chain Cell to Trade</h3>
+        <ol class="steps">
+            <li>On the Trading page, select NIFTY</li>
+            <li>Wait for prices to start ticking</li>
+            <li>Click directly on an "ask" price in the options chain table</li>
+            <li><strong>Expected:</strong> Trade confirmation modal opens showing strike, type, price</li>
+            <li>Click "Buy — Deploy"</li>
+            <li><strong>Expected:</strong> Trade executes, balance decreases</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>One-click trading works from chain cells. Modal shows correct data.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-09 | Market Timer & Simulation</div>
+        <h3>Test: Live Price Simulation</h3>
+        <ol class="steps">
+            <li>On the Trading page, select any ticker</li>
+            <li><strong>Expected:</strong> Price chart appears and starts drawing</li>
+            <li><strong>Expected:</strong> Market timer shows time and countdown</li>
+            <li>Wait 30+ seconds, watch chain prices update (green/red flashes)</li>
+            <li><strong>Expected:</strong> Prices change every 2-3 seconds with tick indicators</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Chart draws. Timer counts down. Prices tick with color flashes. No freezing.</div>
+    </div>
+
+    <div class="test-card">
+        <div class="test-id">TS-10 | Compare Mode</div>
+        <h3>Test: Sim vs Real Comparison</h3>
+        <ol class="steps">
+            <li>Navigate to "Compare" page</li>
+            <li>If no real trades: verify "Start logging real trades" message shows</li>
+            <li>Go to Profile → switch to "Sim + Real" mode</li>
+            <li>(If testing fully: log a real trade, then return to Compare)</li>
+        </ol>
+        <div class="expected"><div class="expected-label">Pass Criteria</div>Page loads without error. Shows appropriate empty state or comparison data.</div>
+    </div>
+
+</div>
+
+<script src="/static/js/feedback.js"></script>
+</body>
+</html>

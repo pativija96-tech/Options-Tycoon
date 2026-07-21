@@ -1,0 +1,29 @@
+{
+  "ticker": "TATAMOTORS",
+  "underlying_price": 725.0,
+  "iv_history": [28.0, 29.5, 27.2, 31.0, 32.5, 30.0, 28.2, 26.8, 25.5, 29.0, 30.8, 33.0, 35.0, 37.0, 35.0, 32.5, 29.5, 28.0, 26.2, 30.0, 31.5, 34.0, 36.0, 38.5, 37.0, 34.0, 32.0, 29.5, 28.5, 27.0, 25.5, 29.5, 31.0, 32.5, 35.0, 37.5, 36.0, 33.5, 31.0, 29.0, 27.5, 26.0, 29.5, 31.5, 33.5, 35.5, 34.0, 32.0, 29.0, 27.5, 26.0, 30.0],
+  "expirations": [
+    {
+      "date": "2025-02-27",
+      "chain": [
+        {"strike": 700, "call": {"bid": 35, "ask": 37, "last": 36, "volume": 6000, "oi": 35000, "iv": 0.30}, "put": {"bid": 8, "ask": 10, "last": 9, "volume": 3500, "oi": 20000, "iv": 0.28}},
+        {"strike": 710, "call": {"bid": 27, "ask": 29, "last": 28, "volume": 7500, "oi": 42000, "iv": 0.295}, "put": {"bid": 12, "ask": 14, "last": 13, "volume": 4500, "oi": 25000, "iv": 0.285}},
+        {"strike": 720, "call": {"bid": 20, "ask": 22, "last": 21, "volume": 9000, "oi": 50000, "iv": 0.29}, "put": {"bid": 16, "ask": 18, "last": 17, "volume": 7000, "oi": 38000, "iv": 0.29}},
+        {"strike": 730, "call": {"bid": 14, "ask": 16, "last": 15, "volume": 8000, "oi": 45000, "iv": 0.295}, "put": {"bid": 21, "ask": 23, "last": 22, "volume": 6500, "oi": 35000, "iv": 0.295}},
+        {"strike": 740, "call": {"bid": 9, "ask": 11, "last": 10, "volume": 6000, "oi": 32000, "iv": 0.30}, "put": {"bid": 27, "ask": 30, "last": 28, "volume": 5000, "oi": 28000, "iv": 0.30}},
+        {"strike": 750, "call": {"bid": 5, "ask": 7, "last": 6, "volume": 4000, "oi": 22000, "iv": 0.31}, "put": {"bid": 34, "ask": 37, "last": 35, "volume": 3500, "oi": 20000, "iv": 0.31}},
+        {"strike": 760, "call": {"bid": 3, "ask": 5, "last": 4, "volume": 2500, "oi": 15000, "iv": 0.32}, "put": {"bid": 42, "ask": 46, "last": 44, "volume": 2000, "oi": 14000, "iv": 0.32}}
+      ]
+    },
+    {
+      "date": "2025-03-27",
+      "chain": [
+        {"strike": 700, "call": {"bid": 50, "ask": 55, "last": 52, "volume": 3000, "oi": 18000, "iv": 0.32}, "put": {"bid": 22, "ask": 26, "last": 24, "volume": 2000, "oi": 12000, "iv": 0.31}},
+        {"strike": 720, "call": {"bid": 35, "ask": 40, "last": 37, "volume": 4000, "oi": 22000, "iv": 0.315}, "put": {"bid": 30, "ask": 35, "last": 32, "volume": 3000, "oi": 16000, "iv": 0.315}},
+        {"strike": 740, "call": {"bid": 22, "ask": 27, "last": 24, "volume": 3000, "oi": 16000, "iv": 0.32}, "put": {"bid": 40, "ask": 45, "last": 42, "volume": 2500, "oi": 14000, "iv": 0.32}},
+        {"strike": 760, "call": {"bid": 13, "ask": 17, "last": 15, "volume": 2000, "oi": 11000, "iv": 0.33}, "put": {"bid": 52, "ask": 58, "last": 55, "volume": 1500, "oi": 9000, "iv": 0.33}},
+        {"strike": 780, "call": {"bid": 7, "ask": 11, "last": 9, "volume": 1500, "oi": 8000, "iv": 0.34}, "put": {"bid": 65, "ask": 72, "last": 68, "volume": 1000, "oi": 6000, "iv": 0.34}}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Sign In to See Your Report</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F8V0148LDJ"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-F8V0148LDJ');</script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <style>
+        :root {
+            --bg-primary: #050a0f;
+            --bg-card: rgba(15, 25, 40, 0.9);
+            --border-color: rgba(255,255,255,0.08);
+            --text-primary: #f0f4f8;
+            --text-secondary: #8899aa;
+            --text-muted: #4a5b6e;
+            --green: #00e676;
+            --red: #ff3d71;
+            --blue: #448aff;
+            --font-main: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-mono: 'Consolas', 'Courier New', monospace;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: var(--font-main); background: var(--bg-primary);
+            color: var(--text-primary); min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 24px;
+        }
+        .gate-container { max-width: 480px; width: 100%; text-align: center; }
+        .gate-card {
+            background: var(--bg-card); border: 1px solid var(--border-color);
+            border-radius: 20px; padding: 48px 36px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .gate-emoji { font-size: 3.5rem; margin-bottom: 20px; }
+        .gate-title { font-size: 1.6rem; font-weight: 800; margin-bottom: 12px; }
+        .gate-subtitle { font-size: 0.95rem; color: var(--text-secondary); line-height: 1.7; margin-bottom: 32px; }
+        .gate-teaser {
+            background: rgba(0,230,118,0.05); border: 1px solid rgba(0,230,118,0.15);
+            border-radius: 12px; padding: 20px; margin-bottom: 32px; text-align: left;
+        }
+        .teaser-title { font-size: 0.75rem; color: var(--green); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; font-weight: 700; }
+        .teaser-stat { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; border-bottom: 1px solid rgba(255,255,255,0.04); }
+        .teaser-stat:last-child { border-bottom: none; }
+        .teaser-label { color: var(--text-secondary); }
+        .teaser-value { font-weight: 700; font-family: var(--font-mono); }
+        .teaser-value.red { color: var(--red); }
+        .teaser-value.green { color: var(--green); }
+        .teaser-blur { filter: blur(4px); user-select: none; }
+
+        .google-btn-wrap { display: flex; justify-content: center; margin-bottom: 20px; }
+        .gate-benefits { text-align: left; margin-top: 24px; }
+        .gate-benefits h4 { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+        .benefit-item { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 10px; }
+        .benefit-icon { font-size: 1.1rem; }
+        .gate-footer { margin-top: 24px; font-size: 0.75rem; color: var(--text-muted); }
+        .error-msg { display: none; color: var(--red); font-size: 0.85rem; margin-top: 12px; padding: 10px; background: rgba(255,61,113,0.08); border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="gate-container">
+    <div class="gate-card">
+        <div class="gate-emoji">🔒</div>
+        <h1 class="gate-title">Your Report is Ready</h1>
+        <p class="gate-subtitle">Sign in to see your full Trader DNA analysis and track your improvement over time.</p>
+
+        <!-- Teaser (blurred values) -->
+        <div class="gate-teaser">
+            <div class="teaser-title">Preview</div>
+            <div class="teaser-stat">
+                <span class="teaser-label">Trades analyzed</span>
+                <span class="teaser-value" id="teaser-trades">—</span>
+            </div>
+            <div class="teaser-stat">
+                <span class="teaser-label">Patterns detected</span>
+                <span class="teaser-value" id="teaser-patterns">—</span>
+            </div>
+            <div class="teaser-stat">
+                <span class="teaser-label">Behavioral loss %</span>
+                <span class="teaser-value red teaser-blur" id="teaser-pct">67%</span>
+            </div>
+            <div class="teaser-stat">
+                <span class="teaser-label">Worst pattern cost</span>
+                <span class="teaser-value red teaser-blur" id="teaser-cost">₹23,400</span>
+            </div>
+        </div>
+
+        <!-- Google Sign-In Button -->
+        <div class="google-btn-wrap">
+            <div id="g_id_onload"
+                 data-client_id="300392846336-ciu88fsr38tot4ong5va4m4r2mnmu6b3.apps.googleusercontent.com"
+                 data-callback="handleGoogleSignIn"
+                 data-auto_prompt="false">
+            </div>
+            <div class="g_id_signin"
+                 data-type="standard"
+                 data-shape="rectangular"
+                 data-theme="filled_black"
+                 data-text="signin_with"
+                 data-size="large"
+                 data-logo_alignment="left"
+                 data-width="300">
+            </div>
+        </div>
+
+        <div class="error-msg" id="error-msg"></div>
+
+        <!-- Benefits -->
+        <div class="gate-benefits">
+            <h4>Why sign in?</h4>
+            <div class="benefit-item"><span class="benefit-icon">📊</span> See your full DNA Report with exact ₹ amounts</div>
+            <div class="benefit-item"><span class="benefit-icon">📈</span> Upload weekly to track improvement over time</div>
+            <div class="benefit-item"><span class="benefit-icon">🎯</span> Get personalized "Fix One Thing" recommendation</div>
+            <div class="benefit-item"><span class="benefit-icon">🔒</span> Your data stays private — only you can see it</div>
+        </div>
+
+        <p class="gate-footer">100% free. No credit card. We just need your email to save your progress.</p>
+        <p style="margin-top:16px;"><a href="/static/upload-free.html" style="color:var(--text-muted);font-size:0.8rem;text-decoration:none;">← Back to Upload</a></p>
+    </div>
+</div>
+
+<script>
+    // Load teaser data from localStorage
+    const reportData = JSON.parse(localStorage.getItem('ot_free_report') || '{}');
+    if (reportData.trades_analyzed) {
+        document.getElementById('teaser-trades').textContent = reportData.trades_analyzed;
+    }
+    if (reportData.report && reportData.report.all_patterns) {
+        document.getElementById('teaser-patterns').textContent = reportData.report.all_patterns.length;
+    }
+
+    // Google Sign-In callback
+    async function handleGoogleSignIn(response) {
+        const errorEl = document.getElementById('error-msg');
+        errorEl.style.display = 'none';
+
+        try {
+            const res = await fetch('/api/auth/google', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ credential: response.credential }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'Sign-in failed');
+            }
+
+            const userData = await res.json();
+
+            // Save user session in localStorage
+            localStorage.setItem('ot_user', JSON.stringify(userData));
+            localStorage.setItem('ot_user_id', userData.user_id);
+
+            // Save report to server NOW (user just authenticated, report is in localStorage from upload)
+            const reportData = localStorage.getItem('ot_free_report');
+            if (reportData) {
+                try {
+                    const parsed = JSON.parse(reportData);
+                    const report = parsed.report || parsed;
+                    const pz = report.page_zero || {};
+                    await fetch('/api/dashboard/save-upload', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            user_id: userData.user_id,
+                            trades_count: parsed.trades_analyzed || pz.total_trades || 0,
+                            dna_score: pz.dna_score || null,
+                            behavioral_pct: pz.behavioral_pct || null,
+                            total_pnl: pz.total_pnl || null,
+                            persona: (pz.persona || {}).name || null,
+                            fix_one_thing: (report.fix_one_thing || {}).action || null,
+                            report_json: reportData,
+                        })
+                    });
+                } catch(e) { /* non-blocking */ }
+            }
+
+            // Smart redirect: if report data exists (just uploaded), show report. Otherwise, dashboard.
+            const hasReport = localStorage.getItem('ot_free_report');
+            if (hasReport) {
+                window.location.href = '/static/report.html?source=free';
+            } else {
+                window.location.href = '/static/dashboard.html';
+            }
+
+        } catch (e) {
+            errorEl.textContent = 'Sign-in failed: ' + e.message;
+            errorEl.style.display = 'block';
+        }
+    }
+
+    // If already signed in, go to appropriate page
+    const existingUser = localStorage.getItem('ot_user');
+    if (existingUser) {
+        const hasReport = localStorage.getItem('ot_free_report');
+        window.location.href = hasReport ? '/static/report.html?source=free' : '/static/dashboard.html';
+    }
+</script>
+
+</body>
+</html>

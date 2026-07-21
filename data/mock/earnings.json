@@ -1,0 +1,20 @@
+[
+  {"ticker": "TCS", "date": "2025-01-13", "quarter": "Q3 FY25"},
+  {"ticker": "INFY", "date": "2025-01-16", "quarter": "Q3 FY25"},
+  {"ticker": "HDFCBANK", "date": "2025-01-22", "quarter": "Q3 FY25"},
+  {"ticker": "ICICIBANK", "date": "2025-01-25", "quarter": "Q3 FY25"},
+  {"ticker": "RELIANCE", "date": "2025-01-18", "quarter": "Q3 FY25"},
+  {"ticker": "ITC", "date": "2025-02-05", "quarter": "Q3 FY25"},
+  {"ticker": "SBIN", "date": "2025-02-08", "quarter": "Q3 FY25"},
+  {"ticker": "TATAMOTORS", "date": "2025-02-04", "quarter": "Q3 FY25"},
+  {"ticker": "TCS", "date": "2025-04-14", "quarter": "Q4 FY25"},
+  {"ticker": "INFY", "date": "2025-04-17", "quarter": "Q4 FY25"},
+  {"ticker": "HDFCBANK", "date": "2025-04-19", "quarter": "Q4 FY25"},
+  {"ticker": "ICICIBANK", "date": "2025-04-26", "quarter": "Q4 FY25"},
+  {"ticker": "RELIANCE", "date": "2025-04-21", "quarter": "Q4 FY25"},
+  {"ticker": "ITC", "date": "2025-05-02", "quarter": "Q4 FY25"},
+  {"ticker": "SBIN", "date": "2025-05-10", "quarter": "Q4 FY25"},
+  {"ticker": "TATAMOTORS", "date": "2025-05-05", "quarter": "Q4 FY25"},
+  {"ticker": "NIFTY", "date": "2025-03-15", "quarter": "Index Rebalance"},
+  {"ticker": "BANKNIFTY", "date": "2025-03-15", "quarter": "Index Rebalance"}
+]

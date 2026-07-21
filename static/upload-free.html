@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Upload Your Trade History</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-F8V0148LDJ"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-F8V0148LDJ');</script>
+    <style>
+        :root {
+            --bg-primary: #0f1419;
+            --bg-card: #1a2332;
+            --bg-card-alt: #1e2a3a;
+            --bg-input: #0d1117;
+            --border-color: #2d3748;
+            --border-accent: #3d4f65;
+            --text-primary: #e0e0e0;
+            --text-secondary: #8b9bb4;
+            --text-muted: #5a6a7e;
+            --green: #00c853;
+            --green-dim: #1b5e20;
+            --red: #ff1744;
+            --yellow: #ffd600;
+            --orange: #ff9100;
+            --blue: #2979ff;
+            --font-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            --font-mono: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+            --radius: 6px;
+            --radius-lg: 10px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100%;
+            font-family: var(--font-system);
+            font-size: 16px;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+        }
+        a { color: var(--green); text-decoration: none; }
+
+        .upload-page {
+            max-width: 680px;
+            margin: 0 auto;
+            padding: 60px 24px 80px;
+            min-height: 100vh;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 32px;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        .back-link:hover { color: var(--green); }
+
+        .upload-header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+        .upload-header h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+        .upload-header p {
+            font-size: 1rem;
+            color: var(--text-secondary);
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border-accent);
+            border-radius: var(--radius-lg);
+            padding: 60px 32px;
+            text-align: center;
+            background: var(--bg-card);
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            margin-bottom: 24px;
+        }
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: var(--green);
+            background: rgba(0, 200, 83, 0.03);
+        }
+        .drop-zone .drop-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+        .drop-zone .drop-text {
+            font-size: 1.1rem;
+            color: #fff;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        .drop-zone .drop-subtext {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .drop-zone .file-input {
+            display: none;
+        }
+
+        /* File selected state */
+        .file-info {
+            display: none;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+        }
+        .file-info.visible { display: flex; }
+        .file-info .file-name {
+            flex: 1;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+        }
+        .file-info .file-size {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .file-info .remove-btn {
+            background: none;
+            border: none;
+            color: var(--red);
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        /* Analyze Button */
+        .analyze-btn {
+            display: block;
+            width: 100%;
+            padding: 18px;
+            background: var(--green);
+            color: #000;
+            font-size: 1.1rem;
+            font-weight: 800;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.2s;
+            box-shadow: 0 4px 20px rgba(0, 200, 83, 0.3);
+            margin-bottom: 32px;
+        }
+        .analyze-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(0, 200, 83, 0.4);
+        }
+        .analyze-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Status Messages */
+        .status-msg {
+            display: none;
+            padding: 16px 20px;
+            border-radius: var(--radius);
+            margin-bottom: 24px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .status-msg.error {
+            display: block;
+            background: rgba(255, 23, 68, 0.08);
+            border: 1px solid rgba(255, 23, 68, 0.3);
+            color: var(--red);
+        }
+        .status-msg.loading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(41, 121, 255, 0.08);
+            border: 1px solid rgba(41, 121, 255, 0.3);
+            color: var(--blue);
+        }
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid var(--border-color);
+            border-top-color: var(--green);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Broker Instructions */
+        .broker-instructions {
+            margin-top: 40px;
+        }
+        .broker-instructions h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 16px;
+        }
+        .broker-tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 0;
+        }
+        .broker-tab {
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-bottom: none;
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: var(--radius) var(--radius) 0 0;
+            transition: background 0.2s, color 0.2s;
+        }
+        .broker-tab.active {
+            background: var(--bg-card-alt);
+            color: var(--green);
+            border-color: var(--green);
+        }
+        .broker-content {
+            background: var(--bg-card-alt);
+            border: 1px solid var(--border-color);
+            border-radius: 0 var(--radius) var(--radius) var(--radius);
+            padding: 20px;
+        }
+        .broker-panel {
+            display: none;
+        }
+        .broker-panel.active {
+            display: block;
+        }
+        .broker-panel ol {
+            padding-left: 20px;
+        }
+        .broker-panel li {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+        .broker-panel code {
+            background: var(--bg-input);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+            color: var(--green);
+        }
+
+        /* Responsive */
+        @media (max-width: 600px) {
+            .upload-page { padding: 32px 16px 60px; }
+            .upload-header h1 { font-size: 1.5rem; }
+            .drop-zone { padding: 40px 20px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="upload-page">
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;">
+        <a href="/static/dashboard.html" id="upload-logo" style="font-size:1.3rem;font-weight:800;letter-spacing:-0.5px;color:#fff;text-decoration:none;">Options<span style="color:var(--green)">Tycoon</span></a>
+        <div style="display:flex;align-items:center;gap:12px;">
+            <a href="/static/dashboard.html" id="upload-nav-dash" style="font-size:0.85rem;color:#000;text-decoration:none;padding:8px 16px;border-radius:8px;background:var(--green);font-weight:700;">← My Account</a>
+        </div>
+    </div>
+    <script>
+    (function(){
+        const user = localStorage.getItem('ot_user');
+        const link = document.getElementById('upload-nav-dash');
+        const logo = document.getElementById('upload-logo');
+        if (user) { 
+            link.textContent = '← My Account'; 
+            link.href = '/static/dashboard.html'; 
+            logo.href = '/static/dashboard.html';
+        } else { 
+            link.textContent = '← Home'; 
+            link.href = '/static/landing.html'; 
+            logo.href = '/static/landing.html';
+        }
+    })();
+    </script>
+
+    <div class="upload-header">
+        <h1>Upload Your Trade History</h1>
+        <p>Drop your broker CSV below. We'll analyze it in under 60 seconds.</p>
+    </div>
+
+    <!-- P0: DPDPA Consent (shown only on first upload) -->
+    <div id="consent-screen" style="display:none;background:rgba(15,25,40,0.95);border:1px solid var(--border-accent);border-radius:var(--radius-lg);padding:32px;margin-bottom:24px;">
+        <h3 style="color:#fff;margin-bottom:12px;font-size:1.1rem;">📋 Before we analyze your data</h3>
+        <p style="color:var(--text-secondary);font-size:0.85rem;line-height:1.7;margin-bottom:20px;">
+            Under India's Digital Personal Data Protection Act (2023), we need your explicit consent before processing your data.
+        </p>
+        <div style="margin-bottom:12px;">
+            <label style="display:flex;align-items:flex-start;gap:10px;font-size:0.85rem;color:var(--text-secondary);cursor:pointer;">
+                <input type="checkbox" id="consent-email" style="margin-top:3px;width:18px;height:18px;">
+                <span><strong style="color:#fff;">Email storage:</strong> I consent to Options Tycoon storing my email address (from Google Sign-In) to identify my account and send me upload reminders.</span>
+            </label>
+        </div>
+        <div style="margin-bottom:20px;">
+            <label style="display:flex;align-items:flex-start;gap:10px;font-size:0.85rem;color:var(--text-secondary);cursor:pointer;">
+                <input type="checkbox" id="consent-data" style="margin-top:3px;width:18px;height:18px;">
+                <span><strong style="color:#fff;">Trade data processing:</strong> I consent to Options Tycoon processing my uploaded trade history to generate behavioral analysis. Personal identifiers (Client ID, Demat, PAN) are automatically stripped and never stored.</span>
+            </label>
+        </div>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin-bottom:16px;">
+            You can withdraw consent and delete all your data at any time from your Dashboard. See our <a href="/static/privacy.html" style="color:var(--green);">Privacy Policy</a>.
+        </p>
+        <button id="consent-proceed" disabled style="width:100%;padding:14px;background:var(--green);color:#000;font-weight:800;border:none;border-radius:8px;font-size:0.95rem;cursor:pointer;opacity:0.4;">I Consent — Proceed to Upload</button>
+    </div>
+
+    <!-- P0: Trust banner -->
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:rgba(0,200,83,0.05);border:1px solid rgba(0,200,83,0.15);border-radius:var(--radius);margin-bottom:20px;font-size:0.8rem;color:var(--text-secondary);">
+        <span style="font-size:1.2rem;">🔒</span>
+        <span>We automatically remove Client ID, Demat, and PAN from your data. Your identity never touches our database. <a href="/static/privacy.html" style="color:var(--green);">Learn more</a></span>
+    </div>
+
+    <!-- Drop Zone -->
+    <div class="drop-zone" id="dropZone" role="button" aria-label="Upload CSV file - click or drag and drop" tabindex="0">
+        <div class="drop-icon">📂</div>
+        <div class="drop-text">Drag & drop your CSV here</div>
+        <div class="drop-subtext">or click to browse files</div>
+        <input type="file" class="file-input" id="fileInput" accept=".csv,.CSV,text/csv,application/vnd.ms-excel" aria-label="Choose CSV file">
+    </div>
+
+    <!-- File Info -->
+    <div class="file-info" id="fileInfo">
+        <span class="file-name" id="fileName"></span>
+        <span class="file-size" id="fileSize"></span>
+        <button class="remove-btn" id="removeBtn" title="Remove file">✕</button>
+    </div>
+
+    <!-- Status -->
+    <div class="status-msg" id="statusMsg"></div>
+
+    <!-- Analyze Button -->
+    <button class="analyze-btn" id="analyzeBtn" disabled aria-label="Analyze my trade history">Analyze My Trades</button>
+
+    <!-- Try Sample Data -->
+    <div style="text-align:center;margin-bottom:32px;">
+        <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Don't have your CSV ready?</p>
+        <button onclick="trySampleData()" style="background:none;border:1px solid var(--border-color);color:var(--text-secondary);padding:10px 20px;border-radius:6px;font-size:0.85rem;cursor:pointer;transition:all 0.2s;">🧪 Try with Sample Data — See how it works</button>
+    </div>
+
+    <!-- Broker Instructions -->
+    <div class="broker-instructions">
+        <h3>How to export your CSV</h3>
+        <p style="margin-top:20px; font-size:0.85rem; color:var(--text-muted);">
+            Don't have a CSV? <a href="/static/sample_trade_history.csv" download style="color:var(--green);">Download sample file</a> to see how it works.
+        </p>
+        <div class="broker-tabs">
+            <div class="broker-tab active" data-broker="zerodha">Zerodha</div>
+            <div class="broker-tab" data-broker="groww">Groww</div>
+            <div class="broker-tab" data-broker="angel">Angel One</div>
+        </div>
+        <div class="broker-content">
+            <div class="broker-panel active" id="panel-zerodha">
+                <ol>
+                    <li>Log into <code>console.zerodha.com</code></li>
+                    <li>Go to <strong>Reports → Tradebook</strong></li>
+                    <li>Set the date range (longer = better analysis)</li>
+                    <li>Click <strong>Download</strong> (CSV format)</li>
+                    <li>Upload the downloaded file here</li>
+                </ol>
+            </div>
+            <div class="broker-panel" id="panel-groww">
+                <ol>
+                    <li>Open the Groww app or <code>groww.in</code></li>
+                    <li>Go to <strong>Stocks → Orders → Order History</strong></li>
+                    <li>Tap the <strong>Download</strong> button (top right)</li>
+                    <li>Select CSV format and date range</li>
+                    <li>Upload the downloaded file here</li>
+                </ol>
+            </div>
+            <div class="broker-panel" id="panel-angel">
+                <ol>
+                    <li>Log into <code>smartapi.angelone.in</code> or Angel One app</li>
+                    <li>Go to <strong>Reports → Trade Report</strong></li>
+                    <li>Select F&O segment and date range</li>
+                    <li>Click <strong>Download</strong></li>
+                    <li>Upload the downloaded file here</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+(function() {
+    // DPDPA Consent Logic
+    const consentScreen = document.getElementById('consent-screen');
+    const consentEmail = document.getElementById('consent-email');
+    const consentData = document.getElementById('consent-data');
+    const consentProceed = document.getElementById('consent-proceed');
+    const hasConsented = localStorage.getItem('ot_dpdpa_consent');
+
+    if (!hasConsented) {
+        consentScreen.style.display = 'block';
+        document.getElementById('dropZone').style.display = 'none';
+        document.querySelector('.analyze-btn').style.display = 'none';
+    }
+
+    function checkConsent() {
+        if (consentEmail.checked && consentData.checked) {
+            consentProceed.disabled = false;
+            consentProceed.style.opacity = '1';
+        } else {
+            consentProceed.disabled = true;
+            consentProceed.style.opacity = '0.4';
+        }
+    }
+    consentEmail.addEventListener('change', checkConsent);
+    consentData.addEventListener('change', checkConsent);
+
+    consentProceed.addEventListener('click', function() {
+        localStorage.setItem('ot_dpdpa_consent', JSON.stringify({
+            email: true,
+            trade_data: true,
+            timestamp: new Date().toISOString()
+        }));
+        consentScreen.style.display = 'none';
+        document.getElementById('dropZone').style.display = '';
+        document.querySelector('.analyze-btn').style.display = '';
+    });
+
+    const dropZone = document.getElementById('dropZone');
+
+    // Try Sample Data function
+    window.trySampleData = async function() {
+        const statusMsg = document.getElementById('statusMsg');
+        statusMsg.className = 'status-msg loading';
+        statusMsg.innerHTML = '<div class="spinner"></div> Loading sample trader data...';
+        statusMsg.style.display = 'flex';
+
+        try {
+            const csvResp = await fetch('/static/sample_trade_history.csv');
+            const csvBlob = await csvResp.blob();
+            const formData = new FormData();
+            formData.append('file', csvBlob, 'sample_trades.csv');
+
+            statusMsg.innerHTML = '<div class="spinner"></div> 🧠 Analyzing sample trades...';
+
+            const res = await fetch('/api/upload/broker-csv-free', { method: 'POST', body: formData });
+            if (!res.ok) throw new Error('Analysis failed');
+
+            const data = await res.json();
+            localStorage.setItem('ot_free_report', JSON.stringify(data));
+
+            statusMsg.className = 'status-msg loading';
+            statusMsg.innerHTML = '<div style="color:#00c853;font-size:1.5rem;">✅</div> <span style="color:#00c853;font-weight:700;">Sample report ready!</span>';
+            statusMsg.style.display = 'flex';
+
+            await new Promise(r => setTimeout(r, 1500));
+            window.location.href = '/static/report.html?source=free';
+        } catch(e) {
+            statusMsg.className = 'status-msg error';
+            statusMsg.innerHTML = 'Could not load sample data. Please try uploading your own CSV.';
+            statusMsg.style.display = 'block';
+        }
+    };
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const removeBtn = document.getElementById('removeBtn');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const statusMsg = document.getElementById('statusMsg');
+
+    let selectedFile = null;
+
+    // Drop zone interactions
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length > 0) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+            handleFile(fileInput.files[0]);
+        }
+    });
+
+    function handleFile(file) {
+        // Accept .csv or any text file (mobile browsers sometimes don't report .csv extension)
+        const name = file.name.toLowerCase();
+        if (!name.endsWith('.csv') && !file.type.includes('csv') && !file.type.includes('text')) {
+            showError('Please upload a CSV file. Other formats are not supported.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            showError('File too large. Maximum size is 10MB. Try exporting a shorter date range from your broker.');
+            return;
+        }
+        if (file.size < 50) {
+            showError('File appears to be empty. Please upload a valid CSV with trade data.');
+            return;
+        }
+        selectedFile = file;
+        fileName.textContent = file.name;
+        fileSize.textContent = formatBytes(file.size);
+        fileInfo.classList.add('visible');
+        dropZone.style.display = 'none';
+        analyzeBtn.disabled = false;
+        hideStatus();
+    }
+
+    removeBtn.addEventListener('click', () => {
+        selectedFile = null;
+        fileInput.value = '';
+        fileInfo.classList.remove('visible');
+        dropZone.style.display = '';
+        analyzeBtn.disabled = true;
+        hideStatus();
+    });
+
+    // Analyze
+    analyzeBtn.addEventListener('click', async () => {
+        if (!selectedFile) return;
+
+        analyzeBtn.disabled = true;
+        analyzeBtn.textContent = 'Analyzing...';
+        
+        // P1: Progress text status
+        showLoading('🔒 Stripping personal identifiers...');
+        await new Promise(r => setTimeout(r, 600));
+        showLoading('📊 Parsing trade data...');
+        
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        try {
+            showLoading('🧠 Detecting behavioral patterns...');
+            const res = await fetch('/api/upload/broker-csv-free', {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || `Upload failed (HTTP ${res.status})`);
+            }
+
+            showLoading('✨ Generating your DNA report...');
+            const data = await res.json();
+
+            // Store report data in localStorage
+            localStorage.setItem('ot_free_report', JSON.stringify(data));
+
+            // Save to upload history for dashboard tracking
+            const history = JSON.parse(localStorage.getItem('ot_upload_history') || '[]');
+            const report = data.report || {};
+            const pz = report.page_zero || {};
+            history.push({
+                date: new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                timestamp: new Date().toISOString(),
+                trades_count: data.trades_analyzed || 0,
+                dna_score: pz.dna_score || null,
+                behavioral_pct: pz.behavioral_pct || null,
+                total_pnl: pz.total_pnl || null,
+                persona: (pz.persona || {}).name || null,
+                fix_one_thing: (report.fix_one_thing || {}).action || null,
+                period: pz.first_date && pz.last_date ? `${pz.first_date} — ${pz.last_date}` : null,
+            });
+            localStorage.setItem('ot_upload_history', JSON.stringify(history));
+
+            // P1: Success animation before redirect
+            hideStatus();
+            statusMsg.className = 'status-msg loading';
+            statusMsg.innerHTML = '<div style="color:#00c853;font-size:1.5rem;">✅</div> <span style="color:#00c853;font-weight:700;">Report ready! Redirecting...</span>';
+            statusMsg.style.display = 'flex';
+            
+            // P1: Save to server-side DB if logged in
+            const userId = localStorage.getItem('ot_user_id');
+            if (userId) {
+                try {
+                    await fetch('/api/dashboard/save-upload', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            user_id: parseInt(userId),
+                            trades_count: data.trades_analyzed || 0,
+                            dna_score: pz.dna_score || null,
+                            behavioral_pct: pz.behavioral_pct || null,
+                            total_pnl: pz.total_pnl || null,
+                            persona: (pz.persona || {}).name || null,
+                            fix_one_thing: (report.fix_one_thing || {}).action || null,
+                            filename: selectedFile ? selectedFile.name : null,
+                            report_json: JSON.stringify(data),
+                        })
+                    });
+                } catch(e) { /* non-blocking */ }
+            }
+
+            await new Promise(r => setTimeout(r, 1500));
+
+            // Redirect to sign-in gate (must sign in to see report)
+            const user = localStorage.getItem('ot_user');
+            if (user) {
+                window.location.href = '/static/report.html?source=free';
+            } else {
+                window.location.href = '/static/signin.html';
+            }
+
+        } catch (e) {
+            // P1: Error state with retry + help
+            statusMsg.className = 'status-msg error';
+            statusMsg.innerHTML = `
+                <div style="margin-bottom:12px;">${e.message}</div>
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:12px;">
+                    <strong>Common fixes:</strong><br>
+                    • Make sure you're uploading the correct file from your broker (Tradebook, not P&L or Holdings)<br>
+                    • Try a longer date range (at least 1-2 weeks)<br>
+                    • Ensure the file is .CSV format (not .xlsx or .pdf)
+                </div>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                    <button onclick="location.reload()" style="padding:8px 16px;background:var(--green);color:#000;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:0.85rem;">Try Again</button>
+                    <a href="mailto:support@optionstycoon.app?subject=CSV%20Parsing%20Issue&body=File%20format%20issue%20with%20my%20broker%20CSV" style="padding:8px 16px;background:none;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:6px;font-size:0.85rem;text-decoration:none;">Report Parsing Issue</a>
+                </div>
+            `;
+            statusMsg.style.display = 'block';
+            analyzeBtn.disabled = false;
+            analyzeBtn.textContent = 'Analyze My Trades';
+        }
+    });
+
+    // Broker tabs
+    document.querySelectorAll('.broker-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.broker-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.broker-panel').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById('panel-' + tab.dataset.broker).classList.add('active');
+        });
+    });
+
+    // Helpers
+    function showError(msg) {
+        statusMsg.className = 'status-msg error';
+        statusMsg.innerHTML = msg;
+        statusMsg.style.display = 'block';
+    }
+    function showLoading(msg) {
+        statusMsg.className = 'status-msg loading';
+        statusMsg.innerHTML = '<div class="spinner"></div>' + msg;
+        statusMsg.style.display = 'flex';
+    }
+    function hideStatus() {
+        statusMsg.style.display = 'none';
+    }
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+})();
+</script>
+
+</body>
+</html>

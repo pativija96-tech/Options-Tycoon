@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Options Tycoon — Offline</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧬</text></svg>">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #050a0f; color: #f0f4f8; min-height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+            padding: 24px; text-align: center;
+        }
+        .container { max-width: 400px; }
+        .emoji { font-size: 4rem; margin-bottom: 24px; }
+        h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 12px; }
+        p { font-size: 0.95rem; color: #8899aa; line-height: 1.7; margin-bottom: 24px; }
+        .retry-btn {
+            display: inline-block; padding: 14px 28px;
+            background: #00e676; color: #000; font-weight: 800;
+            border: none; border-radius: 10px; font-size: 0.95rem;
+            cursor: pointer; text-decoration: none;
+        }
+        .brand { margin-top: 40px; font-size: 0.8rem; color: #4a5b6e; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="emoji">📡</div>
+        <h1>You're Offline</h1>
+        <p>It looks like you've lost your internet connection. Options Tycoon needs an active connection to analyze your trade data.</p>
+        <a href="/" class="retry-btn" onclick="window.location.reload(); return false;">Try Again</a>
+        <p class="brand">Options Tycoon — Behavioral Intelligence for Traders</p>
+    </div>
+</body>
+</html>

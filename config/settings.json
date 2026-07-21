@@ -1,0 +1,20 @@
+{
+  "capital": 1000000,
+  "risk_per_trade": 0.02,
+  "risk_per_day": 0.05,
+  "min_confidence": 55,
+  "min_historical_matches": 10,
+  "gate_thresholds": {
+    "min_trades": 30,
+    "min_win_rate": 0.50,
+    "min_profit_factor": 1.5,
+    "min_avg_win_loss_ratio": 1.0,
+    "max_drawdown": 0.15,
+    "max_consec_losses": 5,
+    "min_expectancy": 0
+  },
+  "nifty_lot_size": 65,
+  "preferred_expiry": "current_week",
+  "market_open_ist": "09:15",
+  "market_close_ist": "15:30"
+}
