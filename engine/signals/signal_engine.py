@@ -61,13 +61,19 @@ def run_morning_signal():
     except Exception as e:
         logger.error(f"Data fetch failed: {e}")
         skip_card = {"action": "skip", "reason": f"Data fetch error: {str(e)[:100]}", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
-        send_signal(skip_card)
+        try:
+            send_signal(skip_card)
+        except Exception:
+            pass
         return skip_card
     
     if global_data.get("status") == "failed":
         logger.error("All data sources failed")
         skip_card = {"action": "skip", "reason": "All data sources failed. No signal today.", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
-        send_signal(skip_card)
+        try:
+            send_signal(skip_card)
+        except Exception:
+            pass
         return skip_card
     
     logger.info(f"Data fetched: status={global_data['status']}, errors={len(global_data.get('errors', []))}")
@@ -79,7 +85,10 @@ def run_morning_signal():
     except Exception as e:
         logger.error(f"Pattern matching failed: {e}")
         skip_card = {"action": "skip", "reason": f"Pattern matching error: {str(e)[:100]}", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
-        send_signal(skip_card)
+        try:
+            send_signal(skip_card)
+        except Exception:
+            pass
         return skip_card
     
     logger.info(f"Pattern result: direction={pattern_result.get('direction')}, "
@@ -96,7 +105,10 @@ def run_morning_signal():
     except Exception as e:
         logger.error(f"Strategy picker failed: {e}")
         skip_card = {"action": "skip", "reason": f"Strategy error: {str(e)[:100]}", "conditions": {}, "date": datetime.now().strftime("%Y-%m-%d")}
-        send_signal(skip_card)
+        try:
+            send_signal(skip_card)
+        except Exception:
+            pass
         return skip_card
     
     # Add timestamp

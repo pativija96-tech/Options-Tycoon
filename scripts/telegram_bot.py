@@ -156,9 +156,18 @@ async def send_message(text: str, parse_mode: str = "Markdown") -> bool:
 
 
 def send_signal(trade_card: dict) -> bool:
-    """Send trade signal via Telegram (sync wrapper)."""
+    """Send trade signal via Telegram (sync wrapper, safe from async context)."""
     text = format_trade_card(trade_card)
-    return asyncio.run(send_message(text))
+    try:
+        return asyncio.run(send_message(text))
+    except RuntimeError:
+        # Already in an async event loop (e.g., called from FastAPI via ThreadPoolExecutor)
+        # Create a new event loop in this thread
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(send_message(text))
+        finally:
+            loop.close()
 
 
 def send_eod(eod_data: dict) -> bool:
