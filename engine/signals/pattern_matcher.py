@@ -17,6 +17,22 @@ logger = logging.getLogger(__name__)
 HISTORICAL_DATA_PATH = "data/historical/nifty_daily_5yr.csv"
 
 
+def _wilson_ci(successes: int, total: int, z: float = 1.96) -> tuple:
+    """
+    Wilson score 95% confidence interval for a proportion.
+    More accurate than naive p ± z*sqrt(p(1-p)/n) for small samples.
+    
+    Returns (lower_bound, upper_bound) as fractions [0, 1].
+    """
+    if total == 0:
+        return (0.0, 0.0)
+    p = successes / total
+    denominator = 1 + z**2 / total
+    center = (p + z**2 / (2 * total)) / denominator
+    spread = z * ((p * (1 - p) / total + z**2 / (4 * total**2)) ** 0.5) / denominator
+    return (max(0, center - spread), min(1, center + spread))
+
+
 def load_historical_data() -> pd.DataFrame:
     """Load and prepare 5-year NIFTY historical data."""
     # yfinance CSVs may have extra header rows — skip them
@@ -91,7 +107,7 @@ def enrich_with_conditions(df: pd.DataFrame, global_data_history: dict = None) -
     return df.dropna().reset_index(drop=True)
 
 
-def match_pattern(today_conditions: dict, min_matches: int = 10) -> dict:
+def match_pattern(today_conditions: dict, min_matches: int = 20) -> dict:
     """
     Find historical days with similar conditions to today.
     Returns direction bias, confidence, and average expected move.
@@ -144,16 +160,24 @@ def match_pattern(today_conditions: dict, min_matches: int = 10) -> dict:
     if down_days > up_days:
         direction = "bearish"
         confidence = round((down_days / total_matches) * 100)
+        dominant_count = down_days
     elif up_days > down_days:
         direction = "bullish"
         confidence = round((up_days / total_matches) * 100)
+        dominant_count = up_days
     else:
         direction = "neutral"
         confidence = round((flat_days / total_matches) * 100)
+        dominant_count = flat_days
+    
+    # Wilson score 95% confidence interval on the win rate
+    ci_low, ci_high = _wilson_ci(dominant_count, total_matches)
     
     return {
         "direction": direction,
         "confidence": confidence,
+        "confidence_interval_95": [round(ci_low * 100, 1), round(ci_high * 100, 1)],
+        "sample_size": total_matches,
         "avg_move": round(avg_move, 2),
         "median_move": round(median_move, 2),
         "matching_days": total_matches,
@@ -168,6 +192,19 @@ def generate_pattern_signal(global_data: dict) -> dict:
     """
     Main entry point: takes today's global data, returns pattern match result.
     """
+    # Load min_matches from config if available
+    import json as _json
+    from pathlib import Path as _Path
+    _settings_path = _Path("config/settings.json")
+    _min_matches = 20  # default
+    if _settings_path.exists():
+        try:
+            with open(_settings_path) as _f:
+                _cfg = _json.load(_f)
+                _min_matches = _cfg.get("min_historical_matches", 20)
+        except Exception:
+            pass
+
     data = global_data.get("data", {})
     
     # Extract conditions
@@ -188,7 +225,7 @@ def generate_pattern_signal(global_data: dict) -> dict:
         "dxy_change_pct": dxy_change,
     }
     
-    result = match_pattern(conditions)
+    result = match_pattern(conditions, min_matches=_min_matches)
     result["conditions"] = conditions
     
     return result

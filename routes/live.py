@@ -6,12 +6,14 @@ Serves trade signals, gate status, auth state, and execution triggers.
 import json
 import logging
 from pathlib import Path
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
 from fastapi.responses import JSONResponse
+
+from engine.session import require_founder
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/live", tags=["live-signal-engine"])
+router = APIRouter(prefix="/api/live", tags=["live-signal-engine"], dependencies=[Depends(require_founder)])
 
 OUTPUT_DIR = Path(__file__).resolve().parent.parent / "output"
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
@@ -263,17 +265,6 @@ async def get_live_prices(request: Request):
         return {"available": False, "reason": f"Kite LTP fetch failed: {str(e)[:200]}", "instruments": instruments if 'instruments' in dir() else []}
 
 
-@router.get("/trade-log")
-async def get_trade_log():
-    """Return the full trade log."""
-    log_path = OUTPUT_DIR / "trade_log.json"
-    if not log_path.exists():
-        return {"trades": [], "total": 0}
-    with open(log_path) as f:
-        trades = json.load(f)
-    return {"trades": trades, "total": len(trades)}
-
-
 @router.post("/paper-execute")
 async def paper_execute(request: Request):
     """Log today's signal as a paper trade for the logged-in user. One trade per user per day."""
@@ -359,42 +350,6 @@ async def get_my_trades(request: Request):
         }
     except Exception as e:
         return {"trades": [], "total": 0, "wins": 0, "error": str(e)[:100]}
-    finally:
-        conn.close()
-
-
-@router.get("/admin/all-trades")
-async def admin_all_trades(request: Request):
-    """Admin endpoint: view all users' trades. Protected by X-Admin-Key header only."""
-    admin_key = request.headers.get("X-Admin-Key")
-    import os
-    expected_key = os.environ.get("OT_ADMIN_KEY", "change-me-in-railway-env-vars")
-    if not admin_key or admin_key != expected_key:
-        return JSONResponse(status_code=403, content={"error": "Unauthorized. X-Admin-Key header required."})
-    
-    from db.database import get_connection
-    conn = get_connection()
-    try:
-        rows = conn.execute(
-            """SELECT lt.*, u.email, u.name as user_name 
-               FROM live_trades lt 
-               LEFT JOIN users u ON lt.user_id = u.id 
-               ORDER BY lt.id DESC LIMIT 200"""
-        ).fetchall()
-        trades = [dict(r) for r in rows] if rows else []
-        
-        # Summary per user
-        user_stats = conn.execute(
-            """SELECT user_id, COUNT(*) as total, 
-                      SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) as wins,
-                      SUM(COALESCE(pnl, 0)) as total_pnl
-               FROM live_trades GROUP BY user_id"""
-        ).fetchall()
-        stats = [dict(r) for r in user_stats] if user_stats else []
-        
-        return {"trades": trades, "user_stats": stats, "total_trades": len(trades)}
-    except Exception as e:
-        return {"error": str(e)[:200], "trades": [], "user_stats": []}
     finally:
         conn.close()
 

@@ -10,6 +10,8 @@ from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
+from starlette.responses import Response
 from pydantic import BaseModel
 
 from db.database import get_connection
@@ -39,18 +41,13 @@ class AuthResponse(BaseModel):
     is_new_user: bool = False
 
 
-@router.post("/auth/google", response_model=AuthResponse)
-async def google_sign_in(request: GoogleTokenRequest):
+@router.post("/auth/google")
+async def google_sign_in(request: GoogleTokenRequest, response: Response):
     """
     Verify Google ID token and create/retrieve user.
-    
-    Flow:
-    1. Receive ID token from Google Sign-In button
-    2. Verify token with Google's tokeninfo endpoint
-    3. Extract email, name, picture
-    4. Create user if new, or return existing user
-    5. Return user data for frontend session
+    Sets HTTP-Only session cookie on success.
     """
+    from engine.session import create_session_cookie
     token = request.credential
     
     # Verify the token with Google
@@ -82,6 +79,8 @@ async def google_sign_in(request: GoogleTokenRequest):
                 (datetime.utcnow().isoformat(), name, picture, existing["id"])
             )
             conn.commit()
+            # Set HTTP-Only session cookie
+            create_session_cookie(response, existing["id"], existing["email"], existing["name"] or name)
             return AuthResponse(
                 user_id=existing["id"],
                 email=existing["email"],
@@ -107,6 +106,8 @@ async def google_sign_in(request: GoogleTokenRequest):
             except Exception:
                 pass
             
+            # Set HTTP-Only session cookie
+            create_session_cookie(response, user_id, email, name)
             return AuthResponse(
                 user_id=user_id,
                 email=email,
@@ -171,3 +172,30 @@ async def _verify_google_token(token: str) -> dict | None:
             }
     except Exception:
         return None
+
+
+@router.post("/auth/logout")
+async def logout(response: Response):
+    """Clear the session cookie."""
+    from engine.session import clear_session_cookie
+    clear_session_cookie(response)
+    return {"success": True}
+
+
+@router.get("/auth/session")
+async def get_session_info(request: Request):
+    """
+    Get current session from HTTP-Only cookie.
+    Used by frontend to check auth state without localStorage.
+    """
+    from engine.session import get_session, is_founder
+    session = get_session(request)
+    if not session:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "user_id": session.get("user_id"),
+        "email": session.get("email"),
+        "name": session.get("name"),
+        "is_founder": is_founder(request),
+    }
