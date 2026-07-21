@@ -141,8 +141,9 @@ app.include_router(live_router)
 
 
 # --- Static File Serving ---
-# Ensure output directory exists (gitignored, but needed at runtime for signal engine)
+# Ensure runtime directories exist (gitignored, but needed at runtime)
 Path("output").mkdir(exist_ok=True)
+Path("config").mkdir(exist_ok=True)
 app.mount("/output", StaticFiles(directory="output"), name="output")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 

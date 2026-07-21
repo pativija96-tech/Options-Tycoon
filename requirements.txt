@@ -7,3 +7,11 @@ httpx
 psycopg2-binary
 slowapi
 alembic
+
+# Signal Engine dependencies
+yfinance
+pandas
+numpy
+python-telegram-bot
+scipy
+kiteconnect
