@@ -416,6 +416,75 @@ def _build_spread_trade(strategy_type: str, spot: float, expected_move: float,
             "width": 0,
         }
     
+    elif "iron_condor" in strategy_type:
+        # Iron Condor: Sell OTM CE + Sell OTM PE, Buy further OTM wings
+        # Profits when NIFTY stays in range (neutral bias)
+        width = 100  # Wing width
+
+        # Sell strikes ~1-2% OTM
+        offset = max(int(expected_move * 1.2), 150)  # At least 150 pts away
+        short_call = round_to_strike(spot + offset)
+        short_put = round_to_strike(spot - offset)
+        long_call = short_call + width
+        long_put = short_put - width
+
+        # Estimate premiums
+        short_call_prem = estimate_premium(spot, short_call, days_to_expiry, "call", iv)
+        long_call_prem = estimate_premium(spot, long_call, days_to_expiry, "call", iv)
+        short_put_prem = estimate_premium(spot, short_put, days_to_expiry, "put", iv)
+        long_put_prem = estimate_premium(spot, long_put, days_to_expiry, "put", iv)
+
+        # Net credit received
+        call_spread_credit = short_call_prem - long_call_prem
+        put_spread_credit = short_put_prem - long_put_prem
+        net_credit = call_spread_credit + put_spread_credit
+        net_credit_total = net_credit * LOT_SIZE
+
+        # Max loss = width - net_credit (per lot)
+        max_loss_per_unit = width - net_credit
+        max_loss = max_loss_per_unit * LOT_SIZE
+        max_profit = net_credit_total
+
+        # Check risk cap
+        if max_loss > max_risk:
+            # Try narrower wings
+            width = 50
+            long_call = short_call + width
+            long_put = short_put - width
+            long_call_prem = estimate_premium(spot, long_call, days_to_expiry, "call", iv)
+            long_put_prem = estimate_premium(spot, long_put, days_to_expiry, "put", iv)
+            call_spread_credit = short_call_prem - long_call_prem
+            put_spread_credit = short_put_prem - long_put_prem
+            net_credit = call_spread_credit + put_spread_credit
+            net_credit_total = net_credit * LOT_SIZE
+            max_loss_per_unit = width - net_credit
+            max_loss = max_loss_per_unit * LOT_SIZE
+            max_profit = net_credit_total
+
+            if max_loss > max_risk:
+                return None
+
+        sl_value = net_credit * 0.5 * LOT_SIZE  # SL at 50% of credit received
+
+        return {
+            "type": "iron_condor",
+            "legs": [
+                {"action": "SELL", "option": "CE", "strike": short_call, "premium_est": short_call_prem},
+                {"action": "BUY", "option": "CE", "strike": long_call, "premium_est": long_call_prem},
+                {"action": "SELL", "option": "PE", "strike": short_put, "premium_est": short_put_prem},
+                {"action": "BUY", "option": "PE", "strike": long_put, "premium_est": long_put_prem},
+            ],
+            "net_cost": round(-net_credit, 2),  # Negative = credit received
+            "net_cost_total": round(-net_credit_total, 2),
+            "max_profit": round(max_profit, 2),
+            "max_loss": round(max_loss, 2),
+            "sl_value": round(sl_value, 2),
+            "risk_reward": round(max_profit / max_loss, 2) if max_loss > 0 else 0,
+            "breakeven": f"{short_put + net_credit:.0f} / {short_call - net_credit:.0f}",
+            "expiry_days": days_to_expiry,
+            "width": width,
+        }
+    
     return None
 
 
