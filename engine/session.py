@@ -110,40 +110,48 @@ def require_founder(request: Request) -> dict:
     FastAPI dependency: require a valid session from the founder's email.
     Returns session dict if valid founder, raises 403 otherwise.
 
-    Checks in order:
+    Auth methods (in priority order):
     1. Skip for kite-callback (Zerodha redirect has no session)
-    2. HTTP-Only session cookie (new, preferred)
-    3. X-User-Id header + DB lookup (legacy fallback during migration)
+    2. HTTP-Only session cookie (primary, secure)
+    3. X-User-Id header (TEMPORARY — only from same-origin requests via Referer check)
     """
     # Exempt kite-callback from auth (Zerodha redirect)
     if "/kite-callback" in str(request.url.path):
         return {"user_id": 0, "email": "kite-callback", "name": ""}
 
-    # Try cookie first
+    # Try cookie first (preferred, secure)
     session = get_session(request)
     if session:
         email = session.get("email", "")
         if FOUNDER_ALLOWED_EMAILS and email in FOUNDER_ALLOWED_EMAILS:
             return session
 
-    # Legacy fallback: X-User-Id header or query param
-    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
-    if user_id:
-        try:
-            from db.database import get_connection
-            conn = get_connection()
+    # Temporary fallback: X-User-Id header — ONLY from same-origin requests
+    # This prevents external attackers from using it while allowing the frontend to work
+    referer = request.headers.get("referer", "")
+    origin = request.headers.get("origin", "")
+    is_same_origin = any(
+        domain in (referer + origin)
+        for domain in ["options-tycoon.com", "localhost", "127.0.0.1"]
+    )
+    
+    if is_same_origin:
+        user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
+        if user_id:
             try:
-                row = conn.execute("SELECT email FROM users WHERE id = ?", (int(user_id),)).fetchone()
-                if row and row["email"] in FOUNDER_ALLOWED_EMAILS:
-                    return {"user_id": int(user_id), "email": row["email"], "name": ""}
-            finally:
-                conn.close()
-        except Exception:
-            pass
+                from db.database import get_connection
+                conn = get_connection()
+                try:
+                    row = conn.execute("SELECT email FROM users WHERE id = ?", (int(user_id),)).fetchone()
+                    if row and row["email"] in FOUNDER_ALLOWED_EMAILS:
+                        return {"user_id": int(user_id), "email": row["email"], "name": ""}
+                finally:
+                    conn.close()
+            except Exception:
+                pass
 
-    # No valid session and no valid legacy header
+    # No valid auth
     if not FOUNDER_ALLOWED_EMAILS:
-        # If allowlist is empty/not configured, allow all (dev mode)
         return {"user_id": 0, "email": "dev@localhost", "name": "dev"}
 
     raise HTTPException(status_code=403, detail="Access denied")

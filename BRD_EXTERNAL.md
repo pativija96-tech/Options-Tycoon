@@ -581,3 +581,37 @@ If any of these fail: the gate unlock should NOT be treated as permission to go 
 3:30 PM IST / 6:00 PM PH   → Run EOD (via console if button fails)
                             → Refresh → Check updated stats
 ```
+
+
+---
+
+## 15. PRIORITY CORRECTIONS (Based on External Review — 2026-07-23)
+
+### Hard Blockers on Gate Unlock (Regardless of 30-Trade Pass)
+
+The 30-trade gate passing does NOT authorize live trading if:
+1. **Walk-forward validation shows <50% OOS win rate** — currently at 42.9%, which is FAILING
+2. **Section 13.7 success criteria are not all met**
+
+A 30-trade pass on a system with no validated edge is statistical noise, especially with skewed payoff distributions (iron condors, spreads). The gate is a necessary condition, not a sufficient one.
+
+**Action:** Pattern matcher must be re-validated BEFORE gate unlock. Paper trading continues (for UX testing and data collection), but the "LOCKED → LIVE" transition requires BOTH the 7-metric gate AND a positive walk-forward result.
+
+### Security Fix: X-User-Id Fallback Hardened
+
+The legacy `X-User-Id` header fallback (which could theoretically be spoofed by anyone who guesses the founder's user ID) is now restricted:
+- Only accepted from same-origin requests (Referer/Origin header must contain `options-tycoon.com` or `localhost`)
+- External requests without the session cookie get 403 regardless of headers
+- Will be fully removed once cookie-based auth is confirmed stable over 7 days
+
+### Priority Reorder
+
+| Priority | Item | Status |
+|----------|------|--------|
+| **P0 — DONE** | Automated DB backup script + API endpoint | ✅ Built |
+| **P0 — HARD BLOCKER** | Fix pattern matcher (walk-forward must show >50% OOS) | ❌ Not started |
+| **P0 — DONE** | X-User-Id fallback hardened (same-origin only) | ✅ Deployed |
+| P1 | Fix Run EOD button | Pending |
+| P1 | Fix 4/7 filter display bug | Pending |
+| P1 | DPDPA consent | Pending |
+| **GATE UNLOCK BLOCKED** until walk-forward passes | | |

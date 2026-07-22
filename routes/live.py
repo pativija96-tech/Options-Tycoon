@@ -673,3 +673,13 @@ async def get_signal_stats_endpoint(
     from db.signal_history import get_signal_stats
     stats = get_signal_stats(days=days)
     return stats
+
+
+@router.post("/run-backup")
+async def run_backup():
+    """Trigger a database backup. Exports critical tables to JSON."""
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from scripts.backup_db import run_backup as do_backup
+    result = do_backup()
+    return result
