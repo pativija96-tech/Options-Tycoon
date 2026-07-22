@@ -21,15 +21,30 @@ CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 @router.get("/signal")
 async def get_today_signal():
-    """Return today's generated trade card."""
+    """Return today's generated trade card. Falls back to signal_history DB if file is missing (Railway redeploy)."""
     signal_path = OUTPUT_DIR / "today_signal.json"
-    if not signal_path.exists():
-        return JSONResponse(
-            status_code=404,
-            content={"action": "skip", "reason": "No signal generated yet today"}
-        )
-    with open(signal_path) as f:
-        return json.load(f)
+    if signal_path.exists():
+        with open(signal_path) as f:
+            return json.load(f)
+    
+    # Fallback: load today's signal from DB (survives Railway redeploys)
+    from datetime import date
+    from db.signal_history import get_signal_history
+    today = date.today().strftime("%Y-%m-%d")
+    history = get_signal_history(days=1, limit=1)
+    if history and history[0].get("signal_date") == today:
+        # Reconstruct from full_signal_json
+        full_json = history[0].get("full_signal_json")
+        if full_json:
+            try:
+                return json.loads(full_json)
+            except (json.JSONDecodeError, TypeError):
+                pass
+    
+    return JSONResponse(
+        status_code=404,
+        content={"action": "skip", "reason": "No signal generated yet today"}
+    )
 
 
 @router.post("/generate-signal")
