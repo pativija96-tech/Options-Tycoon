@@ -111,9 +111,14 @@ def require_founder(request: Request) -> dict:
     Returns session dict if valid founder, raises 403 otherwise.
 
     Checks in order:
-    1. HTTP-Only session cookie (new, preferred)
-    2. X-User-Id header + DB lookup (legacy fallback during migration)
+    1. Skip for kite-callback (Zerodha redirect has no session)
+    2. HTTP-Only session cookie (new, preferred)
+    3. X-User-Id header + DB lookup (legacy fallback during migration)
     """
+    # Exempt kite-callback from auth (Zerodha redirect)
+    if "/kite-callback" in str(request.url.path):
+        return {"user_id": 0, "email": "kite-callback", "name": ""}
+
     # Try cookie first
     session = get_session(request)
     if session:

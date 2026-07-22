@@ -181,24 +181,6 @@ async def kite_login():
     return RedirectResponse(url=url)
 
 
-@router.get("/kite-callback")
-async def kite_callback(request: Request):
-    """Handle Kite OAuth callback — exchange request_token for access_token."""
-    request_token = request.query_params.get("request_token")
-    if not request_token:
-        return JSONResponse(status_code=400, content={"error": "No request_token received from Kite"})
-    
-    from engine.broker.kite_auth import handle_callback
-    result = handle_callback(request_token)
-    
-    if result.get("success"):
-        # Redirect back to live page with success
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(url="/static/live.html?kite=connected")
-    else:
-        return JSONResponse(status_code=400, content=result)
-
-
 @router.get("/live-prices")
 async def get_live_prices(request: Request):
     """Fetch live LTP prices for given strikes using Kite API."""
