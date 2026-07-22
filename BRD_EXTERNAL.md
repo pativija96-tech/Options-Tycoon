@@ -512,3 +512,72 @@ Before the 30-trade gate is trusted as a "go live" signal, ALL of the following 
 - [ ] At least one monthly recalibration run completed
 
 If any of these fail: the gate unlock should NOT be treated as permission to go live — it means the gate itself is validating against an insufficiently honest paper model.
+
+
+---
+
+## 14. STATUS UPDATE (2026-07-23)
+
+### Completed This Session
+
+| # | Item | Status |
+|---|------|--------|
+| 1 | Founder allowlist middleware | ✅ Deployed — all /api/live/* routes gated |
+| 2 | HTTP-Only session cookies | ✅ Deployed — set on Google auth |
+| 3 | Legacy X-User-Id fallback | ✅ Deployed — works until full cookie migration |
+| 4 | Kite callback exempt from allowlist | ✅ Fixed — Zerodha redirect no longer blocked |
+| 5 | Kite reads from env vars (not file) | ✅ Fixed — KITE_API_KEY/SECRET from Railway vars |
+| 6 | Conditional nav rendering | ✅ Deployed — Live Signals hidden for non-founders |
+| 7 | Dead endpoints removed (/trade-log, /admin/all-trades) | ✅ Done |
+| 8 | Min matches raised to 20 + Wilson CI | ✅ Deployed |
+| 9 | Walk-forward validation script | ✅ Built — result: 42.9% OOS (no reliable edge) |
+| 10 | Per-filter analysis script | ✅ Built — ready to run after 10 resolved trades |
+| 11 | Iron Condor strategy builder | ✅ Live — generates 4-leg neutral trades |
+| 12 | Signal persists after Railway redeploy | ✅ Fixed — falls back to signal_history DB |
+| 13 | Signal engine never returns None | ✅ Fixed — always returns skip card with reason |
+| 14 | Telegram asyncio crash fix | ✅ Fixed — handles event loop conflicts |
+| 15 | Paper trade #1 executed + EOD resolved | ✅ Won (Iron Condor, NIFTY stayed in range) |
+
+### Current Production State
+
+- **Trades: 5/30** (2 wins, 3 losses, 40% win rate)
+- **P&L: Rs.124** (positive expectancy)
+- **Gates Passed: 4/7** (Avg Win/Loss, Drawdown, Consec Losses, Expectancy)
+- **Still Failing:** Trade count (5/30), Win Rate (40%), Profit Factor (1.08)
+- **Status: LOCKED** — 25 more trades needed
+
+### Known Issues (Not Blocking)
+
+| # | Issue | Impact | Fix Planned |
+|---|-------|--------|-------------|
+| 1 | 4/7 vs 5 PASS filter count display mismatch | Cosmetic — R:R filter returns string type in some edge cases | Next session |
+| 2 | Run EOD button doesn't respond on first click (needs console call) | UX — may be confirm() dialog being blocked | Next session |
+| 3 | Walk-forward shows 42.9% OOS win rate (no edge) | Pattern matching needs tuning before trusting gate | Before trade #15 |
+| 4 | Kite callback "Invalid or expired session" | Redirect URL on developers.kite.trade may need updating | Owner action |
+
+### Next Steps (Priority Order)
+
+**This Week (Before Trade #10):**
+1. [ ] Fix Run EOD button (confirm dialog or fallback)
+2. [ ] Fix 4/7 filter count display bug
+3. [ ] Automated DB backups (P0 — already burned once)
+4. [ ] Address walk-forward result — tune pattern matching or add multi-factor conditions
+
+**Before Trade #15:**
+5. [ ] Intraday SL simulation in EOD resolution
+6. [ ] DPDPA 2-checkbox consent (DNA module)
+7. [ ] Fix Kite redirect URL (owner: developers.kite.trade)
+
+**Before Gate Unlock (Trade #30):**
+8. [ ] Calibration chart (confidence % vs actual win rate)
+9. [ ] Monthly recalibration script
+10. [ ] All Section 13 success criteria must pass
+
+### Daily Workflow (Established)
+
+```
+9:00 AM IST / 11:30 AM PH  → Open live.html → Regenerate Signal
+9:15 AM IST                 → Review signal → Execute or Pass
+3:30 PM IST / 6:00 PM PH   → Run EOD (via console if button fails)
+                            → Refresh → Check updated stats
+```
