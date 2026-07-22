@@ -51,6 +51,7 @@ These rules are decided NOW, in calm conditions. They cannot be overridden durin
 
 | Condition | Rule |
 |-----------|------|
+| **Single-day loss > Rs.15,000** | **Full stop. Single-event circuit breaker — exceeds any normal IC max loss.** |
 | 5 consecutive losses | Review but continue. System is functioning as designed. |
 | 10 consecutive losses | Reduce to half size (1→0.5 lots). Continue taking signals. |
 | 15 consecutive losses | Pause for 5 trading days. Review market regime. Resume at half size. |
@@ -59,6 +60,8 @@ These rules are decided NOW, in calm conditions. They cannot be overridden durin
 | Rs.45,000 cumulative drawdown (backtest max) | Full stop. |
 
 **The rule:** During a losing streak, the system's rules override in-the-moment judgment. No "making it back" with bigger size. No skipping days. No emotional overrides.
+
+**Note on tail events:** The backtest's worst day is -5.93%. NIFTY has done -13% (COVID 2020). A -13% day would trigger max loss on the IC regardless — the single-event circuit breaker exists for exactly this case. Defined-risk structure caps loss at wing width (Rs.~6,500 per lot), but the circuit breaker fires anyway to force a pause and reassessment.
 
 ### 2.2 Margin Risk
 
@@ -73,7 +76,16 @@ Gate unlock does NOT mean full-size immediately:
 - **Phase 2 (if slippage < Rs.150):** Full size (1 lot).
 - **Phase 3 (after 100 live trades):** Consider 2 lots if EV remains positive with real fills.
 
-If real slippage > Rs.150/trade over 30 trades → strategy is not viable at this strike distance. Stop.
+If real slippage > Rs.150/trade over 30 trades → **strategy is not viable at this strike distance. STOP.** Do not search for a sixth configuration to rescue it — the calm pre-commitment to stop is as important as the pre-commitment to continue during drawdowns. Finding out at Phase 1 that slippage kills the edge is a success of the validation process, not a failure of the system.
+
+### 2.4 Margin Requirements (Verify Before Live)
+
+Before going live, confirm with Zerodha/Kite:
+- Actual SPAN margin for NIFTY weekly IC at ±250pt strikes, 100pt wings
+- Historical margin requirement changes during vol spikes (how fast, how much)
+- Whether margin can increase mid-position (forcing additional capital or forced exit)
+
+Do not estimate — get the actual numbers from the broker.
 
 ---
 
@@ -201,17 +213,31 @@ All founder-gated. Full list in codebase (`routes/live.py`).
 
 ---
 
-## 9. COST STRUCTURE
+## 9. COST STRUCTURE & PURPOSE
+
+### Why Run This System?
+
+The point is **not** the Rs.1,400/month net profit. At Rs.10L capital, the per-trade edge (Rs.192) is modest and partially eroded by fixed infrastructure costs. The actual purpose:
+
+1. **Discipline infrastructure** — a mechanical system that enforces pre-committed rules during drawdowns
+2. **Validation pipeline** — a process that rigorously tests any strategy before real capital is risked
+3. **Scale preparation** — the same strategy at Rs.50L+ capital nets Rs.7,000+/month with the same infrastructure cost
+4. **Learning asset** — 5 rounds of validation, with failures documented, creates institutional knowledge for future strategy development
+
+If the goal were solely Rs.1,400/month, a fixed deposit would be simpler. The goal is building a tested, disciplined, scalable trading infrastructure.
+
+### Cost Reality
 
 | Item | Monthly |
 |------|---------|
-| Railway hosting | $5-15 |
+| Railway hosting | $5-15 (~Rs.1,200) |
 | Kite Connect API | Rs.2,000 (once live) |
-| Total infrastructure | ~Rs.2,500/month |
-| Expected monthly profit (if validated live) | ~Rs.3,900 (244 days × Rs.192 ÷ 12) |
-| Net after costs | ~Rs.1,400/month on Rs.10L capital |
+| Total infrastructure | ~Rs.3,200/month |
+| Expected monthly profit (if validated live, 1 lot) | ~Rs.3,900 |
+| **Net after costs** | **~Rs.700/month on Rs.10L** |
+| At Rs.50L capital (5 lots) | ~Rs.19,500 profit, ~Rs.16,300 net |
 
-This is a thin margin. The strategy works at scale (larger capital) better than at Rs.10L minimum.
+At minimum viable capital (Rs.10L), the system barely covers costs. It becomes meaningful at Rs.30L+. This is stated plainly so it doesn't become a reason to skip safeguards under pressure.
 
 ---
 
