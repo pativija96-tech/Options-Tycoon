@@ -1,267 +1,228 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 3.1 | **Last Updated:** 2026-07-23
-> **Status:** Live on Production (Railway + PostgreSQL)
+> **Version:** 4.0 | **Last Updated:** 2026-07-23
+> **Status:** Live on Production | Strategy Validated (5 rounds)
 > **URL:** https://options-tycoon.com
 > **GitHub:** https://github.com/pativija96-tech/Options-Tycoon
+> **Disclaimer:** This document describes a personal trading tool. Nothing here is financial advice.
 
 ---
 
-## 1. EXECUTIVE SUMMARY
+## 1. VALIDATED STRATEGY
 
-Options Tycoon is two products under one roof:
+After five rounds of progressively harder validation (directional → range → flat-premium → grid search → tail risk), one strategy survived every test:
 
-1. **Trader DNA Intelligence** (public, multi-user) — Upload broker CSV → Get behavioral analysis → Track improvement weekly
-2. **Live Signal Engine** (restricted, founder-only) — AI-powered daily NIFTY signals with 30-trade paper gate before live trading
+**±250pt Iron Condor, 100pt wings, every trading day. No directional signal. No pattern matching. Pure structural premium collection.**
 
-**Target Market:** Indian retail options traders (Zerodha/Groww/Angel One)
-**Stage:** 5 paper trades completed, 25 remaining before gate evaluation
-**Critical Finding:** Walk-forward validation shows 42.9% OOS win rate — pattern matcher needs tuning before gate unlock is meaningful
+| Metric | Value |
+|--------|-------|
+| Walk-forward EV (train vs test) | Rs.191 → Rs.192/trade (zero decay) |
+| Block bootstrap (30 trades, 10K sims) | 69.4% profitable |
+| Win rate | 86.5% |
+| Avg win | Rs.1,019 |
+| Avg loss | Rs.-2,941 |
+| Max drawdown (5yr backtest) | Rs.44,860 |
+| Max consecutive losses | 21 days |
+| Slippage breakeven | Rs.191/trade |
+| Annual return on Rs.10L | 4.7% |
+| Dataset worst day | -5.93% (genuine crisis-magnitude) |
+
+### What Was Retired
+
+The pattern matcher, VIX-regime gating, directional signal, and bucket-matching system **add zero value** over simply selling wide premium every day. Five validation rounds proved this:
+
+1. **Directional model:** 42.9% OOS (worse than coin flip)
+2. **Range bucketing:** 77.2% OOS but BELOW 80.3% unconditional baseline (bucketing subtracts value)
+3. **VIX gating:** Circular (VIX predicting volatility is tautological, not a discovery)
+4. **Flat-premium IC:** Positive EV was an artifact of mixing high-vol premiums with low-vol containment
+5. **High-vol only:** n=7 episodes (insufficient sample despite 72 days)
+
+### What Survived
+
+Simple, unfiltered, daily premium selling at wide strikes. The edge is the **volatility risk premium** (VRP) — implied vol systematically exceeds realized vol. This is documented, structural, and not data-mined.
 
 ---
 
-## 2. ACCESS CONTROL (Two-Tier Model)
+## 2. LOAD-BEARING RISK RULES (Pre-Committed, Not Negotiable)
 
-| Tier | Product | Access | Auth |
-|------|---------|--------|------|
-| Tier 1 — Public | DNA Intelligence, Practice Arena | Any signed-in user | Google OAuth |
-| Tier 2 — Restricted | Live Signal Engine | Founder only | Cookie + allowlist |
+These rules are decided NOW, in calm conditions. They cannot be overridden during a drawdown.
 
-**Implementation:**
-- Router-level `require_founder` dependency on all `/api/live/*` routes
-- HTTP-Only signed session cookie (set on Google auth)
-- `FOUNDER_ALLOWED_EMAILS` env var (single entry)
-- X-User-Id header accepted as fallback (same-origin only, temporary)
-- `/api/live/kite-callback` exempt (Zerodha redirect has no session)
-- "Live Signals" nav link hidden from non-founder sessions
+### 2.1 Drawdown Protocol
+
+| Condition | Rule |
+|-----------|------|
+| 5 consecutive losses | Review but continue. System is functioning as designed. |
+| 10 consecutive losses | Reduce to half size (1→0.5 lots). Continue taking signals. |
+| 15 consecutive losses | Pause for 5 trading days. Review market regime. Resume at half size. |
+| 21+ consecutive losses (backtest max) | Full stop. This exceeds historical worst case — something structural may have changed. |
+| Rs.25,000 cumulative drawdown | Reduce to half size regardless of streak count. |
+| Rs.45,000 cumulative drawdown (backtest max) | Full stop. |
+
+**The rule:** During a losing streak, the system's rules override in-the-moment judgment. No "making it back" with bigger size. No skipping days. No emotional overrides.
+
+### 2.2 Margin Risk
+
+Exchange margin requirements can increase 2-3x during volatility spikes — exactly when this strategy is already losing. Pre-commit:
+- Keep 2x estimated margin in account at all times (Rs.20,000 vs Rs.9,750 required)
+- If margin requirement doubles, reduce position to fit — do not add capital mid-drawdown
+
+### 2.3 Live Phase Sizing
+
+Gate unlock does NOT mean full-size immediately:
+- **Phase 1 (first 30 live trades):** Half size (0.5 lots). This validates real slippage vs model.
+- **Phase 2 (if slippage < Rs.150):** Full size (1 lot).
+- **Phase 3 (after 100 live trades):** Consider 2 lots if EV remains positive with real fills.
+
+If real slippage > Rs.150/trade over 30 trades → strategy is not viable at this strike distance. Stop.
 
 ---
 
-## 3. LIVE SIGNAL ENGINE — How It Works
+## 3. SIGNAL ENGINE — SIMPLIFIED
 
-### Daily Flow
-
-```
-Morning (9:00 AM IST / 11:30 AM PH):
-  Generate Signal → Review → Execute (paper trade logged as 'open')
-
-During Market Hours:
-  Open Positions panel shows live P&L + suggestions (Trail SL / Exit Now)
-
-After Market Close (3:30 PM IST / 6:00 PM PH):
-  Run EOD → resolves open trades using actual NIFTY close → win/loss recorded
-```
-
-### Signal Generation Pipeline
+The validated strategy requires no directional prediction. The signal engine simplifies to:
 
 ```
-1. Fetch Global Data (yfinance) → S&P 500, VIX, DXY, Gift Nifty
-2. Pattern Match (5-year NIFTY history, min 20 matches, Wilson CI)
-3. Strategy Selection (27-combo matrix: direction × confidence × volatility)
-4. Trade Construction (Black-Scholes premiums, 2% risk cap, Zerodha charges)
-5. 7 Quality Filters → Position Sizing (Full/Reduced/Minimum)
-6. Save to signal_history DB (append-only, survives redeploys)
-7. Telegram notification (founder's private chat)
+Daily (9:15 AM IST):
+1. Get NIFTY opening price (yfinance or Kite)
+2. Calculate strikes: Short CE = Open + 250, Short PE = Open - 250
+3. Calculate wings: Long CE = Short CE + 100, Long PE = Short PE - 100
+4. Estimate premium (Black-Scholes at current IV)
+5. Verify: max_loss < 2% of capital
+6. Generate trade card → display on live.html
 ```
 
-### Strategies Generated
+**Removed:** Pattern matching, 5-year bucket lookup, directional signal, confidence scoring, most quality filters.
 
-| Condition | Strategy |
-|-----------|----------|
-| Bullish + high confidence | Bull Call Spread (wide) |
-| Bullish + moderate/low | Bull Call Spread (small) |
-| Bearish + high confidence | Bear Put Spread (wide) |
-| Bearish + moderate/low | Bear Put Spread (small) |
-| Neutral / low confidence | Iron Condor |
-| Neutral + high volatility | Long Straddle |
+**Kept:**
+- Risk cap check (2% per trade)
+- VIX sanity check (don't trade if VIX > 40 — too chaotic for defined-risk spreads)
+- Position sizing (half size in drawdown per Section 2.1)
+- Signal history DB (all trades logged for ongoing validation)
+- EOD resolution (actual NIFTY close → win/loss)
 
-### 7 Quality Filters
+---
 
-1. Historical Confidence (>70% with 20+ matches)
-2. Global Alignment (2+ of US/VIX/DXY agree)
-3. Gift Nifty Confirmation (pre-market direction)
-4. Risk/Reward Ratio (minimum 2:1)
-5. Liquidity/Volatility (VIX 10-40 range)
-6. No Event Conflict (no RBI/Budget/Election)
-7. FII Flow Alignment (not against institutional flow)
+## 4. PAPER TRADING GATE (Revised)
 
-### 30-Trade Unlock Gate (7 Metrics)
+### Why Still Paper Trade?
 
-| Metric | Threshold | Current |
+The backtest validates the strategy class. The paper phase validates:
+1. **Real slippage** — do actual fills match modeled credit?
+2. **Execution discipline** — can you actually take the trade every day, including during losing streaks?
+3. **System reliability** — does the infrastructure work daily without manual intervention?
+
+### Gate Metrics (30 trades)
+
+| Metric | Threshold | Purpose |
 |--------|-----------|---------|
-| Trade Count | ≥ 30 | 5/30 FAIL |
-| Win Rate | > 50% | 40% FAIL |
-| Profit Factor | > 1.5 | 1.08 FAIL |
-| Avg Win/Loss | > 1.0 | 1.62 PASS |
-| Max Drawdown | < 15% | 0.8% PASS |
-| Consec Losses | < 5 | 3 PASS |
-| Expectancy | > Rs.0 | Rs.124 PASS |
+| Trade Count | ≥ 30 | Minimum sample for live validation |
+| Avg Credit Captured | Within Rs.150 of modeled | Validates slippage assumption |
+| Max Drawdown | < Rs.25,000 | Within expected bounds |
+| Consecutive Losses | < 15 | System functioning normally |
+| Execution Rate | > 90% of trading days | Discipline validation |
 
-**CRITICAL:** Gate unlock also requires walk-forward validation >50% OOS (currently FAILING at 42.9%).
+### Gate Unlock ≠ Full Size
 
----
-
-## 4. HARD BLOCKERS ON LIVE TRADING
-
-The gate passing (30 trades + 7 metrics) is necessary but NOT sufficient. These must ALSO pass:
-
-| Blocker | Status | Why |
-|---------|--------|-----|
-| Walk-forward >50% OOS win rate | ❌ FAILING (42.9%) | Pattern matching has no proven edge on unseen data |
-| Confidence calibration (stated % ≈ actual %) | ⏳ Needs 15+ trades | Don't trust sizing if confidence scores are miscalibrated |
-| Intraday SL simulation active | ⏳ Not built | Paper EOD-only resolution doesn't match real intraday behavior |
-
-A 30-trade pass on a system with no validated edge is statistical noise. The gate cannot unlock until these are resolved.
+Gate unlock → Phase 1 (half size) → validate real fills → Phase 2 (full size). See Section 2.3.
 
 ---
 
-## 5. TECHNICAL ARCHITECTURE
+## 5. PRODUCT ARCHITECTURE
 
-### Stack
+### Two-Tier Access (Unchanged)
 
-| Layer | Technology |
-|-------|-----------|
-| Backend | Python 3.11+ / FastAPI |
-| Frontend | Vanilla HTML/JS/CSS |
-| Database | PostgreSQL (Railway) + SQLite (local) |
-| Compute | SciPy, yfinance, pandas, numpy |
-| Broker | Kite Connect (founder's Zerodha) |
-| Auth | Google OAuth → HTTP-Only cookies + allowlist |
-| Hosting | Railway.app (Singapore) + Cloudflare CDN |
+| Tier | Product | Access |
+|------|---------|--------|
+| Tier 1 — Public | DNA Intelligence + Practice Arena | Any signed-in user |
+| Tier 2 — Restricted | Live Signal Engine | Founder only (allowlist + cookie) |
 
-### Database (15 tables)
-
-Key tables for Live Signal Engine:
-- `signal_history` — every generated signal (append-only)
-- `live_trades` — paper/live trade execution records
-- `users` — Google Sign-In profiles
-
-### API Endpoints (17 under /api/live/*)
-
-All founder-gated except `/kite-callback`:
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | /signal | Today's trade card (file → DB fallback) |
-| POST | /generate-signal | Trigger signal generation |
-| GET | /gate-status | 7-metric unlock gate |
-| POST | /paper-execute | Log paper trade (1/day) |
-| GET | /my-trades | Trade history |
-| GET | /open-positions | Live P&L + suggestions |
-| POST | /exit-trade | Manual exit |
-| POST | /trail-sl | Update stop-loss |
-| POST | /run-eod | EOD resolution |
-| GET | /eod-report | EOD report |
-| GET | /auth-status | Kite state |
-| GET | /kite-login | Zerodha OAuth redirect |
-| GET | /kite-callback | OAuth callback (exempt from allowlist) |
-| GET | /live-prices | Kite LTP |
-| GET | /settings | Capital/risk params |
-| GET | /signal-history | Historical signals |
-| GET | /signal-stats | Aggregate stats |
-| POST | /run-backup | Database backup |
-
----
-
-## 6. SIGNAL ACCURACY IMPROVEMENT PLAN
-
-All items must pass BEFORE gate unlock authorizes live capital.
-
-| # | Item | Status | Deadline |
-|---|------|--------|----------|
-| 1 | Min matches raised to 20 + Wilson CI | ✅ Done | — |
-| 2 | Walk-forward validation (train 3yr, test 1yr) | ✅ Built — **FAILING** (42.9% OOS) | **HARD BLOCKER** |
-| 3 | Per-filter predictive value analysis | ✅ Built — needs 10+ resolved trades | After trade #10 |
-| 4 | Intraday SL simulation in EOD | ❌ Not built | Before trade #15 |
-| 5 | Calibration chart (confidence vs actual win rate) | ❌ Needs 15+ trades | Before trade #20 |
-| 6 | Monthly recalibration | ❌ Not built | Before gate unlock |
-| 7 | **Fix pattern matcher to show >50% OOS** | ❌ **THE CRITICAL TASK** | **Before gate unlock** |
-
-### What "Fix Pattern Matcher" Means
-
-The current approach (bucket yesterday's NIFTY move → predict today's direction) produces 42.9% out-of-sample accuracy. Options to improve:
-- Add multi-factor conditions (combine US + VIX + DXY buckets simultaneously)
-- Use a different matching algorithm (nearest-neighbor, weighted by recency)
-- Expand the dataset (10yr instead of 5yr)
-- Add market microstructure features (open-to-close vs close-to-close)
-- Accept that simple pattern matching may not produce an edge → switch to premium-selling strategies that don't require directional prediction
-
----
-
-## 7. CURRENT STATUS (2026-07-23)
-
-### Production Health
+### Key Infrastructure
 
 | Component | Status |
 |-----------|--------|
-| Signal generation | ✅ Working (Iron Condor today) |
-| Paper trade execution | ✅ Working (5 trades logged) |
-| EOD resolution | ✅ Working (real NIFTY close) |
-| Signal persistence (survives redeploy) | ✅ Fixed (DB fallback) |
-| Founder allowlist | ✅ Active |
-| DB backups | ✅ Working (29 rows backed up) |
-| Kite OAuth | ⚠️ Callback redirect URL needs fixing on developers.kite.trade |
+| Railway + PostgreSQL | ✅ Live |
+| Founder allowlist + HTTP-Only cookies | ✅ Deployed |
+| Signal persistence (survives redeploy) | ✅ DB fallback |
+| Automated DB backups | ✅ Script + API endpoint |
+| Kite Connect (Zerodha) | ⚠️ Callback redirect URL needs fixing |
+| EOD Resolution | ✅ Working (real NIFTY close) |
+| Position management (Trail SL / Exit) | ✅ Working |
 
-### Trading Performance
+### API Endpoints (17 under /api/live/*)
 
-- **Trades:** 5/30
-- **Win Rate:** 40% (2W / 3L)
-- **P&L:** Rs.+124
-- **Gates Passed:** 4/7
-- **Status:** LOCKED (25 more trades + walk-forward fix needed)
-
-### Known Issues
-
-| # | Issue | Impact | Priority |
-|---|-------|--------|----------|
-| 1 | Walk-forward 42.9% OOS | No proven edge — gate unlock blocked | **P0 BLOCKER** |
-| 2 | 4/7 vs 5 PASS filter display mismatch | Cosmetic | P2 |
-| 3 | Run EOD button needs confirm dialog fix | UX — use console as workaround | P2 |
-| 4 | Kite callback "Invalid session" | Redirect URL config on Kite dashboard | Owner action |
+All founder-gated. Full list in codebase (`routes/live.py`).
 
 ---
 
-## 8. REVENUE MODEL (DNA Intelligence Only)
+## 6. VALIDATION PROCESS (How We Got Here)
 
-Live Signal Engine has no monetization and is not offered to others.
+| Round | Hypothesis | Result | What Killed It |
+|-------|-----------|--------|----------------|
+| 1 | Directional prediction from overnight data | 42.9% OOS | Worse than coin flip |
+| 2 | Range containment prediction via bucketing | 77.2% OOS | Below 80.3% unconditional baseline |
+| 3 | Iron Condor with flat premium assumption | Rs.+1,308 EV | Flat premium mixed regimes incorrectly |
+| 4 | Regime-specific premium (grid search) | High-vol: 15/15 positive | Only 7 episodes (n too small) |
+| 5 | **Wide-strike daily IC (validated)** | **Rs.192 EV, zero decay, 69% MC** | **Survived** |
 
-- **Phase 1 (Now):** Free for first 100 DNA users
-- **Phase 2 (After 100):** ₹499/month or ₹2999/year for premium DNA features
-- **Phase 3:** Enterprise (prop firms, team reports)
+**What validated means:** Walk-forward stable, block-bootstrap profitable 69% of the time, tail events present in dataset, slippage buffer exists (Rs.191 breakeven > Rs.150 estimated real slippage).
 
----
-
-## 9. RISK REGISTER
-
-| Risk | Mitigation |
-|------|-----------|
-| Live Signal Engine accessed by non-founder | Allowlist + cookies + same-origin check |
-| Pattern matcher has no edge (proven by walk-forward) | Gate unlock blocked until fixed |
-| DB data loss | Automated backup script + API endpoint |
-| Signal lost on Railway redeploy | Falls back to signal_history DB |
-| SEBI RA/IA regulatory exposure | Founder-only, no monetization, legal review pending |
+**What validated does NOT mean:** Guaranteed profit. Risk-free. Tested against every possible market condition. The -5.93% worst day in dataset is large but not the worst NIFTY has ever done (COVID 2020: -13%). Defined-risk structure caps loss per trade regardless.
 
 ---
 
-## 10. NEXT STEPS (Priority Order)
+## 7. KNOWN LIMITATIONS (Stated Plainly)
 
-### Immediate (This Week)
-1. [ ] **Fix pattern matcher** — the only P0 blocker. Explore multi-factor matching, recency weighting, or strategy pivot
-2. [ ] Run backup daily after EOD
-3. [ ] Fix Kite redirect URL (owner: developers.kite.trade)
-
-### Before Trade #15
-4. [ ] Intraday SL simulation
-5. [ ] Fix filter count display bug
-6. [ ] Fix Run EOD button UX
-7. [ ] DPDPA consent checkboxes (DNA module)
-
-### Before Gate Unlock
-8. [ ] Walk-forward must show >50% OOS
-9. [ ] Calibration chart confirms confidence accuracy
-10. [ ] Monthly recalibration run completed
-11. [ ] All Section 6 criteria pass
+1. **21 consecutive losses is real.** The backtest shows it happened. It will happen again. The protocol (Section 2.1) exists for this.
+2. **Slippage margin is thin.** Rs.191 EV vs Rs.50-150 estimated slippage = it works, but barely. Phase 1 (half size) validates this before full commitment.
+3. **4.7% annual return on Rs.10L is modest.** This isn't a get-rich system. It's a mechanical, low-effort income stream — like a recurring deposit with more variance.
+4. **VRP isn't free money.** It's compensation for bearing tail risk. The defined-risk structure limits that risk to wing width per trade, but consecutive-loss clustering during regime shifts is the real danger.
+5. **The dataset is 5 years, not forever.** Market microstructure can change (lot size changes, margin rules, electronic trading patterns). Annual recalibration against fresh data is required.
 
 ---
 
-*End of BRD v3.1. The walk-forward failure (42.9% OOS) is the single most important thing to fix. Everything else is operational polish.*
+## 8. NEXT STEPS (In Order)
+
+### Immediate
+1. [x] Strategy validated through 5 rounds
+2. [ ] Simplify signal engine (remove pattern matcher, implement daily IC generator)
+3. [ ] Continue paper trading with new simplified engine
+4. [ ] Fix Kite callback (developers.kite.trade redirect URL)
+
+### During 30-Trade Paper Phase
+5. [ ] Track real slippage vs modeled credit
+6. [ ] Validate execution discipline (no missed days)
+7. [ ] Run backup after each EOD
+
+### After Gate Unlock
+8. [ ] Phase 1: Half-size live trades (30 trades)
+9. [ ] Validate: real slippage < Rs.150/trade?
+10. [ ] Phase 2: Full size (if slippage validates)
+11. [ ] Annual recalibration run
+
+---
+
+## 9. COST STRUCTURE
+
+| Item | Monthly |
+|------|---------|
+| Railway hosting | $5-15 |
+| Kite Connect API | Rs.2,000 (once live) |
+| Total infrastructure | ~Rs.2,500/month |
+| Expected monthly profit (if validated live) | ~Rs.3,900 (244 days × Rs.192 ÷ 12) |
+| Net after costs | ~Rs.1,400/month on Rs.10L capital |
+
+This is a thin margin. The strategy works at scale (larger capital) better than at Rs.10L minimum.
+
+---
+
+## 10. DNA INTELLIGENCE (Public Product — Unchanged)
+
+The Trader DNA module (CSV upload → behavioral analysis → score tracking) remains:
+- Separate from the Live Signal Engine
+- Open to multiple users
+- Revenue target: ₹499/month for premium features after 100 users
+- No changes from previous BRD versions
+
+---
+
+*End of BRD v4.0. Five validation rounds completed. Strategy validated with explicit limitations and pre-committed risk rules. None of this is financial advice — it's a documentation of a personal tool's analysis process.*
