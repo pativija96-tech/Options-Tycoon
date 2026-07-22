@@ -49,24 +49,48 @@ async def get_today_signal():
 
 @router.post("/generate-signal")
 async def generate_signal():
-    """Trigger signal generation on-demand."""
+    """Trigger signal generation on-demand (simplified IC engine)."""
     import sys
     import asyncio
+    import json as json_mod
     from concurrent.futures import ThreadPoolExecutor
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     try:
-        from engine.signals.signal_engine import run_morning_signal
+        from engine.signals.simple_ic_engine import generate_daily_signal
+        from db.signal_history import save_signal
+        
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
             result = await asyncio.wait_for(
-                loop.run_in_executor(pool, run_morning_signal),
-                timeout=120
+                loop.run_in_executor(pool, generate_daily_signal),
+                timeout=60
             )
-        if result:
-            return {"success": True, "action": result.get("action"), "direction": result.get("direction"), "confidence": result.get("confidence")}
-        return {"success": False, "error": "Signal engine returned None"}
+        
+        if not result:
+            return {"success": False, "error": "Signal engine returned None"}
+        
+        # Save to file (for /signal endpoint)
+        signal_path = OUTPUT_DIR / "today_signal.json"
+        with open(signal_path, "w") as f:
+            json_mod.dump(result, f, indent=2, default=str)
+        
+        # Save to DB (survives redeploys)
+        try:
+            save_signal(result)
+        except Exception:
+            pass
+        
+        # Send Telegram notification (non-fatal)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+            from telegram_bot import send_signal as tg_send
+            tg_send(result)
+        except Exception:
+            pass
+        
+        return {"success": True, "action": result.get("action"), "direction": result.get("direction"), "confidence": result.get("confidence")}
     except asyncio.TimeoutError:
-        return JSONResponse(status_code=504, content={"success": False, "error": "Timed out. Try again — data may be cached now."})
+        return JSONResponse(status_code=504, content={"success": False, "error": "Timed out."})
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
 
