@@ -330,18 +330,40 @@ window.passTrade=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-weight:600">Passed.</p><p style="font-size:.8rem;color:var(--muted)">No trade taken today. Capital preserved.</p></div>';
 };
 
-// Load
+// Load — check Kite connection first, then load signal
 var user=JSON.parse(localStorage.getItem('ot_user')||'null');
 var userId=user?user.user_id||user.id||'0':'0';
-fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
-  if(r.status===404) return null;
-  if(r.status===403) return null;
-  return r.json();
-}).then(function(d){
-  if(d) render(d);
-  else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+
+// Check Kite auth status
+fetch('/api/live/auth-status',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(auth){
+  if(!auth.authenticated){
+    // Kite not connected — show connect button FIRST
+    document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-size:1.1rem;font-weight:600">Connect Zerodha First</p><p style="font-size:.85rem;color:var(--muted)">Live data required for accurate signals and execution.</p><button class="generate-btn" onclick="loginKite()" style="background:var(--green);color:#000;margin-top:16px">Connect Zerodha →</button><p style="font-size:.7rem;color:var(--muted);margin-top:12px">After connecting, return here to generate your signal.</p></div>';
+  } else {
+    // Kite connected — load signal normally
+    fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
+      if(r.status===404) return null;
+      if(r.status===403) return null;
+      return r.json();
+    }).then(function(d){
+      if(d) render(d);
+      else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+    }).catch(function(){
+      document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+    });
+  }
 }).catch(function(){
-  document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+  // Auth check failed — show generate anyway (will use yfinance fallback)
+  fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
+    if(r.status===404) return null;
+    if(r.status===403) return null;
+    return r.json();
+  }).then(function(d){
+    if(d) render(d);
+    else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+  }).catch(function(){
+    document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+  });
 });
 
 // Track record (per-user)
