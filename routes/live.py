@@ -814,3 +814,109 @@ async def run_backup():
     from scripts.backup_db import run_backup as do_backup
     result = do_backup()
     return result
+
+
+@router.post("/live-execute")
+async def live_execute(request: Request):
+    """
+    Execute Iron Condor with REAL money on Zerodha via Kite API.
+    
+    Uses phased model:
+    - Phase 1: 0.5 lots (32 qty) — slippage discovery
+    - Phase 2: 0.5 lots (32 qty) — validation
+    - Phase 3: 1 lot (65 qty) — full size
+    """
+    from engine.broker.kite_executor import execute_iron_condor, get_phase_config
+    
+    # Get today's signal
+    signal_path = OUTPUT_DIR / "today_signal.json"
+    if not signal_path.exists():
+        # Try DB fallback
+        from datetime import date
+        from db.signal_history import get_signal_history
+        today = date.today().strftime("%Y-%m-%d")
+        history = get_signal_history(days=1, limit=1)
+        if history and history[0].get("signal_date") == today:
+            full_json = history[0].get("full_signal_json")
+            if full_json:
+                signal = json.loads(full_json)
+            else:
+                return JSONResponse(status_code=400, content={"error": "No signal generated today"})
+        else:
+            return JSONResponse(status_code=400, content={"error": "No signal generated today"})
+    else:
+        with open(signal_path) as f:
+            signal = json.load(f)
+    
+    if signal.get("action") != "trade":
+        return JSONResponse(status_code=400, content={"error": "Signal is not a trade"})
+    
+    # Execute on Kite
+    result = execute_iron_condor(signal, mode="live")
+    
+    # Also log as a paper trade in DB for tracking
+    if result.get("success"):
+        user_id = request.headers.get("X-User-Id") or "1"
+        from db.database import get_connection
+        trade_data = signal.get("trade", {})
+        conn = get_connection()
+        try:
+            conn.execute(
+                """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
+                   entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, mode)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'live')""",
+                (
+                    int(user_id),
+                    signal.get("date", ""),
+                    signal.get("direction", ""),
+                    signal.get("confidence", 0),
+                    trade_data.get("type", ""),
+                    json.dumps(trade_data.get("legs", [])),
+                    trade_data.get("net_cost_total", 0),
+                    trade_data.get("max_loss", 0),
+                    trade_data.get("max_profit", 0),
+                    trade_data.get("sl_value", 0),
+                    signal.get("projected_open", 0),
+                    trade_data.get("width", 0),
+                )
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error(f"DB log failed (non-fatal): {e}")
+        finally:
+            conn.close()
+    
+    return result
+
+
+@router.get("/phase-status")
+async def get_phase_status():
+    """Get current trading phase info and trade count."""
+    from engine.broker.kite_executor import get_phase_config
+    from db.database import get_connection
+    
+    phase = get_phase_config()
+    
+    conn = get_connection()
+    try:
+        live_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM live_trades WHERE mode = 'live'"
+        ).fetchone()
+        live_wins = conn.execute(
+            "SELECT COUNT(*) as cnt FROM live_trades WHERE mode = 'live' AND status = 'win'"
+        ).fetchone()
+        
+        count = live_count["cnt"] if live_count else 0
+        wins = live_wins["cnt"] if live_wins else 0
+        
+        return {
+            "phase": phase,
+            "live_trades_total": count,
+            "live_wins": wins,
+            "live_win_rate": f"{wins/count*100:.0f}%" if count > 0 else "--",
+            "trades_remaining_in_phase": (phase["max_trades"] - count) if phase["max_trades"] else "unlimited",
+        }
+    except Exception as e:
+        return {"phase": phase, "error": str(e)[:100]}
+    finally:
+        conn.close()

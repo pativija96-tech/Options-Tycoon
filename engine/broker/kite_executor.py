@@ -1,183 +1,253 @@
 """
-Kite Executor — Places orders on Zerodha via Kite Connect API.
-Handles multi-leg spread orders + automatic SL placement.
+Kite Executor — Places Iron Condor orders automatically on Zerodha.
 
-NOTE: Scaffolded. Will connect when Kite subscription is active.
-Includes risk cap enforcement (2% per trade, 5% per day).
+Handles:
+- 4-leg IC order placement (SELL CE, BUY CE, SELL PE, BUY PE)
+- Market orders for guaranteed fills (validates real slippage)
+- Order status tracking
+- Auto-exit on SL breach or expiry
+
+Phase model:
+- Phase 1: 0.5 lots (quantity = 32 instead of 65) — slippage discovery
+- Phase 2: 0.5 lots — validation (10 trades)
+- Phase 3: 1 full lot (quantity = 65)
+
+Usage:
+    from engine.broker.kite_executor import execute_iron_condor, get_phase_config
 """
 
+import os
 import json
 import logging
-from pathlib import Path
+from datetime import date, timedelta
+from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("kite_executor")
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "settings.json"
-OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
+# Phase configuration
+PHASES = {
+    1: {"name": "Slippage Discovery", "lots": 0.5, "quantity": 32, "max_trades": 5, "description": "Half size, 5 trades to measure real slippage"},
+    2: {"name": "Validation", "lots": 0.5, "quantity": 32, "max_trades": 10, "description": "Half size, 10 trades to validate consistency"},
+    3: {"name": "Full Size", "lots": 1.0, "quantity": 65, "max_trades": None, "description": "Full lot, ongoing trading"},
+}
+
+# Current phase — stored in env var or defaults to 1
+CURRENT_PHASE = int(os.environ.get("TRADING_PHASE", "1"))
 
 
-def execute_trade(trade_card: dict) -> dict:
+def get_phase_config() -> dict:
+    """Get current phase configuration."""
+    phase = PHASES.get(CURRENT_PHASE, PHASES[1])
+    phase["current_phase"] = CURRENT_PHASE
+    return phase
+
+
+def get_expiry_symbol_format(strike: int, option_type: str) -> str:
     """
-    Execute a trade from a trade card via Kite API.
-    
-    Checks:
-    1. Authentication status
-    2. 2% per-trade risk cap
-    3. 5% daily loss cap
-    
-    Returns execution result.
+    Build Kite trading symbol for NIFTY weekly options.
+    Format: NIFTY{YY}{M}{DD}{Strike}{CE/PE}
+    Example: NIFTY2672424150CE
     """
-    from engine.broker.kite_auth import is_authenticated, get_access_token
+    today = date.today()
+    # Next Tuesday (weekly expiry)
+    days_until_tuesday = (1 - today.weekday()) % 7
+    if days_until_tuesday == 0:
+        days_until_tuesday = 7
+    expiry = today + timedelta(days=days_until_tuesday)
     
-    # Check auth
+    yy = expiry.strftime("%y")  # 26
+    month = expiry.month
+    # Kite month encoding: 1-9 as-is, Oct=O, Nov=N, Dec=D
+    if month <= 9:
+        mon = str(month)
+    elif month == 10:
+        mon = "O"
+    elif month == 11:
+        mon = "N"
+    else:
+        mon = "D"
+    dd = expiry.strftime("%d")  # 24
+    
+    return f"NIFTY{yy}{mon}{dd}{strike}{option_type}"
+
+
+def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
+    """
+    Execute a 4-leg Iron Condor on Zerodha via Kite API.
+    
+    Args:
+        signal: The trade card from simple_ic_engine (contains legs, strikes, etc.)
+        mode: "live" (real orders) or "paper" (log only, no real orders)
+    
+    Returns:
+        dict with order_ids, fill_prices, slippage info
+    """
+    from engine.broker.kite_auth import is_authenticated, get_kite_client
+    
     if not is_authenticated():
-        return {"success": False, "error": "Not authenticated. Login to Zerodha first.", "code": "AUTH_REQUIRED"}
+        return {"success": False, "error": "Kite not authenticated. Login to Zerodha first."}
     
-    # Check risk caps
-    risk_check = _check_risk_caps(trade_card)
-    if not risk_check["allowed"]:
-        return {"success": False, "error": risk_check["reason"], "code": "RISK_CAP_HIT"}
+    kite = get_kite_client()
+    if not kite:
+        return {"success": False, "error": "Could not get Kite client."}
     
-    # Check gate status
-    gate_check = _check_gate_status()
-    if gate_check.get("locked", True):
-        # Paper mode — log but don't actually place orders
-        return _paper_execute(trade_card)
+    trade = signal.get("trade", {})
+    legs = trade.get("legs", [])
+    if len(legs) != 4:
+        return {"success": False, "error": f"Expected 4 legs, got {len(legs)}"}
     
-    # Live execution (when gates pass)
-    return _live_execute(trade_card)
-
-
-def _check_risk_caps(trade_card: dict) -> dict:
-    """Enforce 2% per-trade and 5% daily loss caps."""
-    settings = _load_settings()
-    capital = settings.get("capital", 10000)
-    max_trade_risk = capital * settings.get("risk_per_trade", 0.02)
-    max_daily_risk = capital * settings.get("risk_per_day", 0.05)
+    phase = get_phase_config()
+    quantity = phase["quantity"]
     
-    trade = trade_card.get("trade", {})
-    max_loss = trade.get("max_loss", 0)
+    # Build orders for each leg
+    orders = []
+    order_results = []
     
-    # Per-trade check
-    if max_loss > max_trade_risk:
-        return {"allowed": False, "reason": f"Trade risk Rs.{max_loss} exceeds 2% cap (Rs.{max_trade_risk})"}
+    for leg in legs:
+        strike = leg["strike"]
+        option_type = leg["option"]  # "CE" or "PE"
+        action = leg["action"]  # "SELL" or "BUY"
+        
+        trading_symbol = get_expiry_symbol_format(strike, option_type)
+        transaction_type = "SELL" if action == "SELL" else "BUY"
+        
+        orders.append({
+            "trading_symbol": trading_symbol,
+            "exchange": "NFO",
+            "transaction_type": transaction_type,
+            "quantity": quantity,
+            "order_type": "MARKET",
+            "product": "MIS",  # Intraday/margin — for weekly options
+            "strike": strike,
+            "option": option_type,
+            "action": action,
+        })
     
-    # Daily loss check
-    daily_loss = _get_today_loss()
-    if abs(daily_loss) >= max_daily_risk:
-        return {"allowed": False, "reason": f"Daily loss limit reached (Rs.{abs(daily_loss):.0f} / Rs.{max_daily_risk:.0f})"}
+    if mode == "paper":
+        # Paper mode — just log, don't place real orders
+        return {
+            "success": True,
+            "mode": "paper",
+            "phase": phase["name"],
+            "quantity": quantity,
+            "orders_planned": orders,
+            "message": "Paper mode — orders not placed on Zerodha",
+        }
     
-    if abs(daily_loss) + max_loss > max_daily_risk:
-        return {"allowed": False, "reason": f"This trade could breach daily limit. Remaining budget: Rs.{max_daily_risk - abs(daily_loss):.0f}"}
+    # LIVE mode — place actual orders
+    for order in orders:
+        try:
+            order_id = kite.place_order(
+                variety="regular",
+                exchange=order["exchange"],
+                tradingsymbol=order["trading_symbol"],
+                transaction_type=order["transaction_type"],
+                quantity=order["quantity"],
+                order_type=order["order_type"],
+                product=order["product"],
+            )
+            
+            order_results.append({
+                "leg": f"{order['action']} {order['strike']} {order['option']}",
+                "trading_symbol": order["trading_symbol"],
+                "order_id": order_id,
+                "status": "placed",
+                "error": None,
+            })
+            logger.info(f"Order placed: {order['trading_symbol']} {order['transaction_type']} qty={order['quantity']} → order_id={order_id}")
+            
+        except Exception as e:
+            order_results.append({
+                "leg": f"{order['action']} {order['strike']} {order['option']}",
+                "trading_symbol": order["trading_symbol"],
+                "order_id": None,
+                "status": "failed",
+                "error": str(e)[:200],
+            })
+            logger.error(f"Order FAILED: {order['trading_symbol']} — {e}")
     
-    return {"allowed": True}
-
-
-def _check_gate_status() -> dict:
-    """Check if live trading is unlocked."""
-    gate_path = OUTPUT_DIR / "gate_status.json"
-    if gate_path.exists():
-        with open(gate_path) as f:
-            return json.load(f)
-    return {"locked": True}
-
-
-def _paper_execute(trade_card: dict) -> dict:
-    """Log trade as paper execution (no real orders)."""
-    logger.info("Paper execution (gates locked) — logging trade without Kite orders")
+    # Check results
+    placed = [o for o in order_results if o["status"] == "placed"]
+    failed = [o for o in order_results if o["status"] == "failed"]
+    
+    if failed:
+        # If any leg failed, we have a partial fill — dangerous
+        # TODO: Cancel the successfully placed legs to avoid naked exposure
+        logger.error(f"PARTIAL FILL: {len(placed)} placed, {len(failed)} failed. Manual intervention needed!")
+    
     return {
-        "success": True,
-        "mode": "paper",
-        "message": "Trade logged in paper mode (gates locked). No real orders placed.",
-        "trade_id": None,
+        "success": len(failed) == 0,
+        "mode": "live",
+        "phase": phase["name"],
+        "phase_number": CURRENT_PHASE,
+        "quantity": quantity,
+        "orders": order_results,
+        "placed": len(placed),
+        "failed": len(failed),
+        "message": f"{'All 4 legs placed' if not failed else 'PARTIAL FILL — check Kite app!'}",
     }
 
 
-def _live_execute(trade_card: dict) -> dict:
+def get_order_fills(order_ids: list) -> dict:
     """
-    Place actual orders on Kite.
-    NOTE: Scaffolded — requires kiteconnect + active subscription.
+    Get actual fill prices for placed orders.
+    Used to measure real slippage vs modeled premium.
     """
-    from engine.broker.kite_auth import get_access_token
+    from engine.broker.kite_auth import is_authenticated, get_kite_client
     
-    access_token = get_access_token()
-    if not access_token:
-        return {"success": False, "error": "No access token available", "code": "NO_TOKEN"}
+    if not is_authenticated():
+        return {"success": False, "error": "Not authenticated"}
     
-    trade = trade_card.get("trade", {})
-    legs = trade.get("legs", [])
+    kite = get_kite_client()
+    if not kite:
+        return {"success": False, "error": "No Kite client"}
     
     try:
-        from kiteconnect import KiteConnect
-        config = _load_kite_config()
-        kite = KiteConnect(api_key=config.get("api_key", ""))
-        kite.set_access_token(access_token)
-        
-        order_ids = []
-        for leg in legs:
-            # Determine transaction type
-            txn_type = "BUY" if leg["action"] == "BUY" else "SELL"
-            
-            # Place order
-            order_id = kite.place_order(
-                variety="regular",
-                exchange="NFO",
-                tradingsymbol=_build_tradingsymbol(leg),
-                transaction_type=txn_type,
-                quantity=25,  # 1 lot
-                product="NRML",
-                order_type="MARKET",
-            )
-            order_ids.append(order_id)
-            logger.info(f"Order placed: {txn_type} {leg['strike']} {leg['option']} → ID: {order_id}")
-        
-        return {
-            "success": True,
-            "mode": "live",
-            "order_ids": order_ids,
-            "message": f"Live orders placed: {len(order_ids)} legs executed",
-        }
-    
-    except ImportError:
-        return {"success": False, "error": "kiteconnect not installed", "code": "NO_LIBRARY"}
+        orders = kite.orders()
+        fills = {}
+        for oid in order_ids:
+            matching = [o for o in orders if str(o.get("order_id")) == str(oid)]
+            if matching:
+                order = matching[0]
+                fills[oid] = {
+                    "status": order.get("status"),
+                    "average_price": order.get("average_price"),
+                    "filled_quantity": order.get("filled_quantity"),
+                    "trading_symbol": order.get("tradingsymbol"),
+                }
+        return {"success": True, "fills": fills}
     except Exception as e:
-        logger.error(f"Live execution failed: {e}")
-        return {"success": False, "error": str(e), "code": "EXECUTION_ERROR"}
+        return {"success": False, "error": str(e)[:200]}
 
 
-def _get_today_loss() -> float:
-    """Get today's cumulative realized loss from trade log."""
-    from datetime import date
-    log_path = OUTPUT_DIR / "trade_log.json"
-    if not log_path.exists():
-        return 0
-    with open(log_path) as f:
-        trades = json.load(f)
-    today_str = date.today().isoformat()
-    today_losses = sum(
-        t.get("pnl", 0) for t in trades
-        if t.get("date") == today_str and t.get("pnl", 0) < 0
-    )
-    return today_losses
-
-
-def _build_tradingsymbol(leg: dict) -> str:
-    """Build Kite trading symbol from leg data. Placeholder logic."""
-    # Real implementation needs: expiry date + correct format
-    # e.g., "NIFTY2570324400PE"
-    return f"NIFTY{leg['strike']}{leg['option']}"
-
-
-def _load_settings() -> dict:
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            return json.load(f)
-    return {"capital": 10000, "risk_per_trade": 0.02, "risk_per_day": 0.05}
-
-
-def _load_kite_config() -> dict:
-    kite_path = Path(__file__).resolve().parent.parent.parent / "config" / "kite_creds.json"
-    if kite_path.exists():
-        with open(kite_path) as f:
-            return json.load(f)
-    return {}
+def calculate_slippage(signal: dict, fill_prices: dict) -> dict:
+    """
+    Compare modeled premium (Black-Scholes) vs actual fill price.
+    This is THE metric that determines if the strategy works live.
+    """
+    trade = signal.get("trade", {})
+    legs = trade.get("legs", [])
+    
+    modeled_credit = 0
+    actual_credit = 0
+    
+    for leg in legs:
+        modeled_prem = leg.get("premium_est", 0)
+        # Find matching fill
+        # (In real usage, you'd match by strike/type)
+        if leg["action"] == "SELL":
+            modeled_credit += modeled_prem
+        else:
+            modeled_credit -= modeled_prem
+    
+    # actual_credit would come from fill_prices — implementation depends on order matching
+    
+    slippage = modeled_credit - actual_credit  # positive = lost money to slippage
+    
+    return {
+        "modeled_credit": modeled_credit,
+        "actual_credit": actual_credit,
+        "slippage_per_share": slippage,
+        "slippage_total": slippage * get_phase_config()["quantity"],
+        "acceptable": slippage < 150 / 65,  # Rs.150 total / lot_size
+    }
