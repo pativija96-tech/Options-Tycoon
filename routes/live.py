@@ -415,19 +415,18 @@ async def run_eod():
     from datetime import date
     
     try:
-        # Fetch NIFTY data — Kite first, yfinance fallback
+        # Fetch NIFTY data — Kite REQUIRED for accurate resolution
         nifty_close = None
         nifty_high = None
         nifty_low = None
-        data_source = "unknown"
+        data_source = None
         
-        # Try Kite (real-time)
+        # Try Kite (real-time, accurate)
         try:
             from engine.broker.kite_auth import is_authenticated, get_kite_client
             if is_authenticated():
                 kite = get_kite_client()
                 if kite:
-                    # Get OHLC for today
                     ohlc = kite.ohlc(["NSE:NIFTY 50"])
                     if "NSE:NIFTY 50" in ohlc:
                         nd = ohlc["NSE:NIFTY 50"]["ohlc"]
@@ -435,41 +434,32 @@ async def run_eod():
                         nifty_high = nd.get("high")
                         nifty_low = nd.get("low")
                         data_source = "kite"
-        except Exception as e:
-            pass  # Fall through to yfinance
+        except Exception:
+            pass
         
-        # Fallback to yfinance
+        # If Kite unavailable — try yfinance as fallback (for after-hours when Kite token may have expired)
         if not nifty_close:
             import yfinance as yf
             data = yf.download("^NSEI", period="2d", progress=False, timeout=15)
-            if data is None or len(data) < 1:
-                return JSONResponse(status_code=500, content={"success": False, "error": "Could not fetch NIFTY data from Kite or yfinance"})
-            close_col = data["Close"]
-            if hasattr(close_col, "columns"):
-                close_col = close_col.iloc[:, 0]
-            nifty_close = float(close_col.iloc[-1])
-            try:
-                high_col = data["High"]
-                low_col = data["Low"]
-                if hasattr(high_col, "columns"):
-                    high_col = high_col.iloc[:, 0]
-                    low_col = low_col.iloc[:, 0]
-                nifty_high = float(high_col.iloc[-1])
-                nifty_low = float(low_col.iloc[-1])
-            except Exception:
-                pass
-            data_source = "yfinance"
-        nifty_low = None
-        try:
-            high_col = data["High"]
-            low_col = data["Low"]
-            if hasattr(high_col, "columns"):
-                high_col = high_col.iloc[:, 0]
-                low_col = low_col.iloc[:, 0]
-            nifty_high = float(high_col.iloc[-1])
-            nifty_low = float(low_col.iloc[-1])
-        except Exception:
-            pass
+            if data is not None and len(data) >= 1:
+                close_col = data["Close"]
+                if hasattr(close_col, "columns"):
+                    close_col = close_col.iloc[:, 0]
+                nifty_close = float(close_col.iloc[-1])
+                try:
+                    high_col = data["High"]
+                    low_col = data["Low"]
+                    if hasattr(high_col, "columns"):
+                        high_col = high_col.iloc[:, 0]
+                        low_col = low_col.iloc[:, 0]
+                    nifty_high = float(high_col.iloc[-1])
+                    nifty_low = float(low_col.iloc[-1])
+                except Exception:
+                    pass
+                data_source = "yfinance"
+        
+        if not nifty_close:
+            return JSONResponse(status_code=500, content={"success": False, "error": "Could not fetch NIFTY data. Login to Zerodha first or try after market hours."})
         
         today = date.today()
         is_expiry_day = today.weekday() == 1  # Tuesday = 1
