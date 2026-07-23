@@ -234,7 +234,7 @@ function render(card){
   // Actions
   html+='<div class="actions" style="grid-template-columns:1fr 2fr 1fr">';
   html+='<button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem">ZERODHA</button>';
-  html+='<button class="btn btn-execute" onclick="executeTrade()">EXECUTE</button>';
+  html+='<button class="btn btn-execute" onclick="executeTrade()">LIVE EXECUTE</button>';
   html+='<button class="btn btn-pass" onclick="passTrade()">PASS</button>';
   html+='</div>';
   html+='<div style="text-align:center;margin-top:10px"><button onclick="generateSignal()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Regenerate Signal</button> | <button onclick="runEOD()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Run EOD Report</button></div>';
@@ -304,18 +304,25 @@ window.loginKite=function(){
 };
 
 window.executeTrade=function(){
-  if(!confirm('Paper Execute this trade?'))return;
+  if(!confirm('LIVE EXECUTE — This will place REAL orders on your Zerodha account. Proceed?'))return;
   var user=JSON.parse(localStorage.getItem('ot_user')||'null');
   var userId=user?user.user_id||user.id||'0':'0';
-  fetch('/api/live/paper-execute',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+  document.querySelector('.btn-execute').textContent='PLACING ORDERS...';
+  document.querySelector('.btn-execute').disabled=true;
+  fetch('/api/live/live-execute',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
-      alert('Trade logged for your account.');
-      // Disable execute button to prevent double-click
+      alert('LIVE trade placed on Zerodha! Phase: '+d.phase+' | Qty: '+d.quantity+' | Orders: '+d.placed+'/4');
       var btn=document.querySelector('.btn-execute');
-      if(btn){btn.disabled=true;btn.textContent='EXECUTED';btn.style.opacity='0.4';}
+      if(btn){btn.textContent='LIVE ✓';btn.style.opacity='0.4';}
     } else {
-      alert(d.error||'Unknown error');
+      alert('FAILED: '+(d.error||'Unknown')+'\n\nCheck Kite app for partial orders.');
+      document.querySelector('.btn-execute').textContent='LIVE EXECUTE';
+      document.querySelector('.btn-execute').disabled=false;
     }
+  }).catch(function(e){
+    alert('Error: '+e);
+    document.querySelector('.btn-execute').textContent='LIVE EXECUTE';
+    document.querySelector('.btn-execute').disabled=false;
   });
 };
 
