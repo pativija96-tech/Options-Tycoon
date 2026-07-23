@@ -366,21 +366,24 @@ fetch('/api/live/auth-status',{headers:{'X-User-Id':String(userId)}}).then(funct
   });
 });
 
-// Track record (per-user)
+// Track record (per-user) — now shows LIVE trading phase
 var user=JSON.parse(localStorage.getItem('ot_user')||'null');
 var userId=user?user.user_id||user.id||'0':'0';
-fetch('/api/live/my-trades?user_id='+userId).then(function(r){return r.json();}).then(function(d){
-  var total=d.total||0;
-  var wins=d.wins||0;
-  var remaining=Math.max(0,30-total);
-  var winRate=total>0?Math.round(wins/total*100)+'%':'--';
-  document.getElementById('trTotal').textContent=total;
+
+// Fetch phase status
+fetch('/api/live/phase-status',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(ps){
+  var phase=ps.phase||{};
+  var liveTotal=ps.live_trades_total||0;
+  var liveWins=ps.live_wins||0;
+  var winRate=liveTotal>0?Math.round(liveWins/liveTotal*100)+'%':'--';
+  var remaining=ps.trades_remaining_in_phase;
+  document.getElementById('trTotal').textContent=liveTotal;
   document.getElementById('trWinRate').textContent=winRate;
-  document.getElementById('trRemaining').textContent=remaining>0?remaining+' more':'READY';
-  document.getElementById('trRemaining').style.color=remaining>0?'var(--yellow)':'var(--green)';
+  document.getElementById('trRemaining').textContent=remaining||'--';
+  document.getElementById('trRemaining').style.color=(remaining>0)?'var(--yellow)':'var(--green)';
 }).catch(function(){});
 
-// Gate status (per-user from DB)
+// Gate status (tracks live trades for ongoing validation)
 fetch('/api/live/gate-status?user_id='+userId).then(function(r){return r.json();}).then(function(g){
   var md=g.metrics_detail||{};
   var metrics=g.metrics||{};
@@ -389,14 +392,14 @@ fetch('/api/live/gate-status?user_id='+userId).then(function(r){return r.json();
   for(var k in metrics){if(metrics[k])gatesPassed++;}
   document.getElementById('trGates').textContent=gatesPassed+'/7';
   document.getElementById('trGates').style.color=gatesPassed>=7?'var(--green)':gatesPassed>=5?'var(--yellow)':'var(--red)';
-  document.getElementById('trLockStatus').textContent=g.locked?'LOCKED':'LIVE';
-  document.getElementById('trLockStatus').style.color=g.locked?'var(--red)':'var(--green)';
+  document.getElementById('trLockStatus').textContent=g.locked?'PHASE '+(parseInt(document.getElementById('trTotal').textContent)<=5?'1':'2'):'VALIDATED';
+  document.getElementById('trLockStatus').style.color=g.locked?'var(--yellow)':'var(--green)';
   document.getElementById('trDrawdown').textContent=md.max_drawdown||'--';
   document.getElementById('trStreak').textContent=md.max_consec_losses?md.max_consec_losses+' losses':'--';
-  // Gate details
-  var gateHtml='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">UNLOCK REQUIREMENTS</div>';
+  // Gate details — show phase-appropriate metrics
+  var gateHtml='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">LIVE VALIDATION</div>';
   var gateItems=[
-    {key:'trade_count',label:'Trades',target:'30+',val:md.trade_count||'0/30'},
+    {key:'trade_count',label:'Live Trades',target:'5+ (Phase 1)',val:md.trade_count||'0'},
     {key:'win_rate',label:'Win Rate',target:'>50%',val:md.win_rate||'--'},
     {key:'profit_factor',label:'Profit Factor',target:'>1.5',val:md.profit_factor||'--'},
     {key:'avg_win_loss',label:'Avg Win/Loss',target:'>1.0',val:md.avg_win_loss||'--'},
