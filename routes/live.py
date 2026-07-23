@@ -404,13 +404,18 @@ async def get_eod_report():
 
 @router.post("/run-eod")
 async def run_eod():
-    """Trigger EOD resolution — resolves all open trades using actual NIFTY close."""
-    import asyncio
-    from concurrent.futures import ThreadPoolExecutor
+    """
+    Smart EOD Resolution:
+    - Iron Condors: check if NIFTY breached short strikes (SL trigger) OR if it's expiry day
+    - If breached → resolve as loss (max loss)
+    - If expiry day (Tuesday) and in range → resolve as win (full premium)
+    - If not expiry and in range → leave open (hold to expiry)
+    """
     from db.database import get_connection
+    from datetime import date
     
     try:
-        # Fetch today's NIFTY close
+        # Fetch today's NIFTY close/current price
         import yfinance as yf
         data = yf.download("^NSEI", period="2d", progress=False, timeout=15)
         if data is None or len(data) < 1:
@@ -421,19 +426,35 @@ async def run_eod():
             close_col = close_col.iloc[:, 0]
         nifty_close = float(close_col.iloc[-1])
         
-        # Resolve all open trades in DB
+        # Also try to get high/low for intraday SL check
+        nifty_high = None
+        nifty_low = None
+        try:
+            high_col = data["High"]
+            low_col = data["Low"]
+            if hasattr(high_col, "columns"):
+                high_col = high_col.iloc[:, 0]
+                low_col = low_col.iloc[:, 0]
+            nifty_high = float(high_col.iloc[-1])
+            nifty_low = float(low_col.iloc[-1])
+        except Exception:
+            pass
+        
+        today = date.today()
+        is_expiry_day = today.weekday() == 1  # Tuesday = 1
+        
         conn = get_connection()
         open_trades = conn.execute("SELECT * FROM live_trades WHERE status = 'open'").fetchall()
+        
         resolved_count = 0
+        held_count = 0
+        results = []
         
         for trade in open_trades:
             trade_dict = dict(trade)
-            projected_open = trade_dict.get("projected_open") or nifty_close
             strategy = trade_dict.get("strategy", "")
-            max_profit = trade_dict.get("max_profit", 0)
-            max_loss = trade_dict.get("max_loss", 0)
-            entry_cost = trade_dict.get("entry_cost", 0)
-            direction = trade_dict.get("direction", "bullish")
+            max_profit = trade_dict.get("max_profit", 0) or 0
+            max_loss = trade_dict.get("max_loss", 0) or 0
             legs_json = trade_dict.get("legs", "[]")
             
             try:
@@ -442,27 +463,8 @@ async def run_eod():
             except Exception:
                 legs = []
             
-            nifty_move = nifty_close - projected_open
-            
-            # Resolve based on strategy
-            if "bull_call" in strategy:
-                long_strike = legs[0].get("strike", 0) if legs else 0
-                if nifty_close > long_strike:
-                    width = trade_dict.get("width", 200)
-                    intrinsic = min(nifty_close - long_strike, width)
-                    pnl = min((intrinsic * 65) - entry_cost, max_profit)
-                else:
-                    pnl = -entry_cost if entry_cost > 0 else -max_loss
-            elif "bear_put" in strategy:
-                long_strike = legs[0].get("strike", 0) if legs else 0
-                if nifty_close < long_strike:
-                    width = trade_dict.get("width", 200)
-                    intrinsic = min(long_strike - nifty_close, width)
-                    pnl = min((intrinsic * 65) - entry_cost, max_profit)
-                else:
-                    pnl = -entry_cost if entry_cost > 0 else -max_loss
-            elif "iron_condor" in strategy:
-                # Iron condor profits if NIFTY stays in range
+            if "iron_condor" in strategy:
+                # Get short strikes
                 short_call = 0
                 short_put = 0
                 for leg in legs:
@@ -470,29 +472,80 @@ async def run_eod():
                         short_call = leg.get("strike", 0)
                     if leg.get("action") == "SELL" and leg.get("option") == "PE":
                         short_put = leg.get("strike", 0)
-                if short_put < nifty_close < short_call:
-                    pnl = max_profit  # Stayed in range — full profit
+                
+                # Check SL breach (using high/low if available, else close)
+                check_high = nifty_high or nifty_close
+                check_low = nifty_low or nifty_close
+                
+                breached = check_high >= short_call or check_low <= short_put
+                in_range = short_put < nifty_close < short_call
+                
+                if breached:
+                    # SL triggered — resolve as loss immediately
+                    pnl = -max_loss
+                    status = "loss"
+                    exit_reason = "sl_breach"
+                    conn.execute(
+                        "UPDATE live_trades SET status=?, pnl=?, nifty_close=?, exit_reason=?, resolved_at=datetime('now') WHERE id=?",
+                        (status, round(pnl, 2), nifty_close, exit_reason, trade_dict["id"])
+                    )
+                    resolved_count += 1
+                    results.append({"id": trade_dict["id"], "action": "SL_TRIGGERED", "pnl": pnl})
+                    
+                elif is_expiry_day:
+                    # Expiry day — resolve based on close position
+                    if in_range:
+                        pnl = max_profit
+                        status = "win"
+                    else:
+                        pnl = -max_loss
+                        status = "loss"
+                    exit_reason = "expiry"
+                    conn.execute(
+                        "UPDATE live_trades SET status=?, pnl=?, nifty_close=?, exit_reason=?, resolved_at=datetime('now') WHERE id=?",
+                        (status, round(pnl, 2), nifty_close, exit_reason, trade_dict["id"])
+                    )
+                    resolved_count += 1
+                    results.append({"id": trade_dict["id"], "action": "EXPIRED", "pnl": pnl})
+                    
                 else:
-                    pnl = -max_loss  # Broke out of range
+                    # Not expiry, not breached — hold position
+                    held_count += 1
+                    results.append({"id": trade_dict["id"], "action": "HOLDING", "in_range": in_range, "nifty": nifty_close})
+            
             else:
+                # Non-IC strategies — resolve at close (legacy behavior)
+                projected_open = trade_dict.get("projected_open") or nifty_close
+                direction = trade_dict.get("direction", "bullish")
+                nifty_move = nifty_close - projected_open
+                
                 if direction == "bullish" and nifty_move > 0:
                     pnl = min(abs(nifty_move) * 65 * 0.3, max_profit)
                 elif direction == "bearish" and nifty_move < 0:
                     pnl = min(abs(nifty_move) * 65 * 0.3, max_profit)
                 else:
                     pnl = -max_loss
-            
-            status = "win" if pnl > 0 else "loss"
-            conn.execute(
-                "UPDATE live_trades SET status=?, pnl=?, nifty_close=?, exit_reason='eod_resolution', resolved_at=datetime('now') WHERE id=?",
-                (status, round(pnl, 2), nifty_close, trade_dict["id"])
-            )
-            resolved_count += 1
+                
+                status = "win" if pnl > 0 else "loss"
+                conn.execute(
+                    "UPDATE live_trades SET status=?, pnl=?, nifty_close=?, exit_reason='eod_resolution', resolved_at=datetime('now') WHERE id=?",
+                    (status, round(pnl, 2), nifty_close, trade_dict["id"])
+                )
+                resolved_count += 1
         
         conn.commit()
         conn.close()
         
-        return {"success": True, "resolved": resolved_count, "nifty_close": nifty_close}
+        return {
+            "success": True,
+            "resolved": resolved_count,
+            "held": held_count,
+            "nifty_close": nifty_close,
+            "nifty_high": nifty_high,
+            "nifty_low": nifty_low,
+            "is_expiry_day": is_expiry_day,
+            "results": results,
+        }
     
     except Exception as e:
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
