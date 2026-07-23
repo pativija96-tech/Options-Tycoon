@@ -165,19 +165,23 @@ function render(card){
   html+='<div class="play-regime">'+esc(card.direction||'').toUpperCase()+' — '+(card.direction==='bullish'?'Bounce expected':card.direction==='bearish'?'Downside expected':'Range-bound expected')+'</div>';
   html+='<div class="play-strategy">'+(t.type||'').replace(/_/g,' ').toUpperCase()+'</div>';
 
-  // Conviction bar
+  // Conviction bar — for mechanical strategy, show "VALIDATED" instead of confidence %
   var conf=card.confidence||0;
-  var confCls=conf>=70?'high':conf>=55?'moderate':'low';
+  var isMechanical = (qf.strength === 'MECHANICAL' || card.confidence === null);
+  var confCls=isMechanical?'high':(conf>=70?'high':conf>=55?'moderate':'low');
   var filtersP=qf.passed||0;
+  var filtersT=qf.total||7;
+  var convLabel=isMechanical?'VALIDATED ('+filtersP+'/'+filtersT+')':conf+'% ('+filtersP+'/7)';
+  var barWidth=isMechanical?100:conf;
   html+='<div class="conviction-row">';
-  html+='<div class="conviction-bar"><div class="conviction-fill '+confCls+'" style="width:'+conf+'%"></div></div>';
-  html+='<div class="conviction-label '+confCls+'">'+conf+'% ('+filtersP+'/7)</div>';
+  html+='<div class="conviction-bar"><div class="conviction-fill '+confCls+'" style="width:'+barWidth+'%"></div></div>';
+  html+='<div class="conviction-label '+confCls+'">'+convLabel+'</div>';
   html+='</div>';
 
   // Filter dots + details
   var filters=qf.filters||{};
   html+='<div style="margin:12px 0;padding:12px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px">';
-  html+='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">7 QUALITY FILTERS</div>';
+  html+='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">'+(isMechanical?'CHECKS':'7 QUALITY FILTERS')+'</div>';
   for(var k in filters){
     var f=filters[k];
     var icon=f.pass?'<span style="color:var(--green)">PASS</span>':'<span style="color:var(--red)">FAIL</span>';
@@ -273,7 +277,8 @@ window.trailSL=function(tradeId){
 };
 
 window.runEOD=function(){
-  if(!confirm('Run End-of-Day resolution? This will resolve all open trades based on today NIFTY close.'))return;
+  var msg='Running EOD resolution...';
+  document.getElementById('content').innerHTML='<div class="no-signal"><p>'+msg+'</p></div>';
   var user=JSON.parse(localStorage.getItem('ot_user')||'null');
   var userId=user?user.user_id||user.id||'0':'0';
   fetch('/api/live/run-eod',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
