@@ -32,11 +32,32 @@ RISK_CAP_PCT = 0.02    # Max 2% of capital per trade
 
 
 def _get_nifty_price() -> dict:
-    """Fetch current NIFTY price and VIX level from yfinance."""
+    """
+    Fetch current NIFTY price and VIX level.
+    Priority: Kite API (live, real-time) → yfinance (fallback, may lag).
+    """
+    result = {"nifty": None, "vix": None, "source": None, "errors": []}
+    
+    # Try Kite first (real-time, no lag)
+    try:
+        from engine.broker.kite_auth import is_authenticated, get_kite_client
+        if is_authenticated():
+            kite = get_kite_client()
+            if kite:
+                ltp_data = kite.ltp(["NSE:NIFTY 50", "NSE:INDIA VIX"])
+                if "NSE:NIFTY 50" in ltp_data:
+                    result["nifty"] = ltp_data["NSE:NIFTY 50"]["last_price"]
+                    result["source"] = "kite"
+                if "NSE:INDIA VIX" in ltp_data:
+                    result["vix"] = ltp_data["NSE:INDIA VIX"]["last_price"]
+                if result["nifty"]:
+                    logger.info(f"Kite live: NIFTY={result['nifty']}, VIX={result['vix']}")
+                    return result
+    except Exception as e:
+        result["errors"].append(f"Kite: {str(e)[:100]}")
+    
+    # Fallback to yfinance (may have 1-day lag)
     import yfinance as yf
-    
-    result = {"nifty": None, "vix": None, "errors": []}
-    
     try:
         nifty_data = yf.download("^NSEI", period="2d", progress=False, timeout=15)
         if nifty_data is not None and len(nifty_data) >= 1:
@@ -44,8 +65,9 @@ def _get_nifty_price() -> dict:
             if hasattr(close_col, "columns"):
                 close_col = close_col.iloc[:, 0]
             result["nifty"] = float(close_col.iloc[-1])
+            result["source"] = "yfinance"
     except Exception as e:
-        result["errors"].append(f"NIFTY fetch: {str(e)[:100]}")
+        result["errors"].append(f"NIFTY yfinance: {str(e)[:100]}")
     
     try:
         vix_data = yf.download("^INDIAVIX", period="2d", progress=False, timeout=15)
@@ -55,9 +77,8 @@ def _get_nifty_price() -> dict:
                 close_col = close_col.iloc[:, 0]
             result["vix"] = float(close_col.iloc[-1])
     except Exception as e:
-        result["errors"].append(f"VIX fetch: {str(e)[:100]}")
-        # Fallback: estimate from yfinance ^NSEI volatility
-        result["vix"] = 15.0  # conservative default
+        result["errors"].append(f"VIX yfinance: {str(e)[:100]}")
+        result["vix"] = 15.0
     
     return result
 
@@ -207,7 +228,7 @@ def generate_daily_signal(capital: float = 1000000) -> dict:
         },
         "reasoning": (
             f"Mechanical ±{OFFSET_PTS}pt Iron Condor. "
-            f"NIFTY at {nifty_price:.0f}, VIX at {vix_level:.1f}%. "
+            f"NIFTY at {nifty_price:.0f} (source: {market_data.get('source', 'unknown')}), VIX at {vix_level:.1f}%. "
             f"Collect Rs.{net_credit_total:.0f} premium. "
             f"Win if NIFTY stays between {short_put} and {short_call} by expiry."
         ),

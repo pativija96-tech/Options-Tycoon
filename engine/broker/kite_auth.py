@@ -94,6 +94,20 @@ def get_session_info() -> dict:
     }
 
 
+def get_kite_client():
+    """Get an authenticated KiteConnect instance, or None."""
+    if not _session.get("authenticated") or not _session.get("access_token"):
+        return None
+    try:
+        from kiteconnect import KiteConnect
+        config = _load_config()
+        kite = KiteConnect(api_key=config.get("api_key", ""))
+        kite.set_access_token(_session["access_token"])
+        return kite
+    except Exception:
+        return None
+
+
 def _load_config() -> dict:
     """Load Kite credentials from env vars (Railway) or config file (local dev)."""
     import os
