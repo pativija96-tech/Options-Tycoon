@@ -415,19 +415,50 @@ async def run_eod():
     from datetime import date
     
     try:
-        # Fetch today's NIFTY close/current price
-        import yfinance as yf
-        data = yf.download("^NSEI", period="2d", progress=False, timeout=15)
-        if data is None or len(data) < 1:
-            return JSONResponse(status_code=500, content={"success": False, "error": "Could not fetch NIFTY close"})
-        
-        close_col = data["Close"]
-        if hasattr(close_col, "columns"):
-            close_col = close_col.iloc[:, 0]
-        nifty_close = float(close_col.iloc[-1])
-        
-        # Also try to get high/low for intraday SL check
+        # Fetch NIFTY data — Kite first, yfinance fallback
+        nifty_close = None
         nifty_high = None
+        nifty_low = None
+        data_source = "unknown"
+        
+        # Try Kite (real-time)
+        try:
+            from engine.broker.kite_auth import is_authenticated, get_kite_client
+            if is_authenticated():
+                kite = get_kite_client()
+                if kite:
+                    # Get OHLC for today
+                    ohlc = kite.ohlc(["NSE:NIFTY 50"])
+                    if "NSE:NIFTY 50" in ohlc:
+                        nd = ohlc["NSE:NIFTY 50"]["ohlc"]
+                        nifty_close = ohlc["NSE:NIFTY 50"]["last_price"]
+                        nifty_high = nd.get("high")
+                        nifty_low = nd.get("low")
+                        data_source = "kite"
+        except Exception as e:
+            pass  # Fall through to yfinance
+        
+        # Fallback to yfinance
+        if not nifty_close:
+            import yfinance as yf
+            data = yf.download("^NSEI", period="2d", progress=False, timeout=15)
+            if data is None or len(data) < 1:
+                return JSONResponse(status_code=500, content={"success": False, "error": "Could not fetch NIFTY data from Kite or yfinance"})
+            close_col = data["Close"]
+            if hasattr(close_col, "columns"):
+                close_col = close_col.iloc[:, 0]
+            nifty_close = float(close_col.iloc[-1])
+            try:
+                high_col = data["High"]
+                low_col = data["Low"]
+                if hasattr(high_col, "columns"):
+                    high_col = high_col.iloc[:, 0]
+                    low_col = low_col.iloc[:, 0]
+                nifty_high = float(high_col.iloc[-1])
+                nifty_low = float(low_col.iloc[-1])
+            except Exception:
+                pass
+            data_source = "yfinance"
         nifty_low = None
         try:
             high_col = data["High"]
@@ -572,7 +603,6 @@ async def get_open_positions(request: Request):
     """Return all open (unresolved) trades for the user with current suggestions."""
     user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id") or "0"
     from db.database import get_connection
-    import yfinance as yf
     
     conn = get_connection()
     try:
@@ -584,17 +614,34 @@ async def get_open_positions(request: Request):
         if not rows:
             return {"positions": [], "nifty_current": None}
         
-        # Fetch current NIFTY price
+        # Fetch current NIFTY price — Kite first, yfinance fallback
         nifty_current = None
+        data_source = None
+        
         try:
-            data = yf.download("^NSEI", period="1d", progress=False, timeout=10)
-            if data is not None and len(data) >= 1:
-                close_col = data["Close"]
-                if hasattr(close_col, "columns"):
-                    close_col = close_col.iloc[:, 0]
-                nifty_current = float(close_col.iloc[-1])
-        except:
+            from engine.broker.kite_auth import is_authenticated, get_kite_client
+            if is_authenticated():
+                kite = get_kite_client()
+                if kite:
+                    ltp = kite.ltp(["NSE:NIFTY 50"])
+                    if "NSE:NIFTY 50" in ltp:
+                        nifty_current = ltp["NSE:NIFTY 50"]["last_price"]
+                        data_source = "kite"
+        except Exception:
             pass
+        
+        if not nifty_current:
+            try:
+                import yfinance as yf
+                data = yf.download("^NSEI", period="1d", progress=False, timeout=10)
+                if data is not None and len(data) >= 1:
+                    close_col = data["Close"]
+                    if hasattr(close_col, "columns"):
+                        close_col = close_col.iloc[:, 0]
+                    nifty_current = float(close_col.iloc[-1])
+                    data_source = "yfinance"
+            except:
+                pass
         
         positions = []
         for row in rows:
