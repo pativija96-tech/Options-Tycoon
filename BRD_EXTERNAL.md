@@ -94,34 +94,67 @@ Do not estimate — get the actual numbers from the broker.
 The validated strategy requires no directional prediction. The signal engine simplifies to:
 
 ```
-Daily (9:15 AM IST):
-1. Get NIFTY opening price (yfinance or Kite)
-2. Calculate strikes: Short CE = Open + 250, Short PE = Open - 250
-3. Calculate wings: Long CE = Short CE + 100, Long PE = Short PE - 100
-4. Estimate premium (Black-Scholes at current IV)
-5. Verify: max_loss < 2% of capital
-6. Generate trade card → display on live.html
+Daily (9:15 AM IST / 11:45 AM PH):
+1. Login to Zerodha (Kite token, daily requirement)
+2. Generate Signal → gets live NIFTY price from Kite
+3. Calculate strikes: Short CE = Open + 250, Short PE = Open - 250
+4. Calculate wings: Long CE = Short CE + 100, Long PE = Short PE - 100
+5. Estimate premium (Black-Scholes at current IV from VIX)
+6. Verify: max_loss < 2% of capital
+7. Execute → trade logged, holds until Tuesday expiry
 ```
+
+**After execution — fully automated:**
+- Background scheduler runs EOD at 3:35 PM IST every weekday
+- Checks today's NIFTY high/low (Kite primary, yfinance fallback after hours)
+- If NIFTY breached short strikes → auto-exit (SL loss)
+- If Tuesday (expiry) + in range → auto-resolve (win, keep premium)
+- If safe and not Tuesday → holds (no action)
+
+**Data Sources:**
+- Signal generation: **Kite** (live, real-time) → yfinance fallback
+- EOD resolution: **Kite** (primary) → yfinance (after-hours fallback — acceptable since market is closed)
+- Open Positions: **Kite** (live P&L) → yfinance fallback
 
 **Removed:** Pattern matching, 5-year bucket lookup, directional signal, confidence scoring, most quality filters.
 
 **Kept:**
-- Risk cap check (2% per trade)
-- VIX sanity check (don't trade if VIX > 40 — too chaotic for defined-risk spreads)
-- Position sizing (half size in drawdown per Section 2.1)
-- Signal history DB (all trades logged for ongoing validation)
-- EOD resolution (actual NIFTY close → win/loss)
+- VIX sanity check (don't trade if VIX > 40)
+- Risk cap (2% per trade)
+- Signal history DB (all trades logged)
+- Automated EOD scheduler
+- Telegram notifications
 
----
+### Trade Lifecycle (Weekly IC)
 
-## 4. PAPER TRADING GATE (Revised)
+```
+Any weekday morning: Login Zerodha → Generate → Execute → OPEN
+                     ↓
+Daily 3:35 PM IST (AUTOMATED): SL breach check
+  - NIFTY breached strikes → AUTO-EXIT (loss)
+  - Safe → HOLD (no action)
+                     ↓
+Tuesday expiry (AUTOMATED):
+  - In range → WIN (premium kept)
+  - Out of range → LOSS
+                     ↓
+Next day: Generate new signal → Execute → repeat
+```
+
+### Your Daily Workflow (2 minutes total)
+
+1. Open `options-tycoon.com/static/live.html`
+2. Click ZERODHA → login (daily token)
+3. Click Generate Signal
+4. Click Execute
+5. **Walk away.** EOD + SL + expiry all automated.
 
 ### Why Still Paper Trade?
 
 The backtest validates the strategy class. The paper phase validates:
 1. **Real slippage** — do actual fills match modeled credit?
-2. **Execution discipline** — can you actually take the trade every day, including during losing streaks?
-3. **System reliability** — does the infrastructure work daily without manual intervention?
+2. **Execution discipline** — can you take the trade every day, including during losing streaks?
+3. **System reliability** — does the automated infrastructure work without intervention?
 
 ### Gate Metrics (30 trades)
 
@@ -156,9 +189,11 @@ Gate unlock → Phase 1 (half size) → validate real fills → Phase 2 (full si
 | Founder allowlist + HTTP-Only cookies | ✅ Deployed |
 | Signal persistence (survives redeploy) | ✅ DB fallback |
 | Automated DB backups | ✅ Script + API endpoint |
-| Kite Connect (Zerodha) | ⚠️ Callback redirect URL needs fixing |
-| EOD Resolution | ✅ Working (real NIFTY close) |
+| Automated EOD scheduler (3:35 PM IST daily) | ✅ Background thread |
+| Kite Connect (Zerodha) — live data | ✅ Connected (primary data source) |
+| EOD Resolution | ✅ Auto — holds to Tuesday, SL on breach |
 | Position management (Trail SL / Exit) | ✅ Working |
+| Simplified IC Engine (no pattern matching) | ✅ Deployed |
 
 ### API Endpoints (17 under /api/live/*)
 
@@ -194,22 +229,25 @@ All founder-gated. Full list in codebase (`routes/live.py`).
 
 ## 8. NEXT STEPS (In Order)
 
-### Immediate
+### Immediate (Done)
 1. [x] Strategy validated through 5 rounds
-2. [ ] Simplify signal engine (remove pattern matcher, implement daily IC generator)
-3. [ ] Continue paper trading with new simplified engine
-4. [ ] Fix Kite callback (developers.kite.trade redirect URL)
+2. [x] Simplified IC engine deployed (no pattern matching)
+3. [x] Kite live data integrated (primary source for all endpoints)
+4. [x] Automated EOD scheduler (3:35 PM IST daily, no manual action)
+5. [x] Smart EOD — holds to Tuesday expiry, auto-exits on SL breach
+6. [x] Kite callback fixed (OAuth flow working)
+7. [x] Conviction bar updated for mechanical strategy
 
-### During 30-Trade Paper Phase
-5. [ ] Track real slippage vs modeled credit
-6. [ ] Validate execution discipline (no missed days)
-7. [ ] Run backup after each EOD
+### During 30-Trade Paper Phase (Current)
+8. [ ] Execute 1 trade per week (hold to Tuesday)
+9. [ ] Track real slippage vs modeled credit (after live Phase 1)
+10. [ ] Run backup weekly (`/api/live/run-backup`)
 
 ### After Gate Unlock
-8. [ ] Phase 1: Half-size live trades (30 trades)
-9. [ ] Validate: real slippage < Rs.150/trade?
-10. [ ] Phase 2: Full size (if slippage validates)
-11. [ ] Annual recalibration run
+11. [ ] Phase 1: Half-size live trades (30 trades, validate real fills)
+12. [ ] Confirm with Zerodha: actual SPAN margin for NIFTY weekly IC at ±250pt
+13. [ ] Phase 2: Full size (if slippage < Rs.150/trade)
+14. [ ] Annual recalibration run
 
 ---
 
