@@ -77,18 +77,25 @@ async def global_exception_handler(request: Request, exc: Exception):
 # --- Startup & Shutdown ---
 @app.on_event("startup")
 def startup():
-    """Initialize the database schema, run migrations, and settle expired positions."""
+    """Initialize the database schema, run migrations, settle positions, and start scheduler."""
     init_db()
     # Run pending migrations (safe to call every startup)
     from db.migrations import run_migrations
     run_migrations()
     _settle_expired_positions()
+    _start_eod_scheduler()
 
 
 @app.on_event("shutdown")
 def shutdown():
     """Graceful shutdown — log and clean up."""
     logger.info("Application shutting down gracefully.")
+    # Stop scheduler
+    try:
+        from engine.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
 
 
 def _settle_expired_positions():
@@ -98,6 +105,16 @@ def _settle_expired_positions():
         auto_settle_expired()
     except Exception as e:
         logger.warning(f"Settlement check skipped: {e}")
+
+
+def _start_eod_scheduler():
+    """Start background scheduler for automated EOD checks at 3:35 PM IST daily."""
+    try:
+        from engine.scheduler import start_scheduler
+        start_scheduler()
+        logger.info("EOD scheduler started (3:35 PM IST daily, weekdays only)")
+    except Exception as e:
+        logger.warning(f"Scheduler start failed (non-fatal): {e}")
 
 
 # --- CORS Middleware ---
