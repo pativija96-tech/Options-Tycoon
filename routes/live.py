@@ -103,9 +103,9 @@ async def get_gate_status(request: Request):
     from db.database import get_connection
     conn = get_connection()
     try:
-        # Get user's trades from DB (trailing 30)
+        # Get user's LIVE trades from DB (exclude paper trades)
         rows = conn.execute(
-            "SELECT pnl, status FROM live_trades WHERE user_id = ? AND status IN ('win','loss') ORDER BY id DESC LIMIT 30",
+            "SELECT pnl, status FROM live_trades WHERE user_id = ? AND status IN ('win','loss') AND mode = 'live' ORDER BY id DESC LIMIT 30",
             (int(user_id),)
         ).fetchall()
         trades = [dict(r) for r in rows] if rows else []
@@ -597,7 +597,7 @@ async def get_open_positions(request: Request):
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM live_trades WHERE user_id = ? AND status = 'open' ORDER BY id DESC",
+            "SELECT * FROM live_trades WHERE user_id = ? AND status = 'open' AND mode = 'live' ORDER BY id DESC",
             (int(user_id),)
         ).fetchall()
         
