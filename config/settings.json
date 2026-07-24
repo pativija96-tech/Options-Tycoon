@@ -1,5 +1,5 @@
 {
-  "capital": 1000000,
+  "capital": 10000,
   "risk_per_trade": 0.02,
   "risk_per_day": 0.05,
   "min_confidence": 55,
