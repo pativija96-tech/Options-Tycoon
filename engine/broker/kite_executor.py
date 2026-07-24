@@ -26,9 +26,9 @@ logger = logging.getLogger("kite_executor")
 
 # Phase configuration
 PHASES = {
-    1: {"name": "Slippage Discovery", "lots": 0.5, "quantity": 32, "max_trades": 5, "description": "Half size, 5 trades to measure real slippage"},
-    2: {"name": "Validation", "lots": 0.5, "quantity": 32, "max_trades": 10, "description": "Half size, 10 trades to validate consistency"},
-    3: {"name": "Full Size", "lots": 1.0, "quantity": 65, "max_trades": None, "description": "Full lot, ongoing trading"},
+    1: {"name": "Slippage Discovery", "lots": 1, "quantity": 25, "max_trades": 5, "description": "1 lot (25 qty) to measure real slippage"},
+    2: {"name": "Validation", "lots": 1, "quantity": 25, "max_trades": 10, "description": "1 lot, 10 trades to validate consistency"},
+    3: {"name": "Full Size", "lots": 2, "quantity": 50, "max_trades": None, "description": "2 lots (50 qty), ongoing trading"},
 }
 
 # Current phase — stored in env var or defaults to 1
@@ -117,7 +117,7 @@ def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
             "transaction_type": transaction_type,
             "quantity": quantity,
             "order_type": "MARKET",
-            "product": "MIS",  # Intraday/margin — for weekly options
+            "product": "NRML",  # Positional — holding to weekly expiry
             "strike": strike,
             "option": option_type,
             "action": action,

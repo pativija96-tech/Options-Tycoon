@@ -33,9 +33,9 @@ RISK_CAP_PCT = 0.02    # Max 2% of capital per trade
 import os as _os
 _TRADING_PHASE = int(_os.environ.get("TRADING_PHASE", "1"))
 if _TRADING_PHASE <= 2:
-    LOT_SIZE = 32      # Phase 1-2: half lot (slippage discovery + validation)
+    LOT_SIZE = 25      # Phase 1-2: 1 lot (NIFTY lot size = 25 as of 2024)
 else:
-    LOT_SIZE = 65      # Phase 3: full lot
+    LOT_SIZE = 50      # Phase 3: 2 lots
 
 
 def _get_nifty_price() -> dict:
