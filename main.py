@@ -176,6 +176,18 @@ async def health_check():
     return {"status": "ok", "app": "Options Tycoon", "version": "0.1.0"}
 
 
+@app.get("/server-ip")
+async def get_server_ip():
+    """Get this server's outgoing IP address (for Kite whitelist)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get("https://api.ipify.org", timeout=10)
+            return {"ip": r.text.strip()}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/admin/stats")
 async def admin_stats():
     """Quick admin stats — user count, upload count. Not protected (low risk for beta)."""
