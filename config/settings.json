@@ -1,7 +1,7 @@
 {
   "capital": 10000,
-  "risk_per_trade": 0.02,
-  "risk_per_day": 0.05,
+  "risk_per_trade": 0.25,
+  "risk_per_day": 0.50,
   "min_confidence": 55,
   "min_historical_matches": 20,
   "gate_thresholds": {
