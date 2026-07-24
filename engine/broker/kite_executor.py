@@ -44,31 +44,31 @@ def get_phase_config() -> dict:
 
 def get_expiry_symbol_format(strike: int, option_type: str) -> str:
     """
-    Build Kite trading symbol for NIFTY weekly options.
-    Format: NIFTY{YY}{M}{DD}{Strike}{CE/PE}
-    Example: NIFTY2672424150CE
+    Build Kite trading symbol for NIFTY options.
+    
+    Monthly format: NIFTY{YY}{MON}{Strike}{CE/PE}
+    Example: NIFTY26JUL24000CE
+    
+    Weekly format: NIFTY{YY}{M}{DD}{Strike}{CE/PE}
+    Example: NIFTY2670124000CE (July 1)
+    
+    Note: In monthly expiry week, weekly expiry doesn't exist.
+    Currently using MONTHLY format for reliability.
     """
-    today = date.today()
-    # Next Tuesday (weekly expiry)
-    days_until_tuesday = (1 - today.weekday()) % 7
-    if days_until_tuesday == 0:
-        days_until_tuesday = 7
-    expiry = today + timedelta(days=days_until_tuesday)
+    from datetime import datetime, timezone, timedelta
     
-    yy = expiry.strftime("%y")  # 26
-    month = expiry.month
-    # Kite month encoding: 1-9 as-is, Oct=O, Nov=N, Dec=D
-    if month <= 9:
-        mon = str(month)
-    elif month == 10:
-        mon = "O"
-    elif month == 11:
-        mon = "N"
-    else:
-        mon = "D"
-    dd = expiry.strftime("%d")  # 24
+    # Use IST
+    ist = timezone(timedelta(hours=5, minutes=30))
+    today = datetime.now(ist).date()
     
-    return f"NIFTY{yy}{mon}{dd}{strike}{option_type}"
+    yy = str(today.year)[2:]  # "26"
+    
+    # Monthly format: NIFTY26JUL{strike}{CE/PE}
+    month_names = ["", "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                   "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    mon = month_names[today.month]
+    
+    return f"NIFTY{yy}{mon}{strike}{option_type}"
 
 
 def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
