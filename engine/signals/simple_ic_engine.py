@@ -25,10 +25,17 @@ logger = logging.getLogger("simple_ic_engine")
 # Strategy parameters (validated through 5 rounds of testing)
 OFFSET_PTS = 250       # Short strikes ±250 pts from ATM
 WING_WIDTH = 100       # Long strikes 100 pts beyond short strikes
-LOT_SIZE = 65          # NIFTY lot size (Jan 2026 revision)
 DAYS_TO_EXPIRY = 3     # Weekly expiry (Tuesday)
 VIX_MAX = 40           # Don't trade if VIX > 40 (too chaotic)
 RISK_CAP_PCT = 0.02    # Max 2% of capital per trade
+
+# Phase-aware lot size
+import os as _os
+_TRADING_PHASE = int(_os.environ.get("TRADING_PHASE", "1"))
+if _TRADING_PHASE <= 2:
+    LOT_SIZE = 32      # Phase 1-2: half lot (slippage discovery + validation)
+else:
+    LOT_SIZE = 65      # Phase 3: full lot
 
 
 def _get_nifty_price() -> dict:
@@ -253,9 +260,9 @@ def generate_daily_signal(capital: float = 1000000) -> dict:
             "total": 2,
             "strength": "MECHANICAL",
             "recommendation": "Validated strategy. Execute daily.",
-            "position_sizing": {"size": "full", "lots": 1, "label": "1 lot (validated config)", "conviction": "mechanical"},
+            "position_sizing": {"size": "half" if _TRADING_PHASE <= 2 else "full", "lots": 0.5 if _TRADING_PHASE <= 2 else 1, "label": f"Phase {_TRADING_PHASE}: {'half lot (32 qty)' if _TRADING_PHASE <= 2 else 'full lot (65 qty)'}", "conviction": "mechanical"},
         },
-        "position_sizing": {"size": "full", "lots": 1, "label": "1 lot (validated config)", "conviction": "mechanical"},
+        "position_sizing": {"size": "half" if _TRADING_PHASE <= 2 else "full", "lots": 0.5 if _TRADING_PHASE <= 2 else 1, "label": f"Phase {_TRADING_PHASE}: {'half lot (32 qty)' if _TRADING_PHASE <= 2 else 'full lot (65 qty)'}", "conviction": "mechanical"},
         "risk_check": {
             "max_loss": net_max_loss,
             "max_loss_pct": round(net_max_loss / capital * 100, 2),
