@@ -20,9 +20,23 @@ logger = logging.getLogger("options_tycoon.scheduler")
 _scheduler_thread = None
 _stop_event = threading.Event()
 
-# EOD runs at 3:35 PM IST (10:05 AM UTC)
-EOD_HOUR_UTC = 10
-EOD_MINUTE_UTC = 5
+# EOD/Trade schedule times (UTC)
+# NIFTY EOD: 3:35 PM IST = 10:05 UTC
+# QQQ Trade: 9:35 AM EST = 13:35 UTC (5 min after open)
+# QQQ EOD: 4:05 PM EST = 20:05 UTC (5 min after close)
+import os as _sched_os
+_TRADING_MODE = _sched_os.environ.get("TRADING_MODE", "qqq").lower()
+
+if _TRADING_MODE == "qqq":
+    EOD_HOUR_UTC = 20   # 4:05 PM EST (QQQ close)
+    EOD_MINUTE_UTC = 5
+    TRADE_HOUR_UTC = 13  # 9:35 AM EST (QQQ open)
+    TRADE_MINUTE_UTC = 35
+else:
+    EOD_HOUR_UTC = 10   # 3:35 PM IST (NIFTY close)
+    EOD_MINUTE_UTC = 5
+    TRADE_HOUR_UTC = 3   # 9:15 AM IST (NIFTY open) — no auto-trade for NIFTY
+    TRADE_MINUTE_UTC = 45
 
 
 def _run_eod_job():
@@ -43,10 +57,45 @@ def _run_eod_job():
         logger.error(f"Scheduled EOD failed: {e}")
 
 
+def _run_auto_trade():
+    """Auto-generate signal + execute (QQQ mode). Runs at US market open."""
+    logger.info("Auto-trade: generating QQQ signal + executing...")
+    try:
+        import httpx
+        import os
+        port = os.environ.get("PORT", "8000")
+        
+        # Step 1: Generate signal
+        resp = httpx.post(
+            f"http://localhost:{port}/api/live/generate-signal",
+            headers={"X-User-Id": "1"},
+            timeout=60,
+        )
+        gen_result = resp.json()
+        logger.info(f"Signal generated: {gen_result}")
+        
+        if not gen_result.get("success"):
+            logger.warning(f"Signal generation failed: {gen_result.get('error')}")
+            return
+        
+        # Step 2: Execute live (if IBKR is configured)
+        resp2 = httpx.post(
+            f"http://localhost:{port}/api/live/live-execute",
+            headers={"X-User-Id": "1"},
+            timeout=60,
+        )
+        exec_result = resp2.json()
+        logger.info(f"Execution result: {exec_result}")
+        
+    except Exception as e:
+        logger.error(f"Auto-trade failed: {e}")
+
+
 def _scheduler_loop():
-    """Background loop that checks time and triggers EOD."""
+    """Background loop that checks time and triggers EOD + auto-trade."""
     logger.info("Scheduler loop started")
-    last_run_date = None
+    last_eod_date = None
+    last_trade_date = None
     
     while not _stop_event.is_set():
         now = datetime.utcnow()
@@ -55,16 +104,24 @@ def _scheduler_loop():
         # Only run on weekdays (Mon=0 through Fri=4)
         is_weekday = now.weekday() < 5
         
-        # Check if it's time (3:35 PM IST = 10:05 UTC)
-        is_time = now.hour == EOD_HOUR_UTC and now.minute == EOD_MINUTE_UTC
+        # EOD check
+        is_eod_time = now.hour == EOD_HOUR_UTC and now.minute == EOD_MINUTE_UTC
+        eod_not_run = last_eod_date != today
         
-        # Haven't run today yet
-        not_run_today = last_run_date != today
-        
-        if is_weekday and is_time and not_run_today:
+        if is_weekday and is_eod_time and eod_not_run:
             logger.info(f"EOD trigger at {now.isoformat()} UTC")
             _run_eod_job()
-            last_run_date = today
+            last_eod_date = today
+        
+        # Auto-trade (QQQ mode only — generate + execute at market open)
+        if _TRADING_MODE == "qqq":
+            is_trade_time = now.hour == TRADE_HOUR_UTC and now.minute == TRADE_MINUTE_UTC
+            trade_not_run = last_trade_date != today
+            
+            if is_weekday and is_trade_time and trade_not_run:
+                logger.info(f"Auto-trade trigger at {now.isoformat()} UTC (QQQ)")
+                _run_auto_trade()
+                last_trade_date = today
         
         # Sleep 30 seconds between checks
         _stop_event.wait(30)

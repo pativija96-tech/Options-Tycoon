@@ -1,7 +1,8 @@
 {
-  "capital": 10000,
-  "risk_per_trade": 0.25,
-  "risk_per_day": 0.50,
+  "trading_mode": "qqq",
+  "capital": 1000,
+  "risk_per_trade": 0.70,
+  "risk_per_day": 0.70,
   "min_confidence": 55,
   "min_historical_matches": 20,
   "gate_thresholds": {

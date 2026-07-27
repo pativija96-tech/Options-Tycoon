@@ -49,20 +49,30 @@ async def get_today_signal():
 
 @router.post("/generate-signal")
 async def generate_signal():
-    """Trigger signal generation on-demand (simplified IC engine)."""
+    """Trigger signal generation — uses NIFTY or QQQ engine based on TRADING_MODE."""
     import sys
+    import os
     import asyncio
     import json as json_mod
     from concurrent.futures import ThreadPoolExecutor
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    
+    trading_mode = os.environ.get("TRADING_MODE", "qqq").lower()
+    
     try:
-        from engine.signals.simple_ic_engine import generate_daily_signal
+        if trading_mode == "qqq":
+            from engine.signals.qqq_ic_engine import generate_qqq_signal
+            gen_func = generate_qqq_signal
+        else:
+            from engine.signals.simple_ic_engine import generate_daily_signal
+            gen_func = generate_daily_signal
+        
         from db.signal_history import save_signal
         
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:
             result = await asyncio.wait_for(
-                loop.run_in_executor(pool, generate_daily_signal),
+                loop.run_in_executor(pool, gen_func),
                 timeout=60
             )
         
@@ -88,7 +98,7 @@ async def generate_signal():
         except Exception:
             pass
         
-        return {"success": True, "action": result.get("action"), "direction": result.get("direction"), "confidence": result.get("confidence")}
+        return {"success": True, "mode": trading_mode, "action": result.get("action"), "direction": result.get("direction"), "market": result.get("market", "NIFTY")}
     except asyncio.TimeoutError:
         return JSONResponse(status_code=504, content={"success": False, "error": "Timed out."})
     except Exception as e:
@@ -819,19 +829,15 @@ async def run_backup():
 @router.post("/live-execute")
 async def live_execute(request: Request):
     """
-    Execute Iron Condor with REAL money on Zerodha via Kite API.
-    
-    Uses phased model:
-    - Phase 1: 0.5 lots (32 qty) — slippage discovery
-    - Phase 2: 0.5 lots (32 qty) — validation
-    - Phase 3: 1 lot (65 qty) — full size
+    Execute Iron Condor with REAL money.
+    Routes to IBKR (QQQ) or Kite (NIFTY) based on TRADING_MODE.
     """
-    from engine.broker.kite_executor import execute_iron_condor, get_phase_config
+    import os
+    trading_mode = os.environ.get("TRADING_MODE", "qqq").lower()
     
     # Get today's signal
     signal_path = OUTPUT_DIR / "today_signal.json"
     if not signal_path.exists():
-        # Try DB fallback
         from datetime import date
         from db.signal_history import get_signal_history
         today = date.today().strftime("%Y-%m-%d")
@@ -851,8 +857,14 @@ async def live_execute(request: Request):
     if signal.get("action") != "trade":
         return JSONResponse(status_code=400, content={"error": "Signal is not a trade"})
     
-    # Execute on Kite
-    result = execute_iron_condor(signal, mode="live")
+    # Execute based on mode
+    if trading_mode == "qqq":
+        from engine.broker.ibkr_executor import execute_qqq_sync
+        spot = signal.get("projected_open") or signal.get("conditions", {}).get("qqq_price")
+        result = execute_qqq_sync(spot_price=spot)
+    else:
+        from engine.broker.kite_executor import execute_iron_condor
+        result = execute_iron_condor(signal, mode="live")
     
     # Also log as a paper trade in DB for tracking
     if result.get("success"):
