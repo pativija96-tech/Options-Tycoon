@@ -1,292 +1,271 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 4.0 | **Last Updated:** 2026-07-23
-> **Status:** Live on Production | Strategy Validated (5 rounds)
-> **URL:** https://options-tycoon.com
-> **GitHub:** https://github.com/pativija96-tech/Options-Tycoon
-> **Disclaimer:** This document describes a personal trading tool. Nothing here is financial advice.
+> **Version:** 5.0 | **Last Updated:** 2026-07-25
+> **Status:** Dual-Mode System (NIFTY + QQQ)
+> **Disclaimer:** Personal trading tool. Not financial advice.
 
 ---
 
-## 1. VALIDATED STRATEGY
+## 1. SYSTEM OVERVIEW
 
-After five rounds of progressively harder validation (directional → range → flat-premium → grid search → tail risk), one strategy survived every test:
+Options Tycoon operates in **two independent modes** on the same infrastructure:
 
-**±250pt Iron Condor, 100pt wings, every trading day. No directional signal. No pattern matching. Pure structural premium collection.**
+| Mode | Market | Broker | Underlying | Status |
+|------|--------|--------|-----------|--------|
+| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | Ready — pending wife's account NFO activation |
+| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF (Nasdaq 100) | Building — IBKR account pending activation |
+
+Both modes share: Railway hosting, PostgreSQL DB, signal history, UI, automated scheduler.
+Both modes are independent: different broker APIs, different strategies, different schedules.
+
+---
+
+## 2. MODE A: QQQ (US Market via IBKR) — PRIMARY
+
+### Strategy
+**QQQ ±$15 Iron Condor, $7 wings, daily, hold to same-day expiry (0DTE)**
+
+### Validated Numbers
 
 | Metric | Value |
 |--------|-------|
-| Walk-forward EV (train vs test) | Rs.191 → Rs.192/trade (zero decay) |
-| Block bootstrap (30 trades, 10K sims) | 69.4% profitable |
-| Win rate | 86.5% |
-| Avg win | Rs.1,019 |
-| Avg loss | Rs.-2,941 |
-| Max drawdown (5yr backtest) | Rs.44,860 |
-| Max consecutive losses | 21 days |
-| Slippage breakeven | Rs.191/trade |
-| Annual return on Rs.10L | 4.7% |
-| Dataset worst day | -5.93% (genuine crisis-magnitude) |
+| Win rate | 98.2% |
+| Realistic EV/trade | $7.70–$8.00 |
+| Win: avg profit | +$42 |
+| Loss: avg loss | -$25 (shallow breach) |
+| Loss: max loss | -$700 (wing cap, very rare) |
+| Slippage (entry only, 4 legs × $0.02) | -$8.00 |
+| Commission (IBKR) | -$4.00 |
+| Annual ROI | ~115-120% |
+| Tax (PH resident) | 0% |
 
-### What Was Retired
-
-The pattern matcher, VIX-regime gating, directional signal, and bucket-matching system **add zero value** over simply selling wide premium every day. Five validation rounds proved this:
-
-1. **Directional model:** 42.9% OOS (worse than coin flip)
-2. **Range bucketing:** 77.2% OOS but BELOW 80.3% unconditional baseline (bucketing subtracts value)
-3. **VIX gating:** Circular (VIX predicting volatility is tautological, not a discovery)
-4. **Flat-premium IC:** Positive EV was an artifact of mixing high-vol premiums with low-vol containment
-5. **High-vol only:** n=7 episodes (insufficient sample despite 72 days)
-
-### What Survived
-
-Simple, unfiltered, daily premium selling at wide strikes. The edge is the **volatility risk premium** (VRP) — implied vol systematically exceeds realized vol. This is documented, structural, and not data-mined.
-
----
-
-## 2. LOAD-BEARING RISK RULES (Pre-Committed, Not Negotiable)
-
-These rules are decided NOW, in calm conditions. They cannot be overridden during a drawdown.
-
-### 2.1 Drawdown Protocol
-
-| Condition | Rule |
-|-----------|------|
-| **Single-day loss > Rs.15,000** | **Full stop. Single-event circuit breaker — exceeds any normal IC max loss.** |
-| 5 consecutive losses | Review but continue. System is functioning as designed. |
-| 10 consecutive losses | Reduce to half size (1→0.5 lots). Continue taking signals. |
-| 15 consecutive losses | Pause for 5 trading days. Review market regime. Resume at half size. |
-| 21+ consecutive losses (backtest max) | Full stop. This exceeds historical worst case — something structural may have changed. |
-| Rs.25,000 cumulative drawdown | Reduce to half size regardless of streak count. |
-| Rs.45,000 cumulative drawdown (backtest max) | Full stop. |
-
-**The rule:** During a losing streak, the system's rules override in-the-moment judgment. No "making it back" with bigger size. No skipping days. No emotional overrides.
-
-**Note on tail events:** The backtest's worst day is -5.93%. NIFTY has done -13% (COVID 2020). A -13% day would trigger max loss on the IC regardless — the single-event circuit breaker exists for exactly this case. Defined-risk structure caps loss at wing width (Rs.~6,500 per lot), but the circuit breaker fires anyway to force a pause and reassessment.
-
-### 2.2 Margin Risk
-
-Exchange margin requirements can increase 2-3x during volatility spikes — exactly when this strategy is already losing. Pre-commit:
-- Keep 2x estimated margin in account at all times (Rs.20,000 vs Rs.9,750 required)
-- If margin requirement doubles, reduce position to fit — do not add capital mid-drawdown
-
-### 2.3 Live Phase Sizing
-
-Gate unlock does NOT mean full-size immediately:
-- **Phase 1 (first 30 live trades):** Half size (0.5 lots). This validates real slippage vs model.
-- **Phase 2 (if slippage < Rs.150):** Full size (1 lot).
-- **Phase 3 (after 100 live trades):** Consider 2 lots if EV remains positive with real fills.
-
-If real slippage > Rs.150/trade over 30 trades → **strategy is not viable at this strike distance. STOP.** Do not search for a sixth configuration to rescue it — the calm pre-commitment to stop is as important as the pre-commitment to continue during drawdowns. Finding out at Phase 1 that slippage kills the edge is a success of the validation process, not a failure of the system.
-
-### 2.4 Margin Requirements (Verify Before Live)
-
-Before going live, confirm with Zerodha/Kite:
-- Actual SPAN margin for NIFTY weekly IC at ±250pt strikes, 100pt wings
-- Historical margin requirement changes during vol spikes (how fast, how much)
-- Whether margin can increase mid-position (forcing additional capital or forced exit)
-
-Do not estimate — get the actual numbers from the broker.
-
----
-
-## 3. SIGNAL ENGINE — SIMPLIFIED
-
-The validated strategy requires no directional prediction. The signal engine simplifies to:
+### Execution
 
 ```
-Daily (9:15 AM IST / 11:45 AM PH):
-1. Login to Zerodha (Kite token, daily requirement)
-2. Generate Signal → gets live NIFTY price from Kite
-3. Calculate strikes: Short CE = Open + 250, Short PE = Open - 250
-4. Calculate wings: Long CE = Short CE + 100, Long PE = Short PE - 100
-5. Estimate premium (Black-Scholes at current IV from VIX)
-6. Verify: max_loss < 2% of capital
-7. Execute → trade logged, holds until Tuesday expiry
+10:30 PM PH (US market open):
+  → System auto-connects to IBKR
+  → Gets QQQ opening price
+  → Places 4-leg Iron Condor as combo limit order at midpoint
+  → Trade is live
+
+5:00 AM PH (US market close):
+  → Options expire (0DTE)
+  → Win: premium kept automatically (no action)
+  → Loss: settled by IBKR (capped at wing width)
+  → Result logged to DB
+
+You: Sleep through it. Check results in the morning.
 ```
 
-**After execution — fully automated:**
-- Background scheduler runs EOD at 3:35 PM IST every weekday
-- Checks today's NIFTY high/low (Kite primary, yfinance fallback after hours)
-- If NIFTY breached short strikes → auto-exit (SL loss)
-- If Tuesday (expiry) + in range → auto-resolve (win, keep premium)
-- If safe and not Tuesday → holds (no action)
+### Capital & Scaling
 
-**Data Sources:**
-- Signal generation: **Kite** (live, real-time) → yfinance fallback
-- EOD resolution: **Kite** (primary) → yfinance (after-hours fallback — acceptable since market is closed)
-- Open Positions: **Kite** (live P&L) → yfinance fallback
+| Deposit | Contracts | Monthly Income | Annual |
+|---------|-----------|---------------|--------|
+| $1,000 | 1 | ~$170 | ~$2,000 |
+| $5,000 | 2-3 | ~$500 | ~$6,000 |
+| $10,000 | 5 | ~$840 | ~$10,000 |
+| $50,000 | 25 | ~$4,200 | ~$50,000 |
 
-**Removed:** Pattern matching, 5-year bucket lookup, directional signal, confidence scoring, most quality filters.
+### Risk Rules (Pre-Committed)
 
-**Kept:**
-- VIX sanity check (don't trade if VIX > 40)
-- Risk cap (2% per trade)
-- Signal history DB (all trades logged)
-- Automated EOD scheduler
-- Telegram notifications
-
-### Trade Lifecycle (Weekly IC)
-
-```
-Any weekday morning: Login Zerodha → Generate → Execute → OPEN
-                     ↓
-Daily 3:35 PM IST (AUTOMATED): SL breach check
-  - NIFTY breached strikes → AUTO-EXIT (loss)
-  - Safe → HOLD (no action)
-                     ↓
-Tuesday expiry (AUTOMATED):
-  - In range → WIN (premium kept)
-  - Out of range → LOSS
-                     ↓
-Next day: Generate new signal → Execute → repeat
-```
-
-### Your Daily Workflow (2 minutes total)
-
-1. Open `options-tycoon.com/static/live.html`
-2. Click ZERODHA → login (daily token)
-3. Click Generate Signal
-4. Click Execute
-5. **Walk away.** EOD + SL + expiry all automated.
-
-### Why Still Paper Trade?
-
-The backtest validates the strategy class. The paper phase validates:
-1. **Real slippage** — do actual fills match modeled credit?
-2. **Execution discipline** — can you take the trade every day, including during losing streaks?
-3. **System reliability** — does the automated infrastructure work without intervention?
-
-### Gate Metrics (30 trades)
-
-| Metric | Threshold | Purpose |
-|--------|-----------|---------|
-| Trade Count | ≥ 30 | Minimum sample for live validation |
-| Avg Credit Captured | Within Rs.150 of modeled | Validates slippage assumption |
-| Max Drawdown | < Rs.25,000 | Within expected bounds |
-| Consecutive Losses | < 15 | System functioning normally |
-| Execution Rate | > 90% of trading days | Discipline validation |
-
-### Gate Unlock ≠ Full Size
-
-Gate unlock → Phase 1 (half size) → validate real fills → Phase 2 (full size). See Section 2.3.
-
----
-
-## 5. PRODUCT ARCHITECTURE
-
-### Two-Tier Access (Unchanged)
-
-| Tier | Product | Access |
-|------|---------|--------|
-| Tier 1 — Public | DNA Intelligence + Practice Arena | Any signed-in user |
-| Tier 2 — Restricted | Live Signal Engine | Founder only (allowlist + cookie) |
-
-### Key Infrastructure
-
-| Component | Status |
+| Condition | Action |
 |-----------|--------|
-| Railway + PostgreSQL | ✅ Live |
-| Founder allowlist + HTTP-Only cookies | ✅ Deployed |
-| Signal persistence (survives redeploy) | ✅ DB fallback |
-| Automated DB backups | ✅ Script + API endpoint |
-| Automated EOD scheduler (3:35 PM IST daily) | ✅ Background thread |
-| Kite Connect (Zerodha) — live data | ✅ Connected (primary data source) |
-| EOD Resolution | ✅ Auto — holds to Tuesday, SL on breach |
-| Position management (Trail SL / Exit) | ✅ Working |
-| Simplified IC Engine (no pattern matching) | ✅ Deployed |
+| Single-day loss > $500 | Full stop. Review. |
+| 5 consecutive losses | Continue (normal variance) |
+| 10 consecutive losses | Reduce to half contracts |
+| Account drops 30% from peak | Full stop |
+| Real slippage > $12/trade over 10 trades | Strategy not viable. Stop. |
 
-### API Endpoints (17 under /api/live/*)
-
-All founder-gated. Full list in codebase (`routes/live.py`).
-
----
-
-## 6. VALIDATION PROCESS (How We Got Here)
-
-| Round | Hypothesis | Result | What Killed It |
-|-------|-----------|--------|----------------|
-| 1 | Directional prediction from overnight data | 42.9% OOS | Worse than coin flip |
-| 2 | Range containment prediction via bucketing | 77.2% OOS | Below 80.3% unconditional baseline |
-| 3 | Iron Condor with flat premium assumption | Rs.+1,308 EV | Flat premium mixed regimes incorrectly |
-| 4 | Regime-specific premium (grid search) | High-vol: 15/15 positive | Only 7 episodes (n too small) |
-| 5 | **Wide-strike daily IC (validated)** | **Rs.192 EV, zero decay, 69% MC** | **Survived** |
-
-**What validated means:** Walk-forward stable, block-bootstrap profitable 69% of the time, tail events present in dataset, slippage buffer exists (Rs.191 breakeven > Rs.150 estimated real slippage).
-
-**What validated does NOT mean:** Guaranteed profit. Risk-free. Tested against every possible market condition. The -5.93% worst day in dataset is large but not the worst NIFTY has ever done (COVID 2020: -13%). Defined-risk structure caps loss per trade regardless.
+### Broker: Interactive Brokers
+- API: `ib_insync` (Python async)
+- Order type: BAG (Combo) limit at midpoint
+- Data: Real-time QQQ price + VIX
+- Settlement: Automatic (0DTE expiry)
+- Funding: Wise USD → IBKR wire
 
 ---
 
-## 7. KNOWN LIMITATIONS (Stated Plainly)
+## 3. MODE B: NIFTY (India via Zerodha) — SECONDARY
 
-1. **21 consecutive losses is real.** The backtest shows it happened. It will happen again. The protocol (Section 2.1) exists for this.
-2. **Slippage margin is thin.** Rs.191 EV vs Rs.50-150 estimated slippage = it works, but barely. Phase 1 (half size) validates this before full commitment.
-3. **4.7% annual return on Rs.10L is modest.** This isn't a get-rich system. It's a mechanical, low-effort income stream — like a recurring deposit with more variance.
-4. **VRP isn't free money.** It's compensation for bearing tail risk. The defined-risk structure limits that risk to wing width per trade, but consecutive-loss clustering during regime shifts is the real danger.
-5. **The dataset is 5 years, not forever.** Market microstructure can change (lot size changes, margin rules, electronic trading patterns). Annual recalibration against fresh data is required.
+### Strategy
+**NIFTY ±250pt Iron Condor, 100pt wings, hold to Tuesday weekly expiry**
 
----
+### Validated Numbers
 
-## 8. NEXT STEPS (In Order)
+| Metric | Value |
+|--------|-------|
+| Win rate | 86.5% |
+| Realistic EV/trade | Rs.192 (before tax) |
+| Tax (NRI via DTAA refund) | 0% after refund (30% TDS upfront, reclaim annually) |
+| Slippage breakeven | Rs.191/trade |
+| Annual ROI | ~50% (after cash flow drag from TDS) |
 
-### Immediate (Done)
-1. [x] Strategy validated through 5 rounds
-2. [x] Simplified IC engine deployed (no pattern matching)
-3. [x] Kite live data integrated (primary source for all endpoints)
-4. [x] Automated EOD scheduler (3:35 PM IST daily, no manual action)
-5. [x] Smart EOD — holds to Tuesday expiry, auto-exits on SL breach
-6. [x] Kite callback fixed (OAuth flow working)
-7. [x] Conviction bar updated for mechanical strategy
+### Execution
 
-### During 30-Trade Paper Phase (Current)
-8. [ ] Execute 1 trade per week (hold to Tuesday)
-9. [ ] Track real slippage vs modeled credit (after live Phase 1)
-10. [ ] Run backup weekly (`/api/live/run-backup`)
+```
+9:15 AM IST (Indian market open):
+  → System connects to Kite
+  → Gets NIFTY opening price
+  → Places 4-leg IC via Kite API
+  → Trade holds to Tuesday expiry
 
-### After Gate Unlock
-11. [ ] Phase 1: Half-size live trades (30 trades, validate real fills)
-12. [ ] Confirm with Zerodha: actual SPAN margin for NIFTY weekly IC at ±250pt
-13. [ ] Phase 2: Full size (if slippage < Rs.150/trade)
-14. [ ] Annual recalibration run
+3:35 PM IST (automated daily):
+  → EOD check: SL breach? → auto-exit
+  → Tuesday: auto-resolve at expiry
 
----
+Wife's Zerodha account (resident, not NRI) → no 30% TDS issue.
+```
 
-## 9. COST STRUCTURE & PURPOSE
-
-### Why Run This System?
-
-The point is **not** the Rs.1,400/month net profit. At Rs.10L capital, the per-trade edge (Rs.192) is modest and partially eroded by fixed infrastructure costs. The actual purpose:
-
-1. **Discipline infrastructure** — a mechanical system that enforces pre-committed rules during drawdowns
-2. **Validation pipeline** — a process that rigorously tests any strategy before real capital is risked
-3. **Scale preparation** — the same strategy at Rs.50L+ capital nets Rs.7,000+/month with the same infrastructure cost
-4. **Learning asset** — 5 rounds of validation, with failures documented, creates institutional knowledge for future strategy development
-
-If the goal were solely Rs.1,400/month, a fixed deposit would be simpler. The goal is building a tested, disciplined, scalable trading infrastructure.
-
-### Cost Reality
-
-| Item | Monthly |
-|------|---------|
-| Railway hosting | $5-15 (~Rs.1,200) |
-| Kite Connect API | Rs.2,000 (once live) |
-| Total infrastructure | ~Rs.3,200/month |
-| Expected monthly profit (if validated live, 1 lot) | ~Rs.3,900 |
-| **Net after costs** | **~Rs.700/month on Rs.10L** |
-| At Rs.50L capital (5 lots) | ~Rs.19,500 profit, ~Rs.16,300 net |
-
-At minimum viable capital (Rs.10L), the system barely covers costs. It becomes meaningful at Rs.30L+. This is stated plainly so it doesn't become a reason to skip safeguards under pressure.
+### Status
+- Zerodha NFO activation: Pending (wife's account)
+- Kite API: Configured, IP whitelisted
+- System code: Complete and tested
+- All validation: Done (5 rounds passed)
 
 ---
 
-## 10. DNA INTELLIGENCE (Public Product — Unchanged)
+## 4. TECHNICAL ARCHITECTURE (Dual-Mode)
 
-The Trader DNA module (CSV upload → behavioral analysis → score tracking) remains:
-- Separate from the Live Signal Engine
-- Open to multiple users
-- Revenue target: ₹499/month for premium features after 100 users
-- No changes from previous BRD versions
+### Code Structure
+
+```
+engine/
+├── signals/
+│   ├── simple_ic_engine.py     → NIFTY signal generator
+│   └── qqq_ic_engine.py        → QQQ signal generator (NEW)
+├── broker/
+│   ├── kite_auth.py            → Zerodha OAuth + LTP
+│   ├── kite_executor.py        → NIFTY order placement
+│   ├── ibkr_auth.py            → IBKR connection (NEW)
+│   └── ibkr_executor.py        → QQQ combo order placement (NEW)
+├── scheduler.py                → Dual scheduler (NIFTY 3:35 PM IST + QQQ 9:30 PM PH)
+└── session.py                  → Founder allowlist (unchanged)
+
+routes/
+├── live.py                     → Serves both modes based on TRADING_MODE env var
+└── (all other routes unchanged)
+
+config/
+└── settings.json               → Has both NIFTY and QQQ parameters
+```
+
+### Configuration
+
+```json
+{
+  "trading_mode": "qqq",
+  "nifty": {
+    "capital": 10000,
+    "offset_pts": 250,
+    "wing_width": 100,
+    "lot_size": 25,
+    "risk_per_trade": 0.25
+  },
+  "qqq": {
+    "capital": 1000,
+    "offset_pts": 15,
+    "wing_width": 7,
+    "lot_size": 100,
+    "risk_per_trade": 0.70
+  }
+}
+```
+
+### Environment Variables
+
+| Variable | QQQ Mode | NIFTY Mode |
+|----------|----------|------------|
+| TRADING_MODE | qqq | nifty |
+| IBKR_HOST | 127.0.0.1 | (not used) |
+| IBKR_PORT | 7497 | (not used) |
+| IBKR_CLIENT_ID | 1 | (not used) |
+| KITE_API_KEY | (not used) | (set) |
+| KITE_API_SECRET | (not used) | (set) |
+| FOUNDER_ALLOWED_EMAILS | (set) | (set) |
+
+### Scheduler (Dual Timezone)
+
+```
+QQQ Mode:
+  - 10:30 PM PH (9:30 AM EST): Place trade
+  - 5:00 AM PH (4:00 PM EST): Verify expiry result
+  
+NIFTY Mode:
+  - 9:15 AM IST: Place trade (if market day)
+  - 3:35 PM IST: EOD SL check
+  - Tuesday 3:35 PM IST: Expiry resolution
+```
 
 ---
 
-*End of BRD v4.0. Five validation rounds completed. Strategy validated with explicit limitations and pre-committed risk rules. None of this is financial advice — it's a documentation of a personal tool's analysis process.*
+## 5. VALIDATION HISTORY
+
+| # | Market | Strategy | Result | Conclusion |
+|---|--------|----------|--------|-----------|
+| 1 | NIFTY | Directional prediction | 42.9% OOS | ❌ Worse than coin flip |
+| 2 | NIFTY | Range bucketing | 77.2% (below baseline) | ❌ Bucketing subtracts value |
+| 3 | NIFTY | IC flat premium | +Rs.1,308 (artifact) | ❌ Mixed regimes incorrectly |
+| 4 | NIFTY | IC grid search | High-vol only: n=7 | ❌ Insufficient sample |
+| 5 | NIFTY | IC ±250pt daily | Rs.192 EV, 0 decay | ✅ Validated |
+| 6 | SPX | IC grid search | All negative | ❌ Too efficient |
+| 7 | IWM | IC ±$5/$3 | $8.70 EV | ✅ Validated |
+| 8 | QQQ | IC ±$15/$7 full pipeline | $8 realistic EV | ✅ Validated (7 rounds) |
+
+---
+
+## 6. PHASED DEPLOYMENT
+
+### Phase 1: Slippage Discovery (QQQ)
+- Capital: $1,000
+- Contracts: 1
+- Duration: 10 trades
+- Goal: Confirm real fills match backtest ($8/trade)
+- Stop if: slippage > $12/trade
+
+### Phase 2: Validation (QQQ)
+- Capital: $2,000
+- Contracts: 1-2
+- Duration: 50 trades
+- Goal: Confirm win rate + drawdown match Monte Carlo
+- Stop if: drawdown > $1,500 or win rate < 90%
+
+### Phase 3: Scale (QQQ)
+- Capital: $5,000-$50,000
+- Contracts: proportional to capital
+- Full drawdown protocol applies
+- Monthly review
+
+### NIFTY (Parallel, when wife's account is ready)
+- Same phase approach
+- Capital: Rs.15,000 initially
+- Independent from QQQ
+
+---
+
+## 7. RISK REGISTER
+
+| Risk | Impact | Mitigation |
+|------|--------|-----------|
+| QQQ gaps >$15 overnight (earnings) | Loss capped at $700 | $7 wings; avoid holding through mega-cap earnings |
+| IBKR connection failure | Missed trade | Retry logic; manual backup via IBKR app |
+| Slippage higher than backtest | EV reduced or negative | Phase 1 validates; stop if >$12/trade |
+| Extended loss streak | Drawdown | Pre-committed rules in Section 2 |
+| Regulatory change (PH taxes foreign gains) | Tax liability | Monitor annually; currently 0% |
+| Railway downtime | Missed auto-trade | Health monitoring; manual backup |
+
+---
+
+## 8. NEXT STEPS
+
+1. [x] Strategy validated (QQQ: 7 rounds passed)
+2. [ ] BRD updated with dual-mode architecture ← DONE NOW
+3. [ ] Build QQQ/IBKR execution module (`ib_insync`)
+4. [ ] Build dual-mode scheduler
+5. [ ] Wait for IBKR account activation
+6. [ ] Fund $1,000 via Wise
+7. [ ] Phase 1: 10 trades (validate real fills)
+8. [ ] If passes → Phase 2 → Phase 3
+
+---
+
+*End of BRD v5.0. Dual-mode system: QQQ (primary, tax-free) + NIFTY (secondary, via wife's account). Both validated, independent, same infrastructure.*

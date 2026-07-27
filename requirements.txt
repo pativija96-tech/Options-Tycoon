@@ -15,3 +15,6 @@ numpy
 python-telegram-bot
 scipy
 kiteconnect
+
+# IBKR integration
+ib_insync
