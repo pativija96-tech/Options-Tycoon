@@ -242,7 +242,7 @@ function render(card){
 
   // Actions
   html+='<div class="actions" style="grid-template-columns:1fr 2fr 1fr">';
-  html+='<button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem">ZERODHA</button>';
+  html+='<button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem">'+(isQQQ?'IBKR':'ZERODHA')+'</button>';
   html+='<button class="btn btn-execute" onclick="executeTrade()">LIVE EXECUTE</button>';
   html+='<button class="btn btn-pass" onclick="passTrade()">PASS</button>';
   html+='</div>';
@@ -313,14 +313,14 @@ window.loginKite=function(){
 };
 
 window.executeTrade=function(){
-  if(!confirm('LIVE EXECUTE — This will place REAL orders on your Zerodha account. Proceed?'))return;
+  if(!confirm('LIVE EXECUTE — This will place REAL orders on your IBKR account. Proceed?'))return;
   var user=JSON.parse(localStorage.getItem('ot_user')||'null');
   var userId=user?user.user_id||user.id||'0':'0';
   document.querySelector('.btn-execute').textContent='PLACING ORDERS...';
   document.querySelector('.btn-execute').disabled=true;
   fetch('/api/live/live-execute',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
-      alert('LIVE trade placed on Zerodha! Phase: '+d.phase+' | Qty: '+d.quantity+' | Orders: '+d.placed+'/4');
+      alert('LIVE trade placed! Phase: '+d.phase+' | Qty: '+d.quantity+' | Orders: '+(d.placed||0)+'/4');
       var btn=document.querySelector('.btn-execute');
       if(btn){btn.textContent='LIVE ✓';btn.style.opacity='0.4';}
     } else {
