@@ -154,7 +154,8 @@
         <div class="user-card" id="user-card"></div>
         <nav class="sidebar-nav">
             <a href="/static/dashboard.html" class="sidebar-link active"><span class="icon">📊</span> Dashboard</a>
-            <a href="/static/live.html" class="sidebar-link" id="liveSignalsLink" style="display:none"><span class="icon">🎯</span> Live Signals</a>
+            <a href="/static/live.html" class="sidebar-link" id="liveSignalsLink" style="display:none"><span class="icon">🎯</span> Live Signals (QQQ)</a>
+            <a href="/static/live-nifty.html" class="sidebar-link" id="liveNiftyLink" style="display:none"><span class="icon">🇮🇳</span> Live Signals (NIFTY)</a>
             <a href="/static/upload-free.html" class="sidebar-link"><span class="icon">📤</span> Upload CSV</a>
             <a href="/static/report.html?source=free" class="sidebar-link"><span class="icon">📄</span> Latest Report</a>
         </nav>
@@ -193,12 +194,13 @@ async function renderDashboard() {
     let history = JSON.parse(localStorage.getItem('ot_upload_history') || '[]');
     let latestReport = JSON.parse(localStorage.getItem('ot_free_report') || 'null');
 
-    // Show Live Signals link only for founder
+    // Show Live Signals links only for founder
     try {
         const sessionResp = await fetch('/api/auth/session');
         const sessionData = await sessionResp.json();
         if (sessionData.is_founder) {
             document.getElementById('liveSignalsLink').style.display = '';
+            document.getElementById('liveNiftyLink').style.display = '';
         }
     } catch(e) {}
 
