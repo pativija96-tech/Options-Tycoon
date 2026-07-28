@@ -91,20 +91,69 @@ def _run_auto_trade():
         logger.error(f"Auto-trade failed: {e}")
 
 
+def _send_ibkr_heartbeat():
+    """Send IBKR session heartbeat (tickle). Keeps REST session alive."""
+    try:
+        from engine.broker.ibkr_executor import get_ibkr_executor
+        executor = get_ibkr_executor()
+        if executor.is_configured and executor.access_token:
+            ok = executor.send_heartbeat()
+            if ok:
+                logger.debug("IBKR heartbeat OK")
+            else:
+                logger.warning("IBKR heartbeat failed — session may expire")
+    except Exception as e:
+        logger.debug(f"IBKR heartbeat skipped: {e}")
+
+
+def _ibkr_startup_auth():
+    """
+    Self-healing: Re-authenticate IBKR on scheduler startup.
+    Handles Railway restarts — ensures session is ready before market open.
+    """
+    try:
+        from engine.broker.ibkr_executor import get_ibkr_executor
+        executor = get_ibkr_executor()
+        if executor.is_configured:
+            logger.info("Scheduler startup: authenticating IBKR session...")
+            if executor.authenticate():
+                logger.info("IBKR session ready (startup auth successful)")
+            else:
+                logger.warning("IBKR startup auth failed — will retry on next heartbeat cycle")
+    except Exception as e:
+        logger.warning(f"IBKR startup auth skipped: {e}")
+
+
 def _scheduler_loop():
-    """Background loop that checks time and triggers EOD + auto-trade."""
+    """Background loop that checks time and triggers EOD + auto-trade + IBKR heartbeat."""
     logger.info("Scheduler loop started")
     last_eod_date = None
     last_trade_date = None
+    last_heartbeat = 0.0  # epoch seconds
+    startup_auth_done = False
+
+    HEARTBEAT_INTERVAL = 55  # seconds (IBKR requires tickle every 60s)
     
     while not _stop_event.is_set():
         now = datetime.utcnow()
         today = now.date()
         
+        # --- Self-healing: authenticate IBKR on first loop (handles Railway restarts) ---
+        if not startup_auth_done and _TRADING_MODE == "qqq":
+            _ibkr_startup_auth()
+            startup_auth_done = True
+            last_heartbeat = time.time()  # Reset heartbeat timer after auth
+        
         # Only run on weekdays (Mon=0 through Fri=4)
         is_weekday = now.weekday() < 5
         
-        # EOD check
+        # --- IBKR Heartbeat (every ~55 seconds, always) ---
+        elapsed = time.time() - last_heartbeat
+        if elapsed >= HEARTBEAT_INTERVAL:
+            _send_ibkr_heartbeat()
+            last_heartbeat = time.time()
+        
+        # --- EOD check ---
         is_eod_time = now.hour == EOD_HOUR_UTC and now.minute == EOD_MINUTE_UTC
         eod_not_run = last_eod_date != today
         
@@ -113,7 +162,7 @@ def _scheduler_loop():
             _run_eod_job()
             last_eod_date = today
         
-        # Auto-trade (QQQ mode only — generate + execute at market open)
+        # --- Auto-trade (QQQ mode only — generate + execute at market open) ---
         if _TRADING_MODE == "qqq":
             is_trade_time = now.hour == TRADE_HOUR_UTC and now.minute == TRADE_MINUTE_UTC
             trade_not_run = last_trade_date != today

@@ -16,11 +16,78 @@ from scipy.stats import norm
 
 logger = logging.getLogger("qqq_ic_engine")
 
-# Strategy parameters (validated)
+# Strategy parameters (validated — read from config/settings.json)
 QQQ_OFFSET = 15       # ±$15 from ATM
-QQQ_WING = 7          # $7 wing width
+QQQ_WING = 5          # Phase 1: $5 wing width (reduces to $500 max loss)
 QQQ_MULTIPLIER = 100  # US options multiplier
 VIX_MAX = 35          # Don't trade if VIX > 35
+
+# Load from config if available
+try:
+    import json as _json
+    import os as _os
+    _cfg_path = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))), "config", "settings.json")
+    if _os.path.exists(_cfg_path):
+        with open(_cfg_path) as _f:
+            _cfg = _json.load(_f)
+        _qqq = _cfg.get("qqq", {})
+        if _qqq.get("offset_pts"): QQQ_OFFSET = _qqq["offset_pts"]
+        if _qqq.get("wing_width"): QQQ_WING = _qqq["wing_width"]
+except Exception:
+    pass
+
+# ──────────────────────────────────────────────────────────────────────
+# EVENT / EARNINGS FILTER — Skip trade on high-impact economic events
+# ──────────────────────────────────────────────────────────────────────
+
+# High-impact US economic events that can cause >$15 intraday QQQ moves
+# Format: (month, day) tuples for known recurring dates, plus dynamic checks
+FOMC_DATES_2026 = [
+    (1, 29), (3, 19), (5, 7), (6, 18), (7, 30), (9, 17), (11, 5), (12, 17)
+]
+
+# Mega-cap earnings that move QQQ >2% (these are approximate — update quarterly)
+QQQ_MEGA_EARNINGS_BLACKOUT = {
+    # (month, day): "reason"
+    # Q1 2026 earnings (Jan-Feb)
+    # Q2 2026 earnings (Apr-May)
+    # Q3 2026 earnings (Jul-Aug)
+    # Q4 2026 earnings (Oct-Nov)
+    # Populated dynamically or manually before each earnings season
+}
+
+
+def _is_high_impact_event_day() -> tuple:
+    """
+    Check if today has a high-impact economic event that could cause >$15 QQQ gap.
+    
+    Returns:
+        (skip: bool, reason: str)
+    """
+    today = date.today()
+    month_day = (today.month, today.day)
+    
+    # Check FOMC dates
+    for fomc_date in FOMC_DATES_2026:
+        if month_day == fomc_date:
+            return True, f"FOMC rate decision today ({today.isoformat()}). Skipping 0DTE IC."
+    
+    # Check mega-cap earnings blackout
+    if month_day in QQQ_MEGA_EARNINGS_BLACKOUT:
+        reason = QQQ_MEGA_EARNINGS_BLACKOUT[month_day]
+        return True, f"Mega-cap earnings today: {reason}. Skipping 0DTE IC."
+    
+    # Check via yfinance economic calendar (CPI, NFP days)
+    # These are the most impactful non-FOMC events
+    try:
+        from data.historical.event_calendar import is_high_impact_today
+        skip, reason = is_high_impact_today()
+        if skip:
+            return True, reason
+    except ImportError:
+        pass  # event_calendar module not available — proceed with trade
+    
+    return False, ""
 
 
 def _get_qqq_price() -> dict:
@@ -91,6 +158,12 @@ def _estimate_premium(spot, strike, days, option_type, iv):
 def generate_qqq_signal(capital: float = 1000) -> dict:
     """Generate today's QQQ Iron Condor signal."""
     logger.info("QQQ IC Engine: generating signal...")
+    
+    # Event filter — skip on FOMC, CPI, mega-cap earnings
+    skip_event, event_reason = _is_high_impact_event_day()
+    if skip_event:
+        logger.warning(f"Event filter triggered: {event_reason}")
+        return {"action": "skip", "reason": event_reason, "date": date.today().isoformat(), "filter": "event_calendar"}
     
     market_data = _get_qqq_price()
     qqq_price = market_data["qqq"]

@@ -16,5 +16,6 @@ python-telegram-bot
 scipy
 kiteconnect
 
-# IBKR integration
-ib_insync
+# IBKR Web API v1.0 (OAuth 2.0 / REST)
+PyJWT[crypto]>=2.8.0
+cryptography>=41.0.0

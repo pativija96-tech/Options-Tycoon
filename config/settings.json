@@ -14,8 +14,21 @@
     "max_consec_losses": 5,
     "min_expectancy": 0
   },
-  "nifty_lot_size": 65,
-  "preferred_expiry": "current_week",
+  "nifty": {
+    "capital": 15000,
+    "offset_pts": 250,
+    "wing_width": 100,
+    "lot_size": 65,
+    "preferred_expiry": "current_week"
+  },
+  "qqq": {
+    "capital": 1000,
+    "offset_pts": 15,
+    "wing_width": 5,
+    "lot_size": 100,
+    "phase": 1,
+    "phase_notes": "Phase 1: $5 wings ($500 max loss) until capital > $2,500. Then increase to $7."
+  },
   "market_open_ist": "09:15",
   "market_close_ist": "15:30"
 }
