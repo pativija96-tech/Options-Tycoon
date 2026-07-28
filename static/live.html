@@ -309,7 +309,8 @@ window.generateSignal=function(){
 };
 
 window.loginKite=function(){
-  window.location.href='/api/live/kite-login';
+  // In QQQ mode, IBKR connects automatically via API — no manual login needed
+  alert('IBKR connects automatically when market opens. No manual login needed.\n\nStatus: Pending account activation.');
 };
 
 window.executeTrade=function(){
