@@ -144,6 +144,11 @@ function render(card){
   var data=(card.pattern_result||{}).conditions||c;
   var regime=getRegime(card._global_data||{data:c});
 
+  // Currency and underlying based on market
+  var isQQQ = (card.market === 'QQQ' || (t.underlying === 'QQQ'));
+  var curr = isQQQ ? '$' : 'Rs.';
+  var underlying = isQQQ ? 'QQQ' : 'NIFTY';
+
   // Regime bar
   var us=c.us_change_pct||0;
   var vix=c.vix_change_pct||0;
@@ -212,21 +217,25 @@ function render(card){
     for(var i=0;i<legs.length;i++){
       var leg=legs[i];
       var aCls=leg.action==='BUY'?'buy':'sell';
-      html+='<div class="leg"><span class="action '+aCls+'">'+leg.action+'</span><span class="contract">NIFTY '+leg.strike+' '+leg.option+'</span><span class="price">Rs.'+leg.premium_est+'</span></div>';
+      html+='<div class="leg"><span class="action '+aCls+'">'+leg.action+'</span><span class="contract">'+underlying+' '+leg.strike+' '+leg.option+'</span><span class="price">'+curr+leg.premium_est+'</span></div>';
     }
     html+='</div>';
   }
 
   // Metrics
   html+='<div class="metrics">';
-  html+='<div class="metric"><div class="label">Risk (incl charges)</div><div class="value red">Rs.'+(t.net_max_loss||t.max_loss||0)+'</div></div>';
-  html+='<div class="metric"><div class="label">Reward (net)</div><div class="value green">Rs.'+(t.net_max_profit||t.max_profit||0)+'</div></div>';
+  html+='<div class="metric"><div class="label">Risk (incl charges)</div><div class="value red">'+curr+(t.net_max_loss||t.max_loss||0)+'</div></div>';
+  html+='<div class="metric"><div class="label">Reward (net)</div><div class="value green">'+curr+(t.net_max_profit||t.max_profit||0)+'</div></div>';
   html+='<div class="metric"><div class="label">R:R</div><div class="value">'+(t.risk_reward||0)+':1</div></div>';
   html+='</div>';
   // Charges line
-  var charges=t.charges||{};
-  if(charges.total) html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: Rs.'+charges.total+' (Brokerage Rs.'+charges.brokerage+' + GST + STT + Exchange)</div>';
-  html+='<div style="font-size:.65rem;color:var(--yellow);text-align:center;margin-top:6px;opacity:.7">Premiums are Black-Scholes estimates. Actual prices will differ. Connect Zerodha for live prices.</div>';
+  var charges=t.charges||t.commission||0;
+  if(typeof charges === 'object' && charges.total) {
+    html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: '+curr+charges.total+'</div>';
+  } else if(charges > 0) {
+    html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Commission: '+curr+charges+'</div>';
+  }
+  html+='<div style="font-size:.65rem;color:var(--yellow);text-align:center;margin-top:6px;opacity:.7">Premiums are estimates. Actual prices may differ.</div>';
 
   // Why
   html+='<div class="why">'+esc(card.reasoning||'')+'</div>';
@@ -334,36 +343,16 @@ window.passTrade=function(){
 var user=JSON.parse(localStorage.getItem('ot_user')||'null');
 var userId=user?user.user_id||user.id||'0':'0';
 
-// Check Kite auth status
-fetch('/api/live/auth-status',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(auth){
-  if(!auth.authenticated){
-    // Kite not connected — show connect button FIRST
-    document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-size:1.1rem;font-weight:600">Connect Zerodha First</p><p style="font-size:.85rem;color:var(--muted)">Live data required for accurate signals and execution.</p><button class="generate-btn" onclick="loginKite()" style="background:var(--green);color:#000;margin-top:16px">Connect Zerodha →</button><p style="font-size:.7rem;color:var(--muted);margin-top:12px">After connecting, return here to generate your signal.</p></div>';
-  } else {
-    // Kite connected — load signal normally
-    fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
-      if(r.status===404) return null;
-      if(r.status===403) return null;
-      return r.json();
-    }).then(function(d){
-      if(d) render(d);
-      else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
-    }).catch(function(){
-      document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
-    });
-  }
+// Load signal — mode-aware (QQQ skips Kite check, NIFTY requires it)
+fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
+  if(r.status===404) return null;
+  if(r.status===403) return null;
+  return r.json();
+}).then(function(d){
+  if(d) render(d);
+  else document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-size:1.1rem;font-weight:600">Ready to Trade</p><p style="font-size:.85rem;color:var(--muted)">Generate today\'s QQQ Iron Condor signal.</p><button class="generate-btn" onclick="generateSignal()" style="margin-top:16px">Generate Today\'s Signal</button></div>';
 }).catch(function(){
-  // Auth check failed — show generate anyway (will use yfinance fallback)
-  fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
-    if(r.status===404) return null;
-    if(r.status===403) return null;
-    return r.json();
-  }).then(function(d){
-    if(d) render(d);
-    else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
-  }).catch(function(){
-    document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
-  });
+  document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-size:1.1rem;font-weight:600">Ready to Trade</p><p style="font-size:.85rem;color:var(--muted)">Generate today\'s signal.</p><button class="generate-btn" onclick="generateSignal()" style="margin-top:16px">Generate Today\'s Signal</button></div>';
 });
 
 // Track record (per-user) — now shows LIVE trading phase
@@ -425,9 +414,11 @@ fetch('/api/live/settings',{headers:{'X-User-Id':String(userId)}}).then(function
   var cap=s.capital||0;
   var riskPct=s.risk_per_trade||0.02;
   var maxRisk=cap*riskPct;
-  document.getElementById('trCapital').textContent='Rs.'+cap.toLocaleString();
-  document.getElementById('trRiskTrade').textContent='Rs.'+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
-  document.getElementById('trDailyRisk').textContent='Rs.0 / Rs.'+(cap*(s.risk_per_day||0.05)).toLocaleString();
+  var mode=s.trading_mode||'qqq';
+  var sym=mode==='qqq'?'$':'Rs.';
+  document.getElementById('trCapital').textContent=sym+cap.toLocaleString();
+  document.getElementById('trRiskTrade').textContent=sym+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
+  document.getElementById('trDailyRisk').textContent=sym+'0 / '+sym+(cap*(s.risk_per_day||0.05)).toLocaleString();
 }).catch(function(){});
 
 // Open Positions

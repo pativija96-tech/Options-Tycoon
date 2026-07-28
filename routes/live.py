@@ -585,16 +585,17 @@ async def run_eod():
 @router.get("/settings")
 async def get_settings():
     """Return current capital and risk settings (non-sensitive)."""
+    import os
     settings_path = CONFIG_DIR / "settings.json"
     if not settings_path.exists():
-        return {"capital": 1000000, "risk_per_trade": 0.02, "risk_per_day": 0.05}
+        return {"capital": 1000, "risk_per_trade": 0.70, "risk_per_day": 0.70, "trading_mode": "qqq"}
     with open(settings_path) as f:
         settings = json.load(f)
     return {
+        "trading_mode": settings.get("trading_mode", os.environ.get("TRADING_MODE", "qqq")),
         "capital": settings.get("capital"),
         "risk_per_trade": settings.get("risk_per_trade"),
         "risk_per_day": settings.get("risk_per_day"),
-        "nifty_lot_size": settings.get("nifty_lot_size", 65),
     }
 
 
