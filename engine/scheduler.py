@@ -35,8 +35,8 @@ if _TRADING_MODE == "qqq":
 else:
     EOD_HOUR_UTC = 10   # 3:35 PM IST (NIFTY close)
     EOD_MINUTE_UTC = 5
-    TRADE_HOUR_UTC = 3   # 9:15 AM IST (NIFTY open) — no auto-trade for NIFTY
-    TRADE_MINUTE_UTC = 45
+    TRADE_HOUR_UTC = 3   # 9:20 AM IST (5 min after open — gives time to login)
+    TRADE_MINUTE_UTC = 50
 
 
 def _run_eod_job():
@@ -58,13 +58,31 @@ def _run_eod_job():
 
 
 def _run_auto_trade():
-    """Auto-generate signal + execute (QQQ mode). Runs at US market open."""
-    logger.info("Auto-trade: generating QQQ signal + executing...")
+    """
+    Auto-generate signal + execute.
+    
+    QQQ mode: Fully automated (IBKR OAuth doesn't need daily login)
+    NIFTY mode: Only executes if Kite is authenticated (user logged in today)
+    """
+    import httpx
+    import os
+    port = os.environ.get("PORT", "8000")
+
+    if _TRADING_MODE == "nifty":
+        logger.info("Auto-trade: checking Kite authentication before NIFTY execution...")
+        # Check if user has logged into Kite today
+        try:
+            from engine.broker.kite_auth import is_authenticated
+            if not is_authenticated():
+                logger.warning("NIFTY auto-trade SKIPPED — Kite not authenticated. Login required.")
+                _send_telegram_alert("⏭️ NIFTY trade skipped — Kite not authenticated. Login to Zerodha to enable auto-trade.")
+                return
+        except Exception as e:
+            logger.error(f"Kite auth check failed: {e}")
+            return
+    
+    logger.info(f"Auto-trade: generating {_TRADING_MODE.upper()} signal + executing...")
     try:
-        import httpx
-        import os
-        port = os.environ.get("PORT", "8000")
-        
         # Step 1: Generate signal
         resp = httpx.post(
             f"http://localhost:{port}/api/live/generate-signal",
@@ -76,9 +94,10 @@ def _run_auto_trade():
         
         if not gen_result.get("success"):
             logger.warning(f"Signal generation failed: {gen_result.get('error')}")
+            _send_telegram_alert(f"⚠️ Signal generation failed: {gen_result.get('error', 'unknown')}")
             return
         
-        # Step 2: Execute live (if IBKR is configured)
+        # Step 2: Execute live
         resp2 = httpx.post(
             f"http://localhost:{port}/api/live/live-execute",
             headers={"X-User-Id": "1"},
@@ -87,8 +106,30 @@ def _run_auto_trade():
         exec_result = resp2.json()
         logger.info(f"Execution result: {exec_result}")
         
+        # Notify on NIFTY execution result
+        if _TRADING_MODE == "nifty":
+            if exec_result.get("success"):
+                placed = exec_result.get("placed", 4)
+                _send_telegram_alert(f"✅ NIFTY IC placed — {placed} legs filled. Check Kite app for confirmation.")
+            else:
+                error = exec_result.get("error") or exec_result.get("message", "Unknown")
+                _send_telegram_alert(f"❌ NIFTY IC execution failed: {error}")
+        
     except Exception as e:
         logger.error(f"Auto-trade failed: {e}")
+        _send_telegram_alert(f"🚨 Auto-trade error: {str(e)[:100]}")
+
+
+def _send_telegram_alert(message: str):
+    """Send a Telegram alert (best-effort, non-blocking)."""
+    try:
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from scripts.telegram_bot import send_alert
+        send_alert("error", message)
+    except Exception as e:
+        logger.debug(f"Telegram alert skipped: {e}")
 
 
 def _send_ibkr_heartbeat():
@@ -162,15 +203,14 @@ def _scheduler_loop():
             _run_eod_job()
             last_eod_date = today
         
-        # --- Auto-trade (QQQ mode only — generate + execute at market open) ---
-        if _TRADING_MODE == "qqq":
-            is_trade_time = now.hour == TRADE_HOUR_UTC and now.minute == TRADE_MINUTE_UTC
-            trade_not_run = last_trade_date != today
-            
-            if is_weekday and is_trade_time and trade_not_run:
-                logger.info(f"Auto-trade trigger at {now.isoformat()} UTC (QQQ)")
-                _run_auto_trade()
-                last_trade_date = today
+        # --- Auto-trade (both modes — generate + execute at market open) ---
+        is_trade_time = now.hour == TRADE_HOUR_UTC and now.minute == TRADE_MINUTE_UTC
+        trade_not_run = last_trade_date != today
+        
+        if is_weekday and is_trade_time and trade_not_run:
+            logger.info(f"Auto-trade trigger at {now.isoformat()} UTC ({_TRADING_MODE.upper()})")
+            _run_auto_trade()
+            last_trade_date = today
         
         # Sleep 30 seconds between checks
         _stop_event.wait(30)

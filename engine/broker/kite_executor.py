@@ -135,7 +135,27 @@ def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
         }
     
     # LIVE mode — place actual orders
-    for order in orders:
+    # RISK-FIRST: Place BUY (protective wings) before SELL (naked shorts)
+    buy_orders = [o for o in orders if o["transaction_type"] == "BUY"]
+    sell_orders = [o for o in orders if o["transaction_type"] == "SELL"]
+    ordered = buy_orders + sell_orders
+    
+    logger.info(f"Executing NIFTY IC: {len(buy_orders)} BUY legs first (wings), then {len(sell_orders)} SELL legs")
+    
+    buy_phase_failed = False
+    for order in ordered:
+        # If a BUY (wing) failed, don't place SELL (naked short)
+        if buy_phase_failed and order["transaction_type"] == "SELL":
+            order_results.append({
+                "leg": f"{order['action']} {order['strike']} {order['option']}",
+                "trading_symbol": order["trading_symbol"],
+                "order_id": None,
+                "status": "skipped",
+                "error": "Aborted — protective wing failed, refusing naked short",
+            })
+            logger.warning(f"SKIPPED {order['trading_symbol']} — wing leg failed")
+            continue
+        
         try:
             order_id = kite.place_order(
                 variety="regular",
@@ -165,6 +185,8 @@ def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
                 "error": str(e)[:200],
             })
             logger.error(f"Order FAILED: {order['trading_symbol']} — {e}")
+            if order["transaction_type"] == "BUY":
+                buy_phase_failed = True
     
     # Check results
     placed = [o for o in order_results if o["status"] == "placed"]
