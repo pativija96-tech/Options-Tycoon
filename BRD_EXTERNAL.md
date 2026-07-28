@@ -1,7 +1,7 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 6.0 | **Last Updated:** 2026-07-28
-> **Status:** Dual-Mode System (NIFTY + QQQ) — QQQ Execution Module Complete
+> **Version:** 6.1 | **Last Updated:** 2026-07-28
+> **Status:** Dual-Mode System (NIFTY + QQQ) — QQQ Module Complete & Deployed to Railway
 > **Disclaimer:** Personal trading tool. Not financial advice.
 
 ---
@@ -13,7 +13,7 @@ Options Tycoon operates in **two independent modes** on the same infrastructure:
 | Mode | Market | Broker | Underlying | Status |
 |------|--------|--------|-----------|--------|
 | **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | Ready — pending wife's account NFO activation |
-| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF (Nasdaq 100) | ✅ Execution module complete — IBKR account pending activation |
+| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF (Nasdaq 100) | ✅ Complete & deployed to Railway (commit `75734a3`) — IBKR account pending activation |
 
 Both modes share: Railway hosting, PostgreSQL DB, signal history, UI, automated scheduler.
 Both modes are independent: different broker APIs, different strategies, different schedules.
@@ -23,7 +23,10 @@ Both modes are independent: different broker APIs, different strategies, differe
 ## 2. MODE A: QQQ (US Market via IBKR) — PRIMARY
 
 ### Strategy
-**QQQ ±$15 Iron Condor, $7 wings, daily, hold to same-day expiry (0DTE)**
+**QQQ ±$15 Iron Condor, $5 wings (Phase 1), daily, hold to same-day expiry (0DTE)**
+
+> Wing width starts at $5 during Phase 1 ($1K capital) to limit max loss to $500.
+> Increases to $7 after capital exceeds $2,500.
 
 ### Validated Numbers
 
@@ -33,7 +36,7 @@ Both modes are independent: different broker APIs, different strategies, differe
 | Realistic EV/trade | $7.70–$8.00 |
 | Win: avg profit | +$42 |
 | Loss: avg loss | -$25 (shallow breach) |
-| Loss: max loss | -$700 (wing cap, very rare) |
+| Loss: max loss | -$500 (Phase 1: $5 wing cap) |
 | Slippage (entry only, 4 legs × $0.02) | -$8.00 |
 | Commission (IBKR) | -$4.00 |
 | Annual ROI | ~115-120% |
@@ -173,24 +176,24 @@ config/
 └── settings.json               → Has both NIFTY and QQQ parameters ✅
 ```
 
-### Configuration
+### Configuration (Live on Railway)
 
 ```json
 {
   "trading_mode": "qqq",
   "nifty": {
-    "capital": 10000,
+    "capital": 15000,
     "offset_pts": 250,
     "wing_width": 100,
-    "lot_size": 25,
-    "risk_per_trade": 0.25
+    "lot_size": 65
   },
   "qqq": {
     "capital": 1000,
     "offset_pts": 15,
-    "wing_width": 7,
+    "wing_width": 5,
     "lot_size": 100,
-    "risk_per_trade": 0.70
+    "phase": 1,
+    "phase_notes": "Phase 1: $5 wings ($500 max loss) until capital > $2,500"
   }
 }
 ```
@@ -271,12 +274,13 @@ NIFTY Mode:
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| QQQ gaps >$15 overnight (earnings) | Loss capped at $700 | $7 wings; avoid holding through mega-cap earnings |
-| IBKR connection failure | Missed trade | Retry logic; manual backup via IBKR app |
+| QQQ gaps >$15 overnight (earnings) | Loss capped at $500 (Phase 1) | $5 wings; FOMC/CPI/NFP event filter skips trade on high-impact days |
+| IBKR connection failure | Missed trade | Retry logic (3x exponential backoff); self-healing restart auth; manual backup via IBKR app |
 | Slippage higher than backtest | EV reduced or negative | Phase 1 validates; stop if >$12/trade |
+| Partial execution (some legs fail) | Unhedged position | Risk-first ordering (BUY wings first); abort SELL if wing fails; Telegram alert for manual intervention |
 | Extended loss streak | Drawdown | Pre-committed rules in Section 2 |
 | Regulatory change (PH taxes foreign gains) | Tax liability | Monitor annually; currently 0% |
-| Railway downtime | Missed auto-trade | Health monitoring; manual backup |
+| Railway downtime/restart | Missed trade or expired session | Self-healing `_ibkr_startup_auth()` on boot; heartbeat every 55s |
 
 ---
 
@@ -288,11 +292,24 @@ NIFTY Mode:
 4. [x] Build dual-mode scheduler (QQQ auto-trade + EOD + IBKR heartbeat every 55s)
 5. [x] Signal engine complete (pattern matcher + quality filters + strategy picker)
 6. [x] QQQ IC engine complete (qqq_ic_engine.py + ibkr_executor.py)
-7. [ ] Wait for IBKR account activation
-8. [ ] Fund $1,000 via Wise
-9. [ ] IBKR paper trading sandbox validation (dry-run execute_qqq_sync)
-10. [ ] Phase 1: 10 live trades (validate real fills)
-11. [ ] If passes → Phase 2 → Phase 3
+7. [x] Code deployed to Railway via GitHub (commit `75734a3`, July 28 2026)
+8. [ ] Wait for IBKR account activation
+9. [ ] Set IBKR env vars in Railway dashboard (IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM)
+10. [ ] Fund $1,000 via Wise → IBKR
+11. [ ] IBKR paper trading sandbox validation (dry-run execute_qqq_sync)
+12. [ ] Phase 1: 10 live trades (validate real fills)
+13. [ ] If passes → Phase 2 (increase to $7 wings) → Phase 3
+
+### Deployment Status
+
+| Environment | Status | Last Deploy | Commit |
+|-------------|--------|-------------|--------|
+| GitHub (`main`) | ✅ Up to date | July 28, 2026 | `75734a3` |
+| Railway (production) | ✅ Auto-deployed from `main` | July 28, 2026 | `75734a3` |
+| Local (dev laptop) | ✅ Clean working tree | — | Same as above |
+
+**No laptop dependency.** All code runs on Railway. Access via any browser with Google login.
+IBKR executor is dormant until env vars are set in Railway dashboard.
 
 ### Pre-Launch Checklist (Phase 1 Readiness)
 
@@ -308,17 +325,21 @@ NIFTY Mode:
 | 8 | Railway restart self-healing | ✅ Done — `_ibkr_startup_auth()` on scheduler boot |
 | 9 | Mock test suite (14 tests) | ✅ Done — `tests/test_ibkr_executor.py` all passing |
 | 10 | Retry + partial execution recovery | ✅ Done — exponential backoff, partial fill detection |
+| 11 | Code pushed to GitHub + Railway | ✅ Done — commit `75734a3` deployed |
+| 12 | Set IBKR env vars in Railway | ⏳ After account activation |
 
 ### Remaining Technical Items
-- [x] Mock/dry-run test suite for `execute_qqq_sync` against IBKR paper environment (14 tests passing)
-- [x] Error handling + retry for partial execution / connection timeout during open volatility
-- [x] FOMC / CPI / Earnings event filter in `qqq_ic_engine.py` — skips 0DTE on high-impact days
-- [x] Risk-first individual-leg ordering (BUY wings first, abort if wing fails before placing shorts)
-- [x] Self-healing scheduler startup (re-authenticates IBKR on Railway restart)
+- [x] Mock/dry-run test suite for `execute_qqq_sync` (14 tests passing)
+- [x] Error handling + retry for partial execution / connection timeout
+- [x] FOMC / CPI / Earnings event filter — skips 0DTE on high-impact days
+- [x] Risk-first individual-leg ordering (BUY wings first)
+- [x] Self-healing scheduler startup (re-auth on Railway restart)
 - [x] Telegram notification integration for trade results
 - [x] Phase 1 wing width adjusted to $5 (configurable via settings.json)
+- [x] Code deployed to production (GitHub → Railway auto-deploy)
 - [ ] EOD resolution endpoint wiring for QQQ mode (auto-settle 0DTE)
-- [ ] Mid-price limit order with price-walking (pending IBKR paper testing — combo mid-price requires live data)
+- [ ] Mid-price limit order with price-walking (pending IBKR paper testing)
+- [ ] Set Railway env vars: IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM
 
 ---
 
@@ -396,4 +417,4 @@ httpx                   # HTTP client (already in project)
 
 ---
 
-*End of BRD v6.0. Dual-mode system: QQQ (primary, tax-free, execution module complete) + NIFTY (secondary, via wife's account). Both validated, independent, same infrastructure.*
+*End of BRD v6.1. Dual-mode system: QQQ (primary, tax-free, execution module complete & deployed) + NIFTY (secondary, via wife's account). Both validated, independent, same infrastructure. No laptop dependency — runs fully on Railway.*
