@@ -12,7 +12,7 @@ Options Tycoon operates in **two independent modes** on the same infrastructure:
 
 | Mode | Market | Broker | Underlying | Status |
 |------|--------|--------|-----------|--------|
-| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | Ready — pending wife's account NFO activation |
+| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | ✅ Code complete, Kite connected (MEA520). NFO segment pending activation (48-72h). |
 | **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF (Nasdaq 100) | ✅ Complete & deployed to Railway (commit `75734a3`) — IBKR account pending activation |
 
 Both modes share: Railway hosting, PostgreSQL DB, signal history, UI, automated scheduler.
@@ -132,10 +132,14 @@ Wife's Zerodha account (resident, not NRI) → no 30% TDS issue.
 ```
 
 ### Status
-- Zerodha NFO activation: Pending (wife's account)
-- Kite API: Configured, IP whitelisted
-- System code: Complete and tested
+- Zerodha NFO activation: Processing (submitted July 30, expected by Aug 1-2)
+- Kite API: ✅ Connected (MEA520 — Badakala Raghu Raj)
+- Kite Connect subscription: ✅ Active (31 days)
+- Railway IP whitelisted: ✅
+- System code: ✅ Complete and tested (dry-run produces valid signals)
+- Signal engine: ✅ Generates 4-leg IC with ₹15K capital
 - All validation: Done (5 rounds passed)
+- Account funded: ✅ ₹15,000
 
 ---
 
@@ -304,12 +308,30 @@ NIFTY Mode:
 
 | Environment | Status | Last Deploy | Commit |
 |-------------|--------|-------------|--------|
-| GitHub (`main`) | ✅ Up to date | July 28, 2026 | `75734a3` |
-| Railway (production) | ✅ Auto-deployed from `main` | July 28, 2026 | `75734a3` |
+| GitHub (`main`) | ✅ Up to date | July 30, 2026 | `6c5b947` |
+| Railway (production) | ✅ Auto-deployed from `main` | July 30, 2026 | `6c5b947` |
 | Local (dev laptop) | ✅ Clean working tree | — | Same as above |
+| Kite Auth (NIFTY) | ✅ Connected (MEA520) | — | OAuth flow verified |
+| IBKR Auth (QQQ) | ⏳ Pending account activation | — | Env vars not set yet |
 
-**No laptop dependency.** All code runs on Railway. Access via any browser with Google login.
-IBKR executor is dormant until env vars are set in Railway dashboard.
+### NIFTY Dry-Run Results (July 30, 2026)
+
+| Parameter | Value |
+|-----------|-------|
+| NIFTY Price | 24,261 (yfinance) |
+| VIX | 12.2% |
+| Short Call | 24,500 CE |
+| Long Call | 24,600 CE |
+| Short Put | 24,000 PE |
+| Long Put | 23,900 PE |
+| Net Credit | ₹970 (25 qty × ₹38.8/share) |
+| Max Loss | ₹1,530 |
+| Max Profit | ₹970 |
+| Risk % of Capital | 11.8% |
+| Expiry | Aug 4, 2026 (Tuesday) |
+| Signal Status | ✅ Trade generated correctly |
+| Kite Auth | ✅ Connected (Badakala Raghu Raj) |
+| NFO Segment | ⏳ Pending (blocks order placement only) |
 
 ### Pre-Launch Checklist (Phase 1 Readiness)
 
