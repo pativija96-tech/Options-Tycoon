@@ -290,19 +290,45 @@ NIFTY Mode:
 
 ## 8. NEXT STEPS
 
-1. [x] Strategy validated (QQQ: 7 rounds passed)
+### ⏰ TOMORROW MORNING (July 31, 2026)
+
+1. Login to Kite: `options-tycoon.com/static/live-nifty.html` → click "Login to Zerodha"
+2. Verify: "🟢 Zerodha Connected" shows
+3. Click "Generate Signal" → should show NIFTY IC trade card with ₹ values
+4. If NFO segment is active → click "Execute" for FIRST REAL TRADE
+5. If NFO still pending → just verify signal looks correct, don't execute
+
+### System Status (July 30, 2026 — End of Day)
+
+| System | Status | Next Action |
+|--------|--------|-------------|
+| **NIFTY Trading** | ✅ Code complete, Kite connected (MEA520), signal engine validated | Execute first trade tomorrow (NFO activating tonight 10:20 PM IST) |
+| **QQQ Trading** | ✅ Code complete, deployed to Railway | Wait for IBKR account activation → set env vars → paper test |
+| **BuyAI Tech Pipeline** | ✅ Code on GitHub, credentials in Railway | Deploy to Railway when ready for first teaser video |
+
+### Full Pending List
+
+**Trading (Priority 1):**
+1. [x] Strategy validated (QQQ: 7 rounds, NIFTY: 5 rounds)
 2. [x] BRD updated with dual-mode architecture
-3. [x] Build QQQ/IBKR execution module (REST API v1.0 — OAuth 2.0, combo orders, heartbeat)
-4. [x] Build dual-mode scheduler (QQQ auto-trade + EOD + IBKR heartbeat every 55s)
-5. [x] Signal engine complete (pattern matcher + quality filters + strategy picker)
-6. [x] QQQ IC engine complete (qqq_ic_engine.py + ibkr_executor.py)
-7. [x] Code deployed to Railway via GitHub (commit `75734a3`, July 28 2026)
-8. [ ] Wait for IBKR account activation
-9. [ ] Set IBKR env vars in Railway dashboard (IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM)
-10. [ ] Fund $1,000 via Wise → IBKR
-11. [ ] IBKR paper trading sandbox validation (dry-run execute_qqq_sync)
-12. [ ] Phase 1: 10 live trades (validate real fills)
-13. [ ] If passes → Phase 2 (increase to $7 wings) → Phase 3
+3. [x] QQQ/IBKR execution module complete + deployed
+4. [x] NIFTY/Kite execution module complete + deployed
+5. [x] Kite OAuth working (MEA520 — Badakala Raghu Raj)
+6. [x] Signal engine validated (NIFTY: ₹970 credit, expiry Aug 4 Tue)
+7. [x] Independent pages (NIFTY + QQQ each get their own signal)
+8. [x] Code deployed to Railway (commit `6c5b947`)
+9. [ ] **NIFTY first live trade** ← TOMORROW
+10. [ ] IBKR account activation → QQQ paper sandbox
+11. [ ] Fund $1,000 via Wise → IBKR
+
+**BuyAI Tech Content Pipeline (Priority 2):**
+12. [x] Pipeline code built (13 modules)
+13. [x] Pushed to GitHub (`pativija96-tech/BuyAI-Tech`)
+14. [x] All credentials saved in Railway (ElevenLabs, X, YouTube)
+15. [ ] Deploy to Railway (when ready for first teaser)
+16. [ ] Add `OPTIONS_TYCOON_DB_URL` (when live trade data flows)
+17. [ ] First teaser video published
+18. [ ] Set up cron schedule (daily post-market)
 
 ### Deployment Status
 
