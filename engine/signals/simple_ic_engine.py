@@ -27,7 +27,7 @@ OFFSET_PTS = 250       # Short strikes ±250 pts from ATM
 WING_WIDTH = 100       # Long strikes 100 pts beyond short strikes
 DAYS_TO_EXPIRY = 3     # Weekly expiry (Tuesday)
 VIX_MAX = 40           # Don't trade if VIX > 40 (too chaotic)
-RISK_CAP_PCT = 0.02    # Max 2% of capital per trade
+RISK_CAP_PCT = 0.25    # Max 25% of capital per trade (appropriate for ₹15K doing 1-lot IC)
 
 # Phase-aware lot size
 import os as _os
@@ -133,7 +133,7 @@ def _round_strike(price: float, step: int = 50) -> int:
     return int(round(price / step) * step)
 
 
-def generate_daily_signal(capital: float = 1000000) -> dict:
+def generate_daily_signal(capital: float = None) -> dict:
     """
     Generate today's Iron Condor signal.
     
@@ -142,6 +142,19 @@ def generate_daily_signal(capital: float = 1000000) -> dict:
     Returns a trade card dict compatible with the existing UI.
     """
     logger.info("Simple IC Engine: generating daily signal...")
+    
+    # Load capital from config if not provided
+    if capital is None:
+        try:
+            config_path = Path(__file__).resolve().parent.parent.parent / "config" / "settings.json"
+            if config_path.exists():
+                with open(config_path) as f:
+                    settings = json.load(f)
+                capital = settings.get("nifty", {}).get("capital", 15000)
+            else:
+                capital = 15000
+        except Exception:
+            capital = 15000
     
     # Step 1: Get NIFTY price
     market_data = _get_nifty_price()
