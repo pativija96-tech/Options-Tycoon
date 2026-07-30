@@ -20,8 +20,23 @@ CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 
 @router.get("/signal")
-async def get_today_signal():
-    """Return today's generated trade card. Falls back to signal_history DB if file is missing (Railway redeploy)."""
+async def get_today_signal(request: Request):
+    """
+    Return today's generated trade card.
+    Accepts ?mode=nifty or ?mode=qqq to get mode-specific signal.
+    Falls back to signal_history DB if file is missing (Railway redeploy).
+    """
+    import os
+    requested_mode = request.query_params.get("mode", "").lower()
+    trading_mode = requested_mode if requested_mode in ("qqq", "nifty") else os.environ.get("TRADING_MODE", "qqq").lower()
+    
+    # Try mode-specific file first
+    mode_signal_path = OUTPUT_DIR / f"today_signal_{trading_mode}.json"
+    if mode_signal_path.exists():
+        with open(mode_signal_path) as f:
+            return json.load(f)
+    
+    # Fallback to generic file
     signal_path = OUTPUT_DIR / "today_signal.json"
     if signal_path.exists():
         with open(signal_path) as f:
@@ -33,7 +48,6 @@ async def get_today_signal():
     today = date.today().strftime("%Y-%m-%d")
     history = get_signal_history(days=1, limit=1)
     if history and history[0].get("signal_date") == today:
-        # Reconstruct from full_signal_json
         full_json = history[0].get("full_signal_json")
         if full_json:
             try:
@@ -48,8 +62,12 @@ async def get_today_signal():
 
 
 @router.post("/generate-signal")
-async def generate_signal():
-    """Trigger signal generation — uses NIFTY or QQQ engine based on TRADING_MODE."""
+async def generate_signal(request: Request):
+    """
+    Trigger signal generation.
+    Accepts ?mode=nifty or ?mode=qqq to force a specific engine.
+    Falls back to TRADING_MODE env var if not specified.
+    """
     import sys
     import os
     import asyncio
@@ -57,7 +75,9 @@ async def generate_signal():
     from concurrent.futures import ThreadPoolExecutor
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     
-    trading_mode = os.environ.get("TRADING_MODE", "qqq").lower()
+    # Allow explicit mode override via query param (for page-specific requests)
+    requested_mode = request.query_params.get("mode", "").lower()
+    trading_mode = requested_mode if requested_mode in ("qqq", "nifty") else os.environ.get("TRADING_MODE", "qqq").lower()
     
     try:
         if trading_mode == "qqq":
@@ -79,9 +99,15 @@ async def generate_signal():
         if not result:
             return {"success": False, "error": "Signal engine returned None"}
         
-        # Save to file (for /signal endpoint)
-        signal_path = OUTPUT_DIR / "today_signal.json"
+        # Save to separate files per mode (so each page reads its own signal)
+        signal_filename = f"today_signal_{trading_mode}.json"
+        signal_path = OUTPUT_DIR / signal_filename
         with open(signal_path, "w") as f:
+            json_mod.dump(result, f, indent=2, default=str)
+        
+        # Also save as generic (for backward compatibility)
+        generic_path = OUTPUT_DIR / "today_signal.json"
+        with open(generic_path, "w") as f:
             json_mod.dump(result, f, indent=2, default=str)
         
         # Save to DB (survives redeploys)

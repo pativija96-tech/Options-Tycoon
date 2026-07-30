@@ -300,8 +300,8 @@ window.generateSignal=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>Generating signal...</p><p style="font-size:.75rem;color:var(--muted)">Fetching global data + running pattern match (15-30s)</p></div>';
   var user=JSON.parse(localStorage.getItem('ot_user')||'null');
   var userId=user?user.user_id||user.id||'0':'0';
-  fetch('/api/live/generate-signal',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
-    if(d.success) fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(render);
+  fetch('/api/live/generate-signal?mode=qqq',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+    if(d.success) fetch('/api/live/signal?mode=qqq',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(render);
     else document.getElementById('content').innerHTML='<div class="no-signal"><p>Failed: '+(d.error||'Unknown')+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
   }).catch(function(e){
     document.getElementById('content').innerHTML='<div class="no-signal"><p>Error: '+e+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
@@ -345,7 +345,7 @@ var user=JSON.parse(localStorage.getItem('ot_user')||'null');
 var userId=user?user.user_id||user.id||'0':'0';
 
 // Load signal — mode-aware (QQQ skips Kite check, NIFTY requires it)
-fetch('/api/live/signal',{headers:{'X-User-Id':String(userId)}}).then(function(r){
+fetch('/api/live/signal?mode=qqq',{headers:{'X-User-Id':String(userId)}}).then(function(r){
   if(r.status===404) return null;
   if(r.status===403) return null;
   return r.json();

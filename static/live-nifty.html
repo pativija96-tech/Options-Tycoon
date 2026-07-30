@@ -288,8 +288,8 @@ window.runEOD=function(){
 
 window.generateSignal=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>Generating signal...</p><p style="font-size:.75rem;color:var(--muted)">Fetching global data + running pattern match (15-30s)</p></div>';
-  fetch('/api/live/generate-signal',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
-    if(d.success) fetch('/api/live/signal').then(function(r){return r.json();}).then(render);
+  fetch('/api/live/generate-signal?mode=nifty',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
+    if(d.success) fetch('/api/live/signal?mode=nifty').then(function(r){return r.json();}).then(render);
     else document.getElementById('content').innerHTML='<div class="no-signal"><p>Failed: '+(d.error||'Unknown')+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
   }).catch(function(e){
     document.getElementById('content').innerHTML='<div class="no-signal"><p>Error: '+e+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
@@ -335,7 +335,7 @@ window.passTrade=function(){
 };
 
 // Load
-fetch('/api/live/signal').then(function(r){
+fetch('/api/live/signal?mode=nifty').then(function(r){
   if(r.status===404) return null;
   return r.json();
 }).then(function(d){
