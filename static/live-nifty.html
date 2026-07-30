@@ -133,8 +133,14 @@ function render(card){
       for(var i=0;i<failed.length;i++) html+='<p style="font-size:.72rem;color:var(--muted);padding:2px 0">'+esc(failed[i])+'</p>';
       html+='</div>';
     }
-    html+='<button class="generate-btn" onclick="generateSignal()">Generate Signal</button></div>';
+    html+='<button class="generate-btn" onclick="generateSignal()">Generate Signal</button>';
+    html+='<div style="margin-top:16px;display:flex;gap:10px;justify-content:center">';
+    html+='<button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem;padding:8px 20px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);border-radius:6px;cursor:pointer">🔗 Login to Zerodha</button>';
+    html+='</div>';
+    html+='<div id="kite-status" style="text-align:center;margin-top:8px;font-size:.7rem;color:var(--muted)"></div>';
+    html+='</div>';
     document.getElementById('content').innerHTML=html;
+    checkKiteStatus();
     return;
   }
   var t=card.trade||{};
@@ -293,6 +299,20 @@ window.generateSignal=function(){
 window.loginKite=function(){
   window.location.href='/api/live/kite-login';
 };
+
+function checkKiteStatus(){
+  fetch('/api/live/auth-status').then(function(r){return r.json();}).then(function(d){
+    var el=document.getElementById('kite-status');
+    if(!el)return;
+    if(d.authenticated){
+      el.innerHTML='<span style="color:var(--green)">🟢 Zerodha Connected ('+( d.user||'')+')</span>';
+    } else {
+      el.innerHTML='<span style="color:var(--muted)">🔴 Not connected — login to enable auto-trade</span>';
+    }
+  }).catch(function(){});
+}
+// Check status on load
+checkKiteStatus();
 
 window.executeTrade=function(){
   if(!confirm('Paper Execute this trade?'))return;
