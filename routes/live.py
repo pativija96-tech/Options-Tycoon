@@ -20,14 +20,14 @@ CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 
 @router.get("/signal")
-async def get_today_signal(request: Request):
+async def get_today_signal(request: Request, mode: str = None):
     """
     Return today's generated trade card.
     Accepts ?mode=nifty or ?mode=qqq to get mode-specific signal.
     Falls back to signal_history DB if file is missing (Railway redeploy).
     """
     import os
-    requested_mode = request.query_params.get("mode", "").lower()
+    requested_mode = (mode or request.query_params.get("mode", "")).lower()
     trading_mode = requested_mode if requested_mode in ("qqq", "nifty") else os.environ.get("TRADING_MODE", "qqq").lower()
     
     # Try mode-specific file first
@@ -62,7 +62,7 @@ async def get_today_signal(request: Request):
 
 
 @router.post("/generate-signal")
-async def generate_signal(request: Request):
+async def generate_signal(request: Request, mode: str = None):
     """
     Trigger signal generation.
     Accepts ?mode=nifty or ?mode=qqq to force a specific engine.
@@ -76,8 +76,10 @@ async def generate_signal(request: Request):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     
     # Allow explicit mode override via query param (for page-specific requests)
-    requested_mode = request.query_params.get("mode", "").lower()
+    requested_mode = (mode or request.query_params.get("mode", "")).lower()
     trading_mode = requested_mode if requested_mode in ("qqq", "nifty") else os.environ.get("TRADING_MODE", "qqq").lower()
+    
+    logger.info(f"generate-signal called: requested_mode={requested_mode}, resolved={trading_mode}")
     
     try:
         if trading_mode == "qqq":
