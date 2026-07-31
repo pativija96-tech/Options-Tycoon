@@ -340,9 +340,9 @@ fetch('/api/live/signal?mode=nifty').then(function(r){
   return r.json();
 }).then(function(d){
   if(d) render(d);
-  else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+  else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button><div style="margin-top:16px;display:flex;gap:10px;justify-content:center"><button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem;padding:8px 20px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);border-radius:6px;cursor:pointer">🔗 Login to Zerodha</button></div><div id="kite-status" style="text-align:center;margin-top:8px;font-size:.7rem;color:var(--muted)"></div></div>';checkKiteStatus();
 }).catch(function(){
-  document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button></div>';
+  document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button><div style="margin-top:16px;display:flex;gap:10px;justify-content:center"><button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem;padding:8px 20px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);border-radius:6px;cursor:pointer">🔗 Login to Zerodha</button></div><div id="kite-status" style="text-align:center;margin-top:8px;font-size:.7rem;color:var(--muted)"></div></div>';checkKiteStatus();
 });
 
 // Track record (per-user)
