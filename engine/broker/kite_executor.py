@@ -47,13 +47,10 @@ def get_expiry_symbol_format(strike: int, option_type: str) -> str:
     Build Kite trading symbol for NIFTY options.
     
     Monthly format: NIFTY{YY}{MON}{Strike}{CE/PE}
-    Example: NIFTY26JUL24000CE
+    Example: NIFTY26AUG24000CE
     
-    Weekly format: NIFTY{YY}{M}{DD}{Strike}{CE/PE}
-    Example: NIFTY2670124000CE (July 1)
-    
-    Note: In monthly expiry week, weekly expiry doesn't exist.
-    Currently using MONTHLY format for reliability.
+    Uses the EXPIRY month (next Tuesday), not today's month.
+    This is critical when today is end-of-month and expiry falls in next month.
     """
     from datetime import datetime, timezone, timedelta
     
@@ -61,12 +58,18 @@ def get_expiry_symbol_format(strike: int, option_type: str) -> str:
     ist = timezone(timedelta(hours=5, minutes=30))
     today = datetime.now(ist).date()
     
-    yy = str(today.year)[2:]  # "26"
+    # Find next Tuesday (NIFTY weekly expiry)
+    days_until_tuesday = (1 - today.weekday()) % 7
+    if days_until_tuesday == 0:
+        days_until_tuesday = 7
+    expiry_date = today + timedelta(days=days_until_tuesday)
     
-    # Monthly format: NIFTY26JUL{strike}{CE/PE}
+    yy = str(expiry_date.year)[2:]  # "26"
+    
+    # Use EXPIRY month (not today's month!)
     month_names = ["", "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
-    mon = month_names[today.month]
+    mon = month_names[expiry_date.month]
     
     return f"NIFTY{yy}{mon}{strike}{option_type}"
 
