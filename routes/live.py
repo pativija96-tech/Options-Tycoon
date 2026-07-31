@@ -856,17 +856,30 @@ async def run_backup():
 
 
 @router.post("/live-execute")
-async def live_execute(request: Request):
+async def live_execute(request: Request, mode: str = None):
     """
     Execute Iron Condor with REAL money.
-    Routes to IBKR (QQQ) or Kite (NIFTY) based on TRADING_MODE.
+    Accepts ?mode=nifty or ?mode=qqq to force broker routing.
+    Falls back to TRADING_MODE env var if not specified.
     """
     import os
-    trading_mode = os.environ.get("TRADING_MODE", "qqq").lower()
+    requested_mode = (mode or request.query_params.get("mode", "")).lower()
+    trading_mode = requested_mode if requested_mode in ("qqq", "nifty") else os.environ.get("TRADING_MODE", "qqq").lower()
     
-    # Get today's signal
-    signal_path = OUTPUT_DIR / "today_signal.json"
-    if not signal_path.exists():
+    logger.info(f"live-execute called: mode={trading_mode}")
+    
+    # Get today's signal (mode-specific file first)
+    signal = None
+    mode_signal_path = OUTPUT_DIR / f"today_signal_{trading_mode}.json"
+    generic_signal_path = OUTPUT_DIR / "today_signal.json"
+    
+    if mode_signal_path.exists():
+        with open(mode_signal_path) as f:
+            signal = json.load(f)
+    elif generic_signal_path.exists():
+        with open(generic_signal_path) as f:
+            signal = json.load(f)
+    else:
         from datetime import date
         from db.signal_history import get_signal_history
         today = date.today().strftime("%Y-%m-%d")
@@ -875,16 +888,25 @@ async def live_execute(request: Request):
             full_json = history[0].get("full_signal_json")
             if full_json:
                 signal = json.loads(full_json)
-            else:
-                return JSONResponse(status_code=400, content={"error": "No signal generated today"})
-        else:
-            return JSONResponse(status_code=400, content={"error": "No signal generated today"})
-    else:
-        with open(signal_path) as f:
-            signal = json.load(f)
+    
+    if not signal:
+        return JSONResponse(status_code=400, content={"success": False, "error": "No signal generated today"})
     
     if signal.get("action") != "trade":
-        return JSONResponse(status_code=400, content={"error": "Signal is not a trade"})
+        return JSONResponse(status_code=400, content={"success": False, "error": "Signal is not a trade"})
+    
+    # SAFETY CHECK: Verify signal matches requested mode
+    signal_strategy = signal.get("strategy_type", "")
+    if trading_mode == "nifty" and "qqq" in signal_strategy.lower():
+        return JSONResponse(status_code=400, content={
+            "success": False, 
+            "error": "SAFETY BLOCK: NIFTY page tried to execute a QQQ signal. Regenerate the NIFTY signal first."
+        })
+    if trading_mode == "qqq" and "250" in signal_strategy:
+        return JSONResponse(status_code=400, content={
+            "success": False,
+            "error": "SAFETY BLOCK: QQQ page tried to execute a NIFTY signal. Regenerate the QQQ signal first."
+        })
     
     # Execute based on mode
     if trading_mode == "qqq":

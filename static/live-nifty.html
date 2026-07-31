@@ -315,12 +315,12 @@ function checkKiteStatus(){
 checkKiteStatus();
 
 window.executeTrade=function(){
-  if(!confirm('Paper Execute this trade?'))return;
+  if(!confirm('LIVE EXECUTE: Place real orders on Zerodha? Rs.12,500 margin will be blocked.'))return;
   var user=JSON.parse(localStorage.getItem('ot_user')||'null');
   var userId=user?user.user_id||user.id||'0':'0';
-  fetch('/api/live/paper-execute',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+  fetch('/api/live/live-execute?mode=nifty',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
-      alert('Trade logged for your account.');
+      alert('LIVE TRADE PLACED on Zerodha! Check Kite Orders tab. Legs placed: ' + (d.placed || 4));
       // Disable execute button to prevent double-click
       var btn=document.querySelector('.btn-execute');
       if(btn){btn.disabled=true;btn.textContent='EXECUTED';btn.style.opacity='0.4';}
