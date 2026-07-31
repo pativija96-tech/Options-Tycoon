@@ -270,7 +270,7 @@ async def kite_callback(request: Request):
     
     if result.get("success"):
         from fastapi.responses import RedirectResponse
-        return RedirectResponse(url="/static/live.html?kite=connected")
+        return RedirectResponse(url="/static/live-nifty.html?kite=connected")
     else:
         return JSONResponse(status_code=400, content=result)
 
