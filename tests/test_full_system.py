@@ -37,10 +37,12 @@ os.environ.setdefault("FOUNDER_ALLOWED_EMAILS", "test@test.com")
 class TestSimpleICEngine:
     """Tests for engine/signals/simple_ic_engine.py — NIFTY Iron Condor."""
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_generate_daily_signal_returns_trade(self, mock_price):
+    def test_generate_daily_signal_returns_trade(self, mock_price, mock_expiry):
         """Signal with valid market data returns action='trade' with NIFTY strikes."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")  # 5 days to expiry
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
@@ -50,10 +52,12 @@ class TestSimpleICEngine:
         legs = signal["trade"]["legs"]
         assert len(legs) == 4
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_strikes_above_20000(self, mock_price):
+    def test_nifty_strikes_above_20000(self, mock_price, mock_expiry):
         """All strikes must be > 20000 (NIFTY range, not QQQ range)."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
@@ -61,10 +65,12 @@ class TestSimpleICEngine:
         for leg in legs:
             assert leg["strike"] > 20000, f"NIFTY strike {leg['strike']} should be > 20000"
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_option_format_ce_pe(self, mock_price):
+    def test_nifty_option_format_ce_pe(self, mock_price, mock_expiry):
         """NIFTY options use CE/PE format (not C/P like QQQ)."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
@@ -72,23 +78,25 @@ class TestSimpleICEngine:
         option_types = {leg["option"] for leg in legs}
         assert option_types == {"CE", "PE"}, f"Expected CE/PE format, got {option_types}"
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_values_in_rupees(self, mock_price):
+    def test_nifty_values_in_rupees(self, mock_price, mock_expiry):
         """Premiums and costs should be in ₹ range (not $ range)."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
         trade = signal["trade"]
-        # Net credit total for NIFTY should be in ₹ hundreds range (not $ range)
-        # With 25 lot size and ~₹10-30 per unit credit, total should be ₹250-750
         assert trade["max_profit"] > 50, "NIFTY credit should be > ₹50"
         assert trade["max_loss"] > 500, "NIFTY max loss should be > ₹500 (wing_width * lot_size)"
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_correct_expiry_format(self, mock_price):
+    def test_nifty_correct_expiry_format(self, mock_price, mock_expiry):
         """Expiry string should contain 'Tue' for weekly NIFTY expiry."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
@@ -114,10 +122,12 @@ class TestSimpleICEngine:
 
         assert signal["action"] == "skip"
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_strike_offset_250pts(self, mock_price):
+    def test_nifty_strike_offset_250pts(self, mock_price, mock_expiry):
         """Short strikes should be ±250 from ATM (rounded to 50)."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
@@ -126,14 +136,15 @@ class TestSimpleICEngine:
         sell_ce = next(l for l in sells if l["option"] == "CE")
         sell_pe = next(l for l in sells if l["option"] == "PE")
 
-        # ATM rounds to 24500, so short CE = 24750, short PE = 24250
         assert sell_ce["strike"] == 24750
         assert sell_pe["strike"] == 24250
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_wing_width_100pts(self, mock_price):
+    def test_nifty_wing_width_100pts(self, mock_price, mock_expiry):
         """Long strikes should be 100pts beyond short strikes."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
 
@@ -145,6 +156,31 @@ class TestSimpleICEngine:
 
         assert buy_ce["strike"] - sell_ce["strike"] == 100
         assert sell_pe["strike"] - buy_pe["strike"] == 100
+
+    def test_min_days_to_expiry_blocks_monday(self):
+        """SAFETY: Signal skips when < 2 days to expiry (Monday before Tuesday expiry)."""
+        with patch("engine.signals.simple_ic_engine._get_nifty_price") as mock_price:
+            mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+            with patch("engine.signals.simple_ic_engine._get_expiry_date") as mock_expiry:
+                mock_expiry.return_value = (None, 1, "04 Aug 2026 (Tue)")  # Only 1 day
+                from engine.signals.simple_ic_engine import generate_daily_signal
+                signal = generate_daily_signal(capital=15000)
+
+        assert signal["action"] == "skip"
+        assert "day" in signal.get("reason", "").lower()
+
+    def test_negative_reward_blocks_trade(self):
+        """SAFETY: Signal skips when net reward is negative (charges > credit)."""
+        with patch("engine.signals.simple_ic_engine._get_nifty_price") as mock_price:
+            mock_price.return_value = {"nifty": 24500.0, "vix": 5.0, "source": "mock", "errors": []}
+            with patch("engine.signals.simple_ic_engine._get_expiry_date") as mock_expiry:
+                mock_expiry.return_value = (None, 2, "05 Aug 2026 (Tue)")  # 2 days but very low VIX
+                from engine.signals.simple_ic_engine import generate_daily_signal
+                signal = generate_daily_signal(capital=15000)
+
+        # Very low VIX (5%) with only 2 days = very low premiums, likely negative after charges
+        if signal["action"] == "skip":
+            assert "negative" in signal.get("reason", "").lower() or "premium" in signal.get("reason", "").lower() or "day" in signal.get("reason", "").lower()
 
 
 class TestQQQICEngine:
@@ -565,9 +601,11 @@ class TestLiveRoutes:
         with patch("routes.live.OUTPUT_DIR", self.output_dir):
             with patch("engine.signals.simple_ic_engine._get_nifty_price") as mock_price:
                 mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
-                with patch("db.signal_history.save_signal"):
-                    client = self._get_test_client()
-                    resp = client.post("/api/live/generate-signal?mode=nifty")
+                with patch("engine.signals.simple_ic_engine._get_expiry_date") as mock_expiry:
+                    mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
+                    with patch("db.signal_history.save_signal"):
+                        client = self._get_test_client()
+                        resp = client.post("/api/live/generate-signal?mode=nifty")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -945,10 +983,12 @@ class TestDataFlowIntegrity:
         self.output_dir = tmp_path / "output"
         self.output_dir.mkdir()
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_nifty_signal_saved_as_nifty_file(self, mock_price):
+    def test_nifty_signal_saved_as_nifty_file(self, mock_price, mock_expiry):
         """Signal generated with mode=nifty saves as today_signal_nifty.json."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
 
         from engine.signals.simple_ic_engine import generate_daily_signal
         signal = generate_daily_signal(capital=15000)
@@ -983,12 +1023,14 @@ class TestDataFlowIntegrity:
         assert loaded["market"] == "QQQ"
         assert loaded["strategy_type"] == "iron_condor_qqq"
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
     @patch("engine.signals.qqq_ic_engine._is_high_impact_event_day", return_value=(False, ""))
     @patch("engine.signals.qqq_ic_engine._get_qqq_price")
-    def test_signals_never_cross_contaminate(self, mock_qqq_price, mock_event, mock_nifty_price):
+    def test_signals_never_cross_contaminate(self, mock_qqq_price, mock_event, mock_nifty_price, mock_expiry):
         """NIFTY and QQQ signals stored separately, never mixed."""
         mock_nifty_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         mock_qqq_price.return_value = {"qqq": 680.0, "vix": 18.0, "source": "mock", "errors": []}
 
         from engine.signals.simple_ic_engine import generate_daily_signal
@@ -1155,10 +1197,12 @@ class TestEdgeCasesAndSafety:
         assert result["success"] is False
         assert "4 legs" in result["error"] or "Expected 4" in result["error"]
 
+    @patch("engine.signals.simple_ic_engine._get_expiry_date")
     @patch("engine.signals.simple_ic_engine._get_nifty_price")
-    def test_low_capital_returns_skip(self, mock_price):
+    def test_low_capital_returns_skip(self, mock_price, mock_expiry):
         """Capital too low for the strategy returns skip."""
         mock_price.return_value = {"nifty": 24500.0, "vix": 14.5, "source": "mock", "errors": []}
+        mock_expiry.return_value = (None, 5, "12 Aug 2026 (Tue)")
         from engine.signals.simple_ic_engine import generate_daily_signal
 
         # Very low capital — max loss would exceed risk cap

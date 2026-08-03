@@ -188,6 +188,19 @@ def generate_daily_signal(capital: float = None) -> dict:
     iv = vix_level / 100  # VIX is annualized vol in %
     _, days_to_exp, expiry_str = _get_expiry_date()
     
+    # Step 4a: SAFETY CHECK — Minimum days to expiry
+    # Don't enter with < 2 days — premiums too low (theta decay), charges eat all credit
+    MIN_DAYS_TO_EXPIRY = 2
+    if days_to_exp < MIN_DAYS_TO_EXPIRY:
+        return {
+            "action": "skip",
+            "reason": f"Only {days_to_exp} day(s) to expiry ({expiry_str}). "
+                      f"Need minimum {MIN_DAYS_TO_EXPIRY} days — premiums too low to cover charges. "
+                      f"Wait until Wednesday (after Tuesday expiry) to enter next week's cycle.",
+            "date": date.today().strftime("%Y-%m-%d"),
+            "conditions": {"nifty_price": nifty_price, "vix_level": vix_level},
+        }
+    
     short_call_prem = round(_estimate_premium(nifty_price, short_call, days_to_exp, "call", iv), 2)
     long_call_prem = round(_estimate_premium(nifty_price, long_call, days_to_exp, "call", iv), 2)
     short_put_prem = round(_estimate_premium(nifty_price, short_put, days_to_exp, "put", iv), 2)
@@ -204,7 +217,7 @@ def generate_daily_signal(capital: float = None) -> dict:
     if max_loss > max_risk:
         return {
             "action": "skip",
-            "reason": f"Max loss Rs.{max_loss:.0f} exceeds 2% cap (Rs.{max_risk:.0f}). Capital too low for this strategy.",
+            "reason": f"Max loss Rs.{max_loss:.0f} exceeds 25% cap (Rs.{max_risk:.0f}). Capital too low for this strategy.",
             "date": date.today().strftime("%Y-%m-%d"),
             "conditions": {"nifty": nifty_price, "vix": vix_level},
         }
@@ -214,6 +227,17 @@ def generate_daily_signal(capital: float = None) -> dict:
     net_max_profit = round(max_profit - charges["total"], 2)
     net_max_loss = round(max_loss + charges["total"], 2)
     rr = round(max_profit / max_loss, 2) if max_loss > 0 else 0
+    
+    # Step 6a: SAFETY CHECK — Negative reward (charges > credit)
+    if net_max_profit <= 0:
+        return {
+            "action": "skip",
+            "reason": f"Net reward is NEGATIVE (Rs.{net_max_profit:.0f}). "
+                      f"Credit Rs.{net_credit_total:.0f} doesn't cover charges Rs.{charges['total']:.0f}. "
+                      f"Premiums too low — likely too close to expiry or low VIX. Skip today.",
+            "date": date.today().strftime("%Y-%m-%d"),
+            "conditions": {"nifty_price": nifty_price, "vix_level": vix_level},
+        }
     
     # Step 7: Build trade card (compatible with existing UI)
     trade_card = {
