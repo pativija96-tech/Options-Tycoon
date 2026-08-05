@@ -315,12 +315,14 @@ function checkKiteStatus(){
 checkKiteStatus();
 
 window.executeTrade=function(){
-  if(!confirm('LIVE EXECUTE: Place real orders on Zerodha? Rs.12,500 margin will be blocked.'))return;
   var user=JSON.parse(localStorage.getItem('ot_user')||'null');
   var userId=user?user.user_id||user.id||'0':'0';
+  var btn=document.querySelector('.btn-execute');
+  if(btn){btn.textContent='PLACING...';btn.disabled=true;}
   fetch('/api/live/live-execute?mode=nifty',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
-      alert('LIVE TRADE PLACED on Zerodha! Check Kite Orders tab. Legs placed: ' + (d.placed || 4));
+      if(btn){btn.textContent='EXECUTED';btn.style.background='#065f46';}
+      document.getElementById('content').insertAdjacentHTML('beforeend','<div style="margin-top:16px;padding:14px;background:rgba(16,185,129,0.1);border:1px solid var(--green);border-radius:8px;text-align:center;font-size:.85rem;color:var(--green)">LIVE TRADE PLACED on Zerodha! Check Kite Orders tab. Legs placed: '+(d.placed||4)+'</div>');
       // Disable execute button to prevent double-click
       var btn=document.querySelector('.btn-execute');
       if(btn){btn.disabled=true;btn.textContent='EXECUTED';btn.style.opacity='0.4';}
