@@ -171,6 +171,7 @@ class TestKiteExecutionOrder:
             with patch("engine.broker.kite_auth.get_kite_client") as mock_client:
                 mock_kite = MagicMock()
                 mock_kite.place_order.return_value = "ORDER123"
+                mock_kite.ltp.return_value = {"NFO:NIFTY26AUG24650CE": {"last_price": 35.0}, "NFO:NIFTY26AUG24750CE": {"last_price": 19.0}, "NFO:NIFTY26AUG24150PE": {"last_price": 35.0}, "NFO:NIFTY26AUG24050PE": {"last_price": 19.0}}
                 mock_client.return_value = mock_kite
 
                 result = execute_iron_condor(signal)

@@ -336,6 +336,7 @@ class TestKiteExecutor:
         mock_auth.return_value = True
         mock_kite = MagicMock()
         mock_kite.place_order.return_value = "ORDER_123"
+        mock_kite.ltp.return_value = {"NFO:NIFTY26AUG24850CE": {"last_price": 12.5}, "NFO:NIFTY26AUG24750CE": {"last_price": 5.0}, "NFO:NIFTY26AUG24250PE": {"last_price": 11.0}, "NFO:NIFTY26AUG24150PE": {"last_price": 4.5}}
         mock_client.return_value = mock_kite
 
         from engine.broker.kite_executor import execute_iron_condor
@@ -352,6 +353,7 @@ class TestKiteExecutor:
         """BUY (protective wings) must be placed BEFORE SELL (naked shorts)."""
         mock_auth.return_value = True
         mock_kite = MagicMock()
+        mock_kite.ltp.return_value = {"NFO:NIFTY26AUG24850CE": {"last_price": 12.5}, "NFO:NIFTY26AUG24750CE": {"last_price": 5.0}, "NFO:NIFTY26AUG24250PE": {"last_price": 11.0}, "NFO:NIFTY26AUG24150PE": {"last_price": 4.5}}
         call_order = []
         def track_order(**kwargs):
             call_order.append(kwargs["transaction_type"])
@@ -374,6 +376,7 @@ class TestKiteExecutor:
         mock_auth.return_value = True
         mock_kite = MagicMock()
         mock_kite.place_order.return_value = "ORDER_1"
+        mock_kite.ltp.return_value = {"NFO:NIFTY26AUG24850CE": {"last_price": 12.5}, "NFO:NIFTY26AUG24750CE": {"last_price": 5.0}, "NFO:NIFTY26AUG24250PE": {"last_price": 11.0}, "NFO:NIFTY26AUG24150PE": {"last_price": 4.5}}
         mock_client.return_value = mock_kite
 
         from engine.broker.kite_executor import execute_iron_condor

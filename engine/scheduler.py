@@ -138,7 +138,20 @@ def _run_auto_trade():
 
 
 def _send_telegram_alert(message: str):
-    """Send a Telegram alert (best-effort, non-blocking)."""
+    """Send alert via email (primary) and Telegram (if configured). Best-effort, non-blocking."""
+    # Email notification (primary)
+    try:
+        import os
+        from engine.email_service import send_email
+        founder_email = os.environ.get("FOUNDER_ALLOWED_EMAILS", "").split(",")[0].strip()
+        if founder_email:
+            # Convert plain text message to simple HTML
+            html_body = f"<pre style='font-family:monospace;font-size:14px;line-height:1.6'>{message}</pre>"
+            send_email(founder_email, "Options Tycoon — Signal Alert", html_body)
+    except Exception as e:
+        logger.debug(f"Email alert skipped: {e}")
+    
+    # Telegram (secondary, if configured)
     try:
         import sys
         import os
