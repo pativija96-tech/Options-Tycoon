@@ -914,8 +914,13 @@ async def live_execute(request: Request, mode: str = None):
         spot = signal.get("projected_open") or signal.get("conditions", {}).get("qqq_price")
         result = execute_qqq_sync(spot_price=spot)
     else:
-        from engine.broker.kite_executor import execute_iron_condor
-        result = execute_iron_condor(signal, mode="live")
+        from engine.broker.kite_executor import execute_iron_condor_basket, execute_iron_condor
+        # Try basket order first (spread margin benefit ~₹30K instead of ₹1.6L)
+        result = execute_iron_condor_basket(signal)
+        if not result.get("success") and "basket" not in result.get("method", ""):
+            # Basket failed — try individual legs as fallback
+            logger.warning(f"Basket order failed: {result.get('error')}. Trying individual legs...")
+            result = execute_iron_condor(signal, mode="live")
     
     # Also log as a paper trade in DB for tracking
     if result.get("success"):

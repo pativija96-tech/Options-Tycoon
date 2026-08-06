@@ -170,17 +170,17 @@ class TestSimpleICEngine:
         assert "day" in signal.get("reason", "").lower()
 
     def test_negative_reward_blocks_trade(self):
-        """SAFETY: Signal skips when net reward is negative (charges > credit)."""
+        """SAFETY: Signal skips when conditions are unfavorable (low VIX, few days)."""
         with patch("engine.signals.simple_ic_engine._get_nifty_price") as mock_price:
-            mock_price.return_value = {"nifty": 24500.0, "vix": 5.0, "source": "mock", "errors": []}
+            mock_price.return_value = {"nifty": 24500.0, "vix": 3.0, "source": "mock", "errors": []}
             with patch("engine.signals.simple_ic_engine._get_expiry_date") as mock_expiry:
-                mock_expiry.return_value = (None, 2, "05 Aug 2026 (Tue)")  # 2 days but very low VIX
+                mock_expiry.return_value = (None, 2, "05 Aug 2026 (Tue)")  # 2 days, extremely low VIX
                 from engine.signals.simple_ic_engine import generate_daily_signal
                 signal = generate_daily_signal(capital=15000)
 
-        # Very low VIX (5%) with only 2 days = very low premiums, likely negative after charges
-        if signal["action"] == "skip":
-            assert "negative" in signal.get("reason", "").lower() or "premium" in signal.get("reason", "").lower() or "day" in signal.get("reason", "").lower()
+        # With very low VIX and short expiry, signal should skip for safety reasons
+        # Could be: negative reward, risk cap exceeded, or days too few
+        assert signal["action"] == "skip"
 
 
 class TestQQQICEngine:
@@ -386,7 +386,7 @@ class TestKiteExecutor:
     @patch("engine.broker.kite_auth.get_kite_client")
     @patch("engine.broker.kite_auth.is_authenticated")
     def test_quantity_25_for_phase_1(self, mock_auth, mock_client):
-        """Phase 1 quantity should be 25 (1 lot)."""
+        """Phase 1 quantity should be 65 (1 lot, NIFTY lot size as of 2026)."""
         mock_auth.return_value = True
         mock_kite = MagicMock()
         mock_kite.place_order.return_value = "ORDER_1"
@@ -398,8 +398,8 @@ class TestKiteExecutor:
 
         # Check qty in place_order calls
         for call in mock_kite.place_order.call_args_list:
-            assert call.kwargs["quantity"] == 25, f"Phase 1 qty should be 25, got {call.kwargs['quantity']}"
-        assert result["quantity"] == 25
+            assert call.kwargs["quantity"] == 65, f"Phase 1 qty should be 65, got {call.kwargs['quantity']}"
+        assert result["quantity"] == 65
 
     @patch("engine.broker.kite_auth.is_authenticated")
     def test_unauthenticated_returns_error(self, mock_auth):
@@ -1123,24 +1123,24 @@ class TestPhaseConfig:
     """Tests for trading phase configuration."""
 
     def test_phase_1_config(self):
-        """Phase 1: 25 qty, max 5 trades."""
+        """Phase 1: 65 qty, max 5 trades."""
         from engine.broker.kite_executor import PHASES
         phase1 = PHASES[1]
-        assert phase1["quantity"] == 25
+        assert phase1["quantity"] == 65
         assert phase1["max_trades"] == 5
 
     def test_phase_2_config(self):
-        """Phase 2: 25 qty, max 10 trades."""
+        """Phase 2: 65 qty, max 10 trades."""
         from engine.broker.kite_executor import PHASES
         phase2 = PHASES[2]
-        assert phase2["quantity"] == 25
+        assert phase2["quantity"] == 65
         assert phase2["max_trades"] == 10
 
     def test_phase_3_config(self):
-        """Phase 3: 50 qty, unlimited trades."""
+        """Phase 3: 130 qty, unlimited trades."""
         from engine.broker.kite_executor import PHASES
         phase3 = PHASES[3]
-        assert phase3["quantity"] == 50
+        assert phase3["quantity"] == 130
         assert phase3["max_trades"] is None
 
 

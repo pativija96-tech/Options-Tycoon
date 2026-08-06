@@ -26,9 +26,9 @@ logger = logging.getLogger("kite_executor")
 
 # Phase configuration
 PHASES = {
-    1: {"name": "Slippage Discovery", "lots": 1, "quantity": 25, "max_trades": 5, "description": "1 lot (25 qty) to measure real slippage"},
-    2: {"name": "Validation", "lots": 1, "quantity": 25, "max_trades": 10, "description": "1 lot, 10 trades to validate consistency"},
-    3: {"name": "Full Size", "lots": 2, "quantity": 50, "max_trades": None, "description": "2 lots (50 qty), ongoing trading"},
+    1: {"name": "Slippage Discovery", "lots": 1, "quantity": 65, "max_trades": 5, "description": "1 lot (65 qty) to measure real slippage"},
+    2: {"name": "Validation", "lots": 1, "quantity": 65, "max_trades": 10, "description": "1 lot, 10 trades to validate consistency"},
+    3: {"name": "Full Size", "lots": 2, "quantity": 130, "max_trades": None, "description": "2 lots (130 qty), ongoing trading"},
 }
 
 # Current phase — stored in env var or defaults to 1
@@ -72,6 +72,98 @@ def get_expiry_symbol_format(strike: int, option_type: str) -> str:
     mon = month_names[expiry_date.month]
     
     return f"NIFTY{yy}{mon}{strike}{option_type}"
+
+
+def execute_iron_condor_basket(signal: dict) -> dict:
+    """
+    Execute a 4-leg Iron Condor using Kite Basket Order.
+    
+    Basket orders submit all legs simultaneously, giving spread margin
+    benefit (~₹30K instead of ₹1.6L for individual naked sell legs).
+    
+    This is the preferred execution method for accounts with < ₹1.5L.
+    """
+    from engine.broker.kite_auth import is_authenticated, get_kite_client
+    
+    if not is_authenticated():
+        return {"success": False, "error": "Kite not authenticated. Login to Zerodha first."}
+    
+    kite = get_kite_client()
+    if not kite:
+        return {"success": False, "error": "Could not get Kite client."}
+    
+    trade = signal.get("trade", {})
+    legs = trade.get("legs", [])
+    if len(legs) != 4:
+        return {"success": False, "error": f"Expected 4 legs, got {len(legs)}"}
+    
+    phase = get_phase_config()
+    quantity = phase["quantity"]
+    
+    # Build basket order (all 4 legs submitted together)
+    basket_orders = []
+    for leg in legs:
+        strike = leg["strike"]
+        option_type = leg["option"]
+        action = leg["action"]
+        trading_symbol = get_expiry_symbol_format(strike, option_type)
+        transaction_type = "SELL" if action == "SELL" else "BUY"
+        
+        basket_orders.append({
+            "variety": "regular",
+            "exchange": "NFO",
+            "tradingsymbol": trading_symbol,
+            "transaction_type": transaction_type,
+            "quantity": quantity,
+            "order_type": "MARKET",
+            "product": "NRML",
+        })
+    
+    # Place basket order via Kite API
+    try:
+        # Kite's place_basket_order submits all legs atomically
+        # This gives spread margin benefit
+        order_results = []
+        order_ids = kite.place_basket_order(basket_orders)
+        
+        if order_ids:
+            for i, oid in enumerate(order_ids):
+                order_results.append({
+                    "leg": f"{legs[i]['action']} {legs[i]['strike']} {legs[i]['option']}",
+                    "trading_symbol": basket_orders[i]["tradingsymbol"],
+                    "order_id": oid,
+                    "status": "placed",
+                })
+            
+            return {
+                "success": True,
+                "mode": "live",
+                "method": "basket",
+                "phase": phase["name"],
+                "quantity": quantity,
+                "placed": len(order_ids),
+                "failed": 0,
+                "orders": order_results,
+                "message": f"All {len(order_ids)} legs placed via basket order (spread margin applied)",
+            }
+        else:
+            return {"success": False, "error": "Basket order returned no order IDs"}
+    
+    except AttributeError:
+        # kite.place_basket_order not available — fall back to individual legs
+        logger.warning("Basket order not available in kiteconnect version — falling back to individual legs")
+        return execute_iron_condor(signal, mode="live")
+    except Exception as e:
+        error_msg = str(e)[:300]
+        logger.error(f"Basket order failed: {error_msg}")
+        
+        # If basket fails due to margin, provide clear error
+        if "margin" in error_msg.lower() or "insufficient" in error_msg.lower():
+            return {
+                "success": False,
+                "error": f"Insufficient margin for basket order. Need ~₹30,000 for 1-lot IC spread. Error: {error_msg}",
+            }
+        return {"success": False, "error": error_msg}
 
 
 def execute_iron_condor(signal: dict, mode: str = "live") -> dict:

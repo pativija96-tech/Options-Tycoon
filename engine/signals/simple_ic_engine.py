@@ -32,10 +32,7 @@ RISK_CAP_PCT = 0.25    # Max 25% of capital per trade (appropriate for ₹15K do
 # Phase-aware lot size
 import os as _os
 _TRADING_PHASE = int(_os.environ.get("TRADING_PHASE", "1"))
-if _TRADING_PHASE <= 2:
-    LOT_SIZE = 25      # Phase 1-2: 1 lot (NIFTY lot size = 25 as of 2024)
-else:
-    LOT_SIZE = 50      # Phase 3: 2 lots
+LOT_SIZE = 65  # NIFTY lot size as of Aug 2026 (was 25, changed by NSE)
 
 
 def _get_nifty_price() -> dict:
