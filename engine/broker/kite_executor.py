@@ -1,358 +1,253 @@
 """
-Kite Executor — Places Iron Condor orders automatically on Zerodha.
+Kite Executor — NIFTY Iron Condor auto-execution via Zerodha Kite API.
 
-Handles:
-- 4-leg IC order placement (SELL CE, BUY CE, SELL PE, BUY PE)
-- Market orders for guaranteed fills (validates real slippage)
-- Order status tracking
-- Auto-exit on SL breach or expiry
+EXECUTION PIPELINE:
+1. Validate Kite session is authenticated
+2. Build 4-leg order list from signal card
+3. Place BUY legs first (wings/hedges) — this activates hedge margin benefit
+4. Place SELL legs after (shorts) — margin reduced because hedges are in place
+5. If any BUY leg fails → abort all SELL legs (never naked short)
+6. Return order results + Telegram notification
 
-Phase model:
-- Phase 1: 0.5 lots (quantity = 32 instead of 65) — slippage discovery
-- Phase 2: 0.5 lots — validation (10 trades)
-- Phase 3: 1 full lot (quantity = 65)
+MARGIN LOGIC:
+- Individual naked SELL = ~₹1.6L margin
+- SELL with hedge already in position = ~₹35K margin (hedge benefit)
+- BUY-first ordering ensures hedge benefit is always applied
 
-Usage:
-    from engine.broker.kite_executor import execute_iron_condor, get_phase_config
+PRODUCT TYPE:
+- NRML (default): Positional, holds to Tuesday expiry
+- MIS: Intraday, auto-squares off at 3:25 PM IST
+
+PHASE MODEL:
+- Phase 1: 1 lot (65 qty) — slippage discovery (5 trades)
+- Phase 2: 1 lot (65 qty) — validation (10 trades)
+- Phase 3: 2 lots (130 qty) — full size, ongoing
 """
 
 import os
-import json
 import logging
 from datetime import date, timedelta
 from typing import Optional
 
 logger = logging.getLogger("kite_executor")
 
-# Phase configuration
+# ─────────────────────────────────────────────────────────────────────────────
+# PHASE CONFIGURATION
+# ─────────────────────────────────────────────────────────────────────────────
+
 PHASES = {
-    1: {"name": "Slippage Discovery", "lots": 1, "quantity": 65, "max_trades": 5, "description": "1 lot (65 qty) to measure real slippage"},
-    2: {"name": "Validation", "lots": 1, "quantity": 65, "max_trades": 10, "description": "1 lot, 10 trades to validate consistency"},
-    3: {"name": "Full Size", "lots": 2, "quantity": 130, "max_trades": None, "description": "2 lots (130 qty), ongoing trading"},
+    1: {"name": "Phase 1: Discovery", "lots": 1, "quantity": 65, "max_trades": 5},
+    2: {"name": "Phase 2: Validation", "lots": 1, "quantity": 65, "max_trades": 10},
+    3: {"name": "Phase 3: Full Size", "lots": 2, "quantity": 130, "max_trades": None},
 }
 
-# Current phase — stored in env var or defaults to 1
 CURRENT_PHASE = int(os.environ.get("TRADING_PHASE", "1"))
 
 
 def get_phase_config() -> dict:
     """Get current phase configuration."""
-    phase = PHASES.get(CURRENT_PHASE, PHASES[1])
+    phase = PHASES.get(CURRENT_PHASE, PHASES[1]).copy()
     phase["current_phase"] = CURRENT_PHASE
     return phase
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SYMBOL BUILDER
+# ─────────────────────────────────────────────────────────────────────────────
+
 def get_expiry_symbol_format(strike: int, option_type: str) -> str:
     """
-    Build Kite trading symbol for NIFTY options.
-    
-    Monthly format: NIFTY{YY}{MON}{Strike}{CE/PE}
-    Example: NIFTY26AUG24000CE
-    
-    Uses the EXPIRY month (next Tuesday), not today's month.
-    This is critical when today is end-of-month and expiry falls in next month.
+    Build Kite trading symbol for NIFTY weekly options.
+
+    Format: NIFTY{YY}{MON}{Strike}{CE/PE}
+    Example: NIFTY26AUG24850CE
+
+    Uses the EXPIRY date's month (next Tuesday), not today's month.
+    Critical for end-of-month trades where expiry falls in next month.
     """
-    from datetime import datetime, timezone, timedelta
-    
-    # Use IST
-    ist = timezone(timedelta(hours=5, minutes=30))
+    from datetime import datetime, timezone, timedelta as td
+
+    ist = timezone(td(hours=5, minutes=30))
     today = datetime.now(ist).date()
-    
-    # Find next Tuesday (NIFTY weekly expiry)
+
+    # Next Tuesday (NIFTY weekly expiry day)
     days_until_tuesday = (1 - today.weekday()) % 7
     if days_until_tuesday == 0:
         days_until_tuesday = 7
-    expiry_date = today + timedelta(days=days_until_tuesday)
-    
+    expiry_date = today + td(days=days_until_tuesday)
+
     yy = str(expiry_date.year)[2:]  # "26"
-    
-    # Use EXPIRY month (not today's month!)
     month_names = ["", "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
                    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
     mon = month_names[expiry_date.month]
-    
+
     return f"NIFTY{yy}{mon}{strike}{option_type}"
 
 
-def execute_iron_condor_basket(signal: dict) -> dict:
+# ─────────────────────────────────────────────────────────────────────────────
+# MAIN EXECUTION FUNCTION (single entry point — no duplicates)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def execute_iron_condor(signal: dict) -> dict:
     """
-    Execute a 4-leg Iron Condor via Kite API with risk-first ordering.
-    
-    Places BUY (protective wings) first, then SELL (short strikes).
-    If a BUY leg fails, SELL legs are skipped to prevent naked shorts.
-    
-    Uses NRML (positional) — holds to Tuesday expiry.
+    Execute a 4-leg NIFTY Iron Condor on Zerodha via Kite Connect API.
+
+    ORDER SEQUENCE (critical for margin):
+    1. BUY 24250 PE  (long put wing)
+    2. BUY 24950 CE  (long call wing)
+    3. SELL 24350 PE  (short put — hedge already exists → reduced margin)
+    4. SELL 24850 CE  (short call — hedge already exists → reduced margin)
+
+    If any BUY fails → all SELL legs are skipped (no naked shorts ever).
+
+    Args:
+        signal: Trade card dict from simple_ic_engine.generate_daily_signal()
+
+    Returns:
+        dict with success, order details, and execution summary
     """
     from engine.broker.kite_auth import is_authenticated, get_kite_client
-    
+
+    # ── Pre-flight checks ──
     if not is_authenticated():
         return {"success": False, "error": "Kite not authenticated. Login to Zerodha first."}
-    
+
     kite = get_kite_client()
     if not kite:
-        return {"success": False, "error": "Could not get Kite client."}
-    
+        return {"success": False, "error": "Could not get Kite client instance."}
+
     trade = signal.get("trade", {})
     legs = trade.get("legs", [])
     if len(legs) != 4:
-        return {"success": False, "error": f"Expected 4 legs, got {len(legs)}"}
-    
+        return {"success": False, "error": f"Expected 4 legs in signal, got {len(legs)}"}
+
     phase = get_phase_config()
     quantity = phase["quantity"]
-    product_type = os.environ.get("KITE_PRODUCT_TYPE", "NRML")
-    
-    # Build orders for each leg
-    all_orders = []
+    product = os.environ.get("KITE_PRODUCT_TYPE", "NRML")
+
+    # ── Build order list ──
+    orders = []
     for leg in legs:
-        strike = leg["strike"]
-        option_type = leg["option"]
-        action = leg["action"]
-        trading_symbol = get_expiry_symbol_format(strike, option_type)
-        transaction_type = "SELL" if action == "SELL" else "BUY"
-        
-        all_orders.append({
-            "trading_symbol": trading_symbol,
-            "transaction_type": transaction_type,
+        symbol = get_expiry_symbol_format(leg["strike"], leg["option"])
+        orders.append({
+            "tradingsymbol": symbol,
+            "transaction_type": leg["action"],  # "BUY" or "SELL"
             "quantity": quantity,
-            "product": product_type,
-            "strike": strike,
-            "option": option_type,
-            "action": action,
+            "product": product,
+            "strike": leg["strike"],
+            "option": leg["option"],
         })
-    
-    # RISK-FIRST: Place BUY legs (wings) before SELL legs (shorts)
-    buy_orders = [o for o in all_orders if o["transaction_type"] == "BUY"]
-    sell_orders = [o for o in all_orders if o["transaction_type"] == "SELL"]
-    ordered = buy_orders + sell_orders
-    
-    logger.info(f"Executing NIFTY IC: {len(buy_orders)} BUY first, then {len(sell_orders)} SELL | product={product_type} qty={quantity}")
-    
-    order_results = []
-    buy_phase_failed = False
-    
-    for order in ordered:
-        if buy_phase_failed and order["transaction_type"] == "SELL":
-            order_results.append({
-                "leg": f"{order['action']} {order['strike']} {order['option']}",
-                "trading_symbol": order["trading_symbol"],
+
+    # ── Sort: BUY first, SELL second (hedge margin benefit) ──
+    buy_legs = [o for o in orders if o["transaction_type"] == "BUY"]
+    sell_legs = [o for o in orders if o["transaction_type"] == "SELL"]
+    execution_order = buy_legs + sell_legs
+
+    logger.info(
+        f"NIFTY IC Execution | {quantity} qty | {product} | "
+        f"BUY×{len(buy_legs)} then SELL×{len(sell_legs)}"
+    )
+
+    # ── Execute legs sequentially ──
+    results = []
+    buy_failed = False
+
+    for order in execution_order:
+        # Safety: if a BUY (hedge) failed, never place naked SELL
+        if buy_failed and order["transaction_type"] == "SELL":
+            results.append({
+                "leg": f"{order['transaction_type']} {order['strike']} {order['option']}",
+                "symbol": order["tradingsymbol"],
                 "order_id": None,
                 "status": "skipped",
-                "error": "Aborted — protective wing failed, refusing naked short",
+                "error": "Aborted — hedge leg failed",
             })
-            logger.warning(f"SKIPPED {order['trading_symbol']} — wing leg failed")
+            logger.warning(f"SKIP {order['tradingsymbol']} — hedge failed, no naked short")
             continue
-        
+
         try:
             order_id = kite.place_order(
                 variety="regular",
                 exchange="NFO",
-                tradingsymbol=order["trading_symbol"],
+                tradingsymbol=order["tradingsymbol"],
                 transaction_type=order["transaction_type"],
                 quantity=order["quantity"],
                 order_type="MARKET",
                 product=order["product"],
             )
-            
-            order_results.append({
-                "leg": f"{order['action']} {order['strike']} {order['option']}",
-                "trading_symbol": order["trading_symbol"],
+            results.append({
+                "leg": f"{order['transaction_type']} {order['strike']} {order['option']}",
+                "symbol": order["tradingsymbol"],
                 "order_id": order_id,
                 "status": "placed",
                 "error": None,
             })
-            logger.info(f"✓ {order['trading_symbol']} {order['transaction_type']} qty={order['quantity']} → {order_id}")
-            
+            logger.info(f"✓ {order['tradingsymbol']} {order['transaction_type']} → {order_id}")
+
         except Exception as e:
             error_msg = str(e)[:300]
-            order_results.append({
-                "leg": f"{order['action']} {order['strike']} {order['option']}",
-                "trading_symbol": order["trading_symbol"],
+            results.append({
+                "leg": f"{order['transaction_type']} {order['strike']} {order['option']}",
+                "symbol": order["tradingsymbol"],
                 "order_id": None,
                 "status": "failed",
                 "error": error_msg,
             })
-            logger.error(f"✗ {order['trading_symbol']} FAILED — {error_msg}")
+            logger.error(f"✗ {order['tradingsymbol']} — {error_msg}")
             if order["transaction_type"] == "BUY":
-                buy_phase_failed = True
-    
-    placed = [o for o in order_results if o["status"] == "placed"]
-    failed = [o for o in order_results if o["status"] == "failed"]
-    
-    if failed:
-        logger.error(f"PARTIAL FILL: {len(placed)} placed, {len(failed)} failed. Check Kite app!")
-    
+                buy_failed = True
+
+    # ── Summary ──
+    placed = sum(1 for r in results if r["status"] == "placed")
+    failed = sum(1 for r in results if r["status"] == "failed")
+    skipped = sum(1 for r in results if r["status"] == "skipped")
+
+    success = failed == 0 and skipped == 0
+
+    if failed > 0:
+        logger.error(f"⚠️ PARTIAL FILL: {placed} placed, {failed} failed, {skipped} skipped")
+
     return {
-        "success": len(failed) == 0,
+        "success": success,
         "mode": "live",
-        "method": "individual_legs",
-        "product": product_type,
+        "product": product,
         "phase": phase["name"],
         "quantity": quantity,
-        "placed": len(placed),
-        "failed": len(failed),
-        "orders": order_results,
-        "message": f"{'All 4 legs placed' if not failed else f'PARTIAL: {len(placed)}/4 placed, {len(failed)} failed'}",
+        "placed": placed,
+        "failed": failed,
+        "skipped": skipped,
+        "orders": results,
+        "message": (
+            f"All 4 legs placed successfully" if success
+            else f"PARTIAL: {placed}/4 placed, {failed} failed, {skipped} skipped — check Kite app"
+        ),
     }
 
 
-def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
-    """
-    Execute a 4-leg Iron Condor on Zerodha via Kite API.
-    
-    Args:
-        signal: The trade card from simple_ic_engine (contains legs, strikes, etc.)
-        mode: "live" (real orders) or "paper" (log only, no real orders)
-    
-    Returns:
-        dict with order_ids, fill_prices, slippage info
-    """
-    from engine.broker.kite_auth import is_authenticated, get_kite_client
-    
-    if not is_authenticated():
-        return {"success": False, "error": "Kite not authenticated. Login to Zerodha first."}
-    
-    kite = get_kite_client()
-    if not kite:
-        return {"success": False, "error": "Could not get Kite client."}
-    
-    trade = signal.get("trade", {})
-    legs = trade.get("legs", [])
-    if len(legs) != 4:
-        return {"success": False, "error": f"Expected 4 legs, got {len(legs)}"}
-    
-    phase = get_phase_config()
-    quantity = phase["quantity"]
-    
-    # Build orders for each leg
-    orders = []
-    order_results = []
-    
-    for leg in legs:
-        strike = leg["strike"]
-        option_type = leg["option"]  # "CE" or "PE"
-        action = leg["action"]  # "SELL" or "BUY"
-        
-        trading_symbol = get_expiry_symbol_format(strike, option_type)
-        transaction_type = "SELL" if action == "SELL" else "BUY"
-        
-        orders.append({
-            "trading_symbol": trading_symbol,
-            "exchange": "NFO",
-            "transaction_type": transaction_type,
-            "quantity": quantity,
-            "order_type": "MARKET",
-            "product": "NRML",  # Positional — holding to weekly expiry
-            "strike": strike,
-            "option": option_type,
-            "action": action,
-        })
-    
-    if mode == "paper":
-        # Paper mode — just log, don't place real orders
-        return {
-            "success": True,
-            "mode": "paper",
-            "phase": phase["name"],
-            "quantity": quantity,
-            "orders_planned": orders,
-            "message": "Paper mode — orders not placed on Zerodha",
-        }
-    
-    # LIVE mode — place actual orders
-    # RISK-FIRST: Place BUY (protective wings) before SELL (naked shorts)
-    buy_orders = [o for o in orders if o["transaction_type"] == "BUY"]
-    sell_orders = [o for o in orders if o["transaction_type"] == "SELL"]
-    ordered = buy_orders + sell_orders
-    
-    logger.info(f"Executing NIFTY IC: {len(buy_orders)} BUY legs first (wings), then {len(sell_orders)} SELL legs")
-    
-    buy_phase_failed = False
-    for order in ordered:
-        # If a BUY (wing) failed, don't place SELL (naked short)
-        if buy_phase_failed and order["transaction_type"] == "SELL":
-            order_results.append({
-                "leg": f"{order['action']} {order['strike']} {order['option']}",
-                "trading_symbol": order["trading_symbol"],
-                "order_id": None,
-                "status": "skipped",
-                "error": "Aborted — protective wing failed, refusing naked short",
-            })
-            logger.warning(f"SKIPPED {order['trading_symbol']} — wing leg failed")
-            continue
-        
-        try:
-            order_id = kite.place_order(
-                variety="regular",
-                exchange=order["exchange"],
-                tradingsymbol=order["trading_symbol"],
-                transaction_type=order["transaction_type"],
-                quantity=order["quantity"],
-                order_type=order["order_type"],
-                product=order["product"],
-            )
-            
-            order_results.append({
-                "leg": f"{order['action']} {order['strike']} {order['option']}",
-                "trading_symbol": order["trading_symbol"],
-                "order_id": order_id,
-                "status": "placed",
-                "error": None,
-            })
-            logger.info(f"Order placed: {order['trading_symbol']} {order['transaction_type']} qty={order['quantity']} → order_id={order_id}")
-            
-        except Exception as e:
-            order_results.append({
-                "leg": f"{order['action']} {order['strike']} {order['option']}",
-                "trading_symbol": order["trading_symbol"],
-                "order_id": None,
-                "status": "failed",
-                "error": str(e)[:200],
-            })
-            logger.error(f"Order FAILED: {order['trading_symbol']} — {e}")
-            if order["transaction_type"] == "BUY":
-                buy_phase_failed = True
-    
-    # Check results
-    placed = [o for o in order_results if o["status"] == "placed"]
-    failed = [o for o in order_results if o["status"] == "failed"]
-    
-    if failed:
-        # If any leg failed, we have a partial fill — dangerous
-        # TODO: Cancel the successfully placed legs to avoid naked exposure
-        logger.error(f"PARTIAL FILL: {len(placed)} placed, {len(failed)} failed. Manual intervention needed!")
-    
-    return {
-        "success": len(failed) == 0,
-        "mode": "live",
-        "phase": phase["name"],
-        "phase_number": CURRENT_PHASE,
-        "quantity": quantity,
-        "orders": order_results,
-        "placed": len(placed),
-        "failed": len(failed),
-        "message": f"{'All 4 legs placed' if not failed else 'PARTIAL FILL — check Kite app!'}",
-    }
+# Keep old name as alias for backward compatibility with routes/live.py
+execute_iron_condor_basket = execute_iron_condor
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UTILITIES
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_order_fills(order_ids: list) -> dict:
-    """
-    Get actual fill prices for placed orders.
-    Used to measure real slippage vs modeled premium.
-    """
+    """Get actual fill prices for placed orders (for slippage measurement)."""
     from engine.broker.kite_auth import is_authenticated, get_kite_client
-    
+
     if not is_authenticated():
         return {"success": False, "error": "Not authenticated"}
-    
+
     kite = get_kite_client()
     if not kite:
         return {"success": False, "error": "No Kite client"}
-    
+
     try:
-        orders = kite.orders()
+        all_orders = kite.orders()
         fills = {}
         for oid in order_ids:
-            matching = [o for o in orders if str(o.get("order_id")) == str(oid)]
+            matching = [o for o in all_orders if str(o.get("order_id")) == str(oid)]
             if matching:
                 order = matching[0]
                 fills[oid] = {
@@ -364,36 +259,3 @@ def get_order_fills(order_ids: list) -> dict:
         return {"success": True, "fills": fills}
     except Exception as e:
         return {"success": False, "error": str(e)[:200]}
-
-
-def calculate_slippage(signal: dict, fill_prices: dict) -> dict:
-    """
-    Compare modeled premium (Black-Scholes) vs actual fill price.
-    This is THE metric that determines if the strategy works live.
-    """
-    trade = signal.get("trade", {})
-    legs = trade.get("legs", [])
-    
-    modeled_credit = 0
-    actual_credit = 0
-    
-    for leg in legs:
-        modeled_prem = leg.get("premium_est", 0)
-        # Find matching fill
-        # (In real usage, you'd match by strike/type)
-        if leg["action"] == "SELL":
-            modeled_credit += modeled_prem
-        else:
-            modeled_credit -= modeled_prem
-    
-    # actual_credit would come from fill_prices — implementation depends on order matching
-    
-    slippage = modeled_credit - actual_credit  # positive = lost money to slippage
-    
-    return {
-        "modeled_credit": modeled_credit,
-        "actual_credit": actual_credit,
-        "slippage_per_share": slippage,
-        "slippage_total": slippage * get_phase_config()["quantity"],
-        "acceptable": slippage < 150 / 65,  # Rs.150 total / lot_size
-    }

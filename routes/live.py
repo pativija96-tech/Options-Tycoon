@@ -914,8 +914,8 @@ async def live_execute(request: Request, mode: str = None):
         spot = signal.get("projected_open") or signal.get("conditions", {}).get("qqq_price")
         result = execute_qqq_sync(spot_price=spot)
     else:
-        from engine.broker.kite_executor import execute_iron_condor_basket
-        result = execute_iron_condor_basket(signal)
+        from engine.broker.kite_executor import execute_iron_condor
+        result = execute_iron_condor(signal)
     
     # Also log as a paper trade in DB for tracking
     if result.get("success"):
