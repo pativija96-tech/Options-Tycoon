@@ -323,12 +323,15 @@ window.executeTrade=function(){
     if(d.success){
       if(btn){btn.textContent='EXECUTED';btn.style.background='#065f46';}
       document.getElementById('content').insertAdjacentHTML('beforeend','<div style="margin-top:16px;padding:14px;background:rgba(16,185,129,0.1);border:1px solid var(--green);border-radius:8px;text-align:center;font-size:.85rem;color:var(--green)">LIVE TRADE PLACED on Zerodha! Check Kite Orders tab. Legs placed: '+(d.placed||4)+'</div>');
-      // Disable execute button to prevent double-click
-      var btn=document.querySelector('.btn-execute');
-      if(btn){btn.disabled=true;btn.textContent='EXECUTED';btn.style.opacity='0.4';}
+      var btn2=document.querySelector('.btn-execute');
+      if(btn2){btn2.disabled=true;btn2.textContent='EXECUTED';btn2.style.opacity='0.4';}
     } else {
-      alert(d.error||'Unknown error');
+      if(btn){btn.textContent='EXECUTE';btn.disabled=false;}
+      alert('EXECUTION FAILED:\n\n'+(d.error||d.detail||JSON.stringify(d)));
     }
+  }).catch(function(e){
+    if(btn){btn.textContent='EXECUTE';btn.disabled=false;}
+    alert('Network error — server may be restarting:\n\n'+e.message);
   });
 };
 

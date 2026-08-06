@@ -65,12 +65,12 @@ async def global_exception_handler(request: Request, exc: Exception):
         import traceback
         return JSONResponse(
             status_code=500,
-            content={"error": True, "detail": str(exc), "traceback": traceback.format_exc()},
+            content={"error": str(exc), "detail": str(exc), "traceback": traceback.format_exc()},
         )
-    # In production, generic message only
+    # In production, include error type but not stack trace
     return JSONResponse(
         status_code=500,
-        content={"error": True, "detail": "An internal error occurred. Please try again or contact support."},
+        content={"error": f"{type(exc).__name__}: {str(exc)[:200]}", "detail": "An internal error occurred."},
     )
 
 
