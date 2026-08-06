@@ -59,31 +59,30 @@ def _run_eod_job():
 
 def _run_auto_trade():
     """
-    Auto-generate signal + execute.
+    Auto-generate signal + send Telegram alert with strikes.
     
-    QQQ mode: Fully automated (IBKR OAuth doesn't need daily login)
-    NIFTY mode: Only executes if Kite is authenticated (user logged in today)
+    NO auto-execution — user places orders manually via Kite web basket order
+    (gets spread margin benefit that API individual legs don't get).
+    
+    Signal is generated and saved so the live-nifty page shows it.
+    Telegram alert sent with exact strikes to place.
     """
     import httpx
     import os
     port = os.environ.get("PORT", "8000")
 
     if _TRADING_MODE == "nifty":
-        logger.info("Auto-trade: checking Kite authentication before NIFTY execution...")
-        # Check if user has logged into Kite today
+        logger.info("Auto-trade: checking Kite authentication before NIFTY signal generation...")
         try:
             from engine.broker.kite_auth import is_authenticated
             if not is_authenticated():
-                logger.warning("NIFTY auto-trade SKIPPED — Kite not authenticated. Login required.")
-                _send_telegram_alert("⏭️ NIFTY trade skipped — Kite not authenticated. Login to Zerodha to enable auto-trade.")
-                return
+                logger.warning("NIFTY signal: Kite not authenticated — using yfinance for price data.")
         except Exception as e:
-            logger.error(f"Kite auth check failed: {e}")
-            return
+            logger.debug(f"Kite auth check: {e}")
     
-    logger.info(f"Auto-trade: generating {_TRADING_MODE.upper()} signal + executing...")
+    logger.info(f"Generating {_TRADING_MODE.upper()} signal (manual execution mode)...")
     try:
-        # Step 1: Generate signal
+        # Generate signal only — NO execution
         resp = httpx.post(
             f"http://localhost:{port}/api/live/generate-signal",
             headers={"X-User-Id": "1"},
@@ -97,27 +96,45 @@ def _run_auto_trade():
             _send_telegram_alert(f"⚠️ Signal generation failed: {gen_result.get('error', 'unknown')}")
             return
         
-        # Step 2: Execute live
-        resp2 = httpx.post(
-            f"http://localhost:{port}/api/live/live-execute",
-            headers={"X-User-Id": "1"},
-            timeout=60,
-        )
-        exec_result = resp2.json()
-        logger.info(f"Execution result: {exec_result}")
-        
-        # Notify on NIFTY execution result
-        if _TRADING_MODE == "nifty":
-            if exec_result.get("success"):
-                placed = exec_result.get("placed", 4)
-                _send_telegram_alert(f"✅ NIFTY IC placed — {placed} legs filled. Check Kite app for confirmation.")
-            else:
-                error = exec_result.get("error") or exec_result.get("message", "Unknown")
-                _send_telegram_alert(f"❌ NIFTY IC execution failed: {error}")
+        # Load the full signal to get strikes for Telegram
+        try:
+            import json
+            from pathlib import Path
+            signal_path = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "output" / f"today_signal_{_TRADING_MODE}.json"
+            if signal_path.exists():
+                with open(signal_path) as f:
+                    signal = json.load(f)
+                
+                if signal.get("action") == "trade":
+                    trade = signal.get("trade", {})
+                    legs = trade.get("legs", [])
+                    projected = signal.get("projected_open", 0)
+                    
+                    # Build Telegram message with exact strikes
+                    legs_text = ""
+                    for leg in legs:
+                        legs_text += f"\n  {leg['action']} NIFTY {leg['strike']} {leg['option']} @ ~Rs.{leg.get('premium_est', 0):.1f}"
+                    
+                    msg = (
+                        f"📊 NIFTY IC Signal Ready\n\n"
+                        f"NIFTY: {projected:.0f}\n"
+                        f"Expiry: {trade.get('expiry_date', 'Tue')}\n"
+                        f"\nLegs (place as BASKET on Kite web):{legs_text}\n"
+                        f"\nReward: Rs.{trade.get('net_max_profit', trade.get('max_profit', 0)):.0f}"
+                        f"\nRisk: Rs.{trade.get('net_max_loss', trade.get('max_loss', 0)):.0f}"
+                        f"\n\n⚠️ Place via Kite WEB basket order (not app) for spread margin."
+                        f"\nOrder: BUY wings first, then SELL shorts."
+                    )
+                    _send_telegram_alert(msg)
+                else:
+                    _send_telegram_alert(f"⏭️ No trade today: {signal.get('reason', 'skip')}")
+        except Exception as e:
+            logger.warning(f"Telegram signal alert failed: {e}")
+            _send_telegram_alert(f"📊 Signal generated — check live-nifty page. (Detail error: {str(e)[:50]})")
         
     except Exception as e:
-        logger.error(f"Auto-trade failed: {e}")
-        _send_telegram_alert(f"🚨 Auto-trade error: {str(e)[:100]}")
+        logger.error(f"Signal generation failed: {e}")
+        _send_telegram_alert(f"🚨 Signal generation error: {str(e)[:100]}")
 
 
 def _send_telegram_alert(message: str):
