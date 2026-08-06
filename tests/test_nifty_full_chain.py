@@ -179,15 +179,15 @@ print()
 # ─────────────────────────────────────────────────────────────────────
 # TEST 6: Kite executor uses correct quantity (25, not 32 or 65)
 # ─────────────────────────────────────────────────────────────────────
-print("TEST 6: Kite executor uses correct lot size (25)...")
+print("TEST 6: Kite executor uses correct lot size (65)...")
 
 from engine.broker.kite_executor import get_phase_config
 phase = get_phase_config()
 qty = phase["quantity"]
-if qty == 25:
-    print(f"  ✅ Quantity: {qty} (correct for Phase 1, NIFTY lot size)")
+if qty == 65:
+    print(f"  ✅ Quantity: {qty} (correct for Phase 1, 1 lot)")
 else:
-    errors.append(f"TEST 6 FAILED: Quantity is {qty}, expected 25")
+    errors.append(f"TEST 6 FAILED: Quantity is {qty}, expected 65")
 
 print()
 
@@ -295,7 +295,7 @@ else:
     print("  3. live-nifty.html → /live-execute?mode=nifty → reads NIFTY signal")
     print("  4. Safety check blocks cross-mode contamination")
     print("  5. Kite symbols use correct expiry month")
-    print("  6. Lot size = 25 (NIFTY Phase 1)")
+    print("  6. Lot size = 65 (NIFTY Phase 1, 1 lot)")
     print("  7. BUY orders placed before SELL (risk-first)")
     print("  8. HTML page wired to correct endpoints")
     print()

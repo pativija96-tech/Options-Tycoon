@@ -669,9 +669,9 @@ class TestLiveRoutes:
 
         assert resp.status_code == 200
         mock_exec.assert_called_once()
-        # Verify it was called with the nifty signal
+        # Verify it was called with the nifty signal (positional arg)
         call_args = mock_exec.call_args
-        assert call_args[1]["mode"] == "live"
+        assert call_args[0][0]["action"] == "trade"
 
     def test_live_execute_qqq_routes_to_ibkr(self):
         """POST /api/live/live-execute?mode=qqq routes to ibkr_executor."""
