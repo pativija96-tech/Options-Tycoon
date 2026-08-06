@@ -1,7 +1,7 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 6.1 | **Last Updated:** 2026-07-28
-> **Status:** Dual-Mode System (NIFTY + QQQ) — QQQ Module Complete & Deployed to Railway
+> **Version:** 7.0 | **Last Updated:** 2026-08-06
+> **Status:** NIFTY Live Trading (Kite connected, executing) | QQQ pending IBKR activation
 > **Disclaimer:** Personal trading tool. Not financial advice.
 
 ---
@@ -12,8 +12,8 @@ Options Tycoon operates in **two independent modes** on the same infrastructure:
 
 | Mode | Market | Broker | Underlying | Status |
 |------|--------|--------|-----------|--------|
-| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | ✅ Code complete, Kite connected (MEA520). NFO segment pending activation (48-72h). |
-| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF (Nasdaq 100) | ✅ Complete & deployed to Railway (commit `75734a3`) — IBKR account pending activation |
+| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | ✅ Live — Kite connected, executing trades (Aug 5: +₹3K manual) |
+| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF (Nasdaq 100) | ✅ Code complete — IBKR account pending activation |
 
 Both modes share: Railway hosting, PostgreSQL DB, signal history, UI, automated scheduler.
 Both modes are independent: different broker APIs, different strategies, different schedules.
@@ -100,7 +100,7 @@ You: Sleep through it. Check results in the morning.
 
 ---
 
-## 3. MODE B: NIFTY (India via Zerodha) — SECONDARY
+## 3. MODE B: NIFTY (India via Zerodha) — LIVE
 
 ### Strategy
 **NIFTY ±250pt Iron Condor, 100pt wings, hold to Tuesday weekly expiry**
@@ -111,35 +111,55 @@ You: Sleep through it. Check results in the morning.
 |--------|-------|
 | Win rate | 86.5% |
 | Realistic EV/trade | Rs.192 (before tax) |
-| Tax (NRI via DTAA refund) | 0% after refund (30% TDS upfront, reclaim annually) |
-| Slippage breakeven | Rs.191/trade |
-| Annual ROI | ~50% (after cash flow drag from TDS) |
+| Tax | 0% (wife's resident account — no TDS) |
+| Capital | ₹39,000 |
+| Risk per trade | ₹4,184 max loss (~10.7% of capital) |
+| Risk cap | 25% of capital = ₹9,750 |
 
-### Execution
+### Execution Pipeline (Single Path — No Fallbacks)
 
 ```
-9:15 AM IST (Indian market open):
-  → System connects to Kite
-  → Gets NIFTY opening price
-  → Places 4-leg IC via Kite API
-  → Trade holds to Tuesday expiry
+ENTRY (9:20 AM IST, automated via scheduler OR manual Execute button):
 
-3:35 PM IST (automated daily):
-  → EOD check: SL breach? → auto-exit
-  → Tuesday: auto-resolve at expiry
+  1. Signal engine generates IC parameters:
+     - Gets NIFTY price (Kite primary, yfinance fallback)
+     - Gets VIX (must be < 40)
+     - Sets strikes: ATM ±250pt (short), ±350pt (long/wings)
+     - Estimates premiums via Black-Scholes
+     - Risk cap check: max loss < 25% of ₹39K capital
 
-Wife's Zerodha account (resident, not NRI) → no 30% TDS issue.
+  2. Execution (execute_iron_condor):
+     - Validates Kite session (user logged in today)
+     - Builds 4 orders with correct Kite symbols (NIFTY26AUG24850CE format)
+     - Places BUY legs FIRST (wings/hedges):
+         ✓ BUY 24250 PE  → creates hedge position
+         ✓ BUY 24950 CE  → creates hedge position
+     - Places SELL legs SECOND (shorts get hedge margin benefit ~₹35K):
+         ✓ SELL 24350 PE  → margin reduced because 24250 PE hedge exists
+         ✓ SELL 24850 CE  → margin reduced because 24950 CE hedge exists
+     - If any BUY fails → all SELL legs SKIPPED (no naked shorts ever)
+
+  3. Result logged to DB + Telegram notification sent
+
+EXIT (automated, 3:35 PM IST daily EOD check):
+  - If NIFTY breached short strike → SL triggered, resolve as loss
+  - If Tuesday (expiry day) and in range → resolve as win (full premium)
+  - If not Tuesday and in range → hold (do nothing)
+
+MARGIN NOTE:
+  - Individual naked SELL requires ~₹1.6L margin
+  - With BUY-first ordering, hedge exists before SELL → margin ~₹35-40K
+  - ₹39K capital is sufficient because hedges are placed first
 ```
 
-### Status
-- Zerodha NFO activation: Processing (submitted July 30, expected by Aug 1-2)
-- Kite API: ✅ Connected (MEA520 — Badakala Raghu Raj)
-- Kite Connect subscription: ✅ Active (31 days)
-- Railway IP whitelisted: ✅
-- System code: ✅ Complete and tested (dry-run produces valid signals)
-- Signal engine: ✅ Generates 4-leg IC with ₹15K capital
-- All validation: Done (5 rounds passed)
-- Account funded: ✅ ₹15,000
+### Status (as of Aug 6, 2026)
+- Zerodha NFO: ✅ Activated
+- Kite API: ✅ Connected (Badakala Raghu Raj)
+- Kite Connect subscription: ✅ Active
+- Railway deployment: ✅ Auto-deploy from GitHub
+- First live trade: Aug 5, 2026 — +₹3K profit (placed manually due to execution bug)
+- Execution bug fix: Aug 6, 2026 — removed non-existent basket API call
+- Account funded: ₹39,000 (₹36K + ₹3K profit)
 
 ---
 
