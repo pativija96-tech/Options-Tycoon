@@ -76,12 +76,12 @@ def get_expiry_symbol_format(strike: int, option_type: str) -> str:
 
 def execute_iron_condor_basket(signal: dict) -> dict:
     """
-    Execute a 4-leg Iron Condor using Kite Basket Order.
+    Execute a 4-leg Iron Condor via Kite API with risk-first ordering.
     
-    Basket orders submit all legs simultaneously, giving spread margin
-    benefit (~₹30K instead of ₹1.6L for individual naked sell legs).
+    Places BUY (protective wings) first, then SELL (short strikes).
+    If a BUY leg fails, SELL legs are skipped to prevent naked shorts.
     
-    This is the preferred execution method for accounts with < ₹1.5L.
+    Uses NRML (positional) — holds to Tuesday expiry.
     """
     from engine.broker.kite_auth import is_authenticated, get_kite_client
     
@@ -99,9 +99,10 @@ def execute_iron_condor_basket(signal: dict) -> dict:
     
     phase = get_phase_config()
     quantity = phase["quantity"]
+    product_type = os.environ.get("KITE_PRODUCT_TYPE", "NRML")
     
-    # Build basket order (all 4 legs submitted together)
-    basket_orders = []
+    # Build orders for each leg
+    all_orders = []
     for leg in legs:
         strike = leg["strike"]
         option_type = leg["option"]
@@ -109,61 +110,89 @@ def execute_iron_condor_basket(signal: dict) -> dict:
         trading_symbol = get_expiry_symbol_format(strike, option_type)
         transaction_type = "SELL" if action == "SELL" else "BUY"
         
-        basket_orders.append({
-            "variety": "regular",
-            "exchange": "NFO",
-            "tradingsymbol": trading_symbol,
+        all_orders.append({
+            "trading_symbol": trading_symbol,
             "transaction_type": transaction_type,
             "quantity": quantity,
-            "order_type": "MARKET",
-            "product": "NRML",
+            "product": product_type,
+            "strike": strike,
+            "option": option_type,
+            "action": action,
         })
     
-    # Place basket order via Kite API
-    try:
-        # Kite's place_basket_order submits all legs atomically
-        # This gives spread margin benefit
-        order_results = []
-        order_ids = kite.place_basket_order(basket_orders)
-        
-        if order_ids:
-            for i, oid in enumerate(order_ids):
-                order_results.append({
-                    "leg": f"{legs[i]['action']} {legs[i]['strike']} {legs[i]['option']}",
-                    "trading_symbol": basket_orders[i]["tradingsymbol"],
-                    "order_id": oid,
-                    "status": "placed",
-                })
-            
-            return {
-                "success": True,
-                "mode": "live",
-                "method": "basket",
-                "phase": phase["name"],
-                "quantity": quantity,
-                "placed": len(order_ids),
-                "failed": 0,
-                "orders": order_results,
-                "message": f"All {len(order_ids)} legs placed via basket order (spread margin applied)",
-            }
-        else:
-            return {"success": False, "error": "Basket order returned no order IDs"}
+    # RISK-FIRST: Place BUY legs (wings) before SELL legs (shorts)
+    buy_orders = [o for o in all_orders if o["transaction_type"] == "BUY"]
+    sell_orders = [o for o in all_orders if o["transaction_type"] == "SELL"]
+    ordered = buy_orders + sell_orders
     
-    except AttributeError:
-        # kite.place_basket_order not available — fall back to individual legs
-        logger.warning("Basket order not available in kiteconnect version — falling back to individual legs")
-        return execute_iron_condor(signal, mode="live")
-    except Exception as e:
-        error_msg = str(e)[:300]
-        logger.error(f"Basket order failed: {error_msg}")
+    logger.info(f"Executing NIFTY IC: {len(buy_orders)} BUY first, then {len(sell_orders)} SELL | product={product_type} qty={quantity}")
+    
+    order_results = []
+    buy_phase_failed = False
+    
+    for order in ordered:
+        if buy_phase_failed and order["transaction_type"] == "SELL":
+            order_results.append({
+                "leg": f"{order['action']} {order['strike']} {order['option']}",
+                "trading_symbol": order["trading_symbol"],
+                "order_id": None,
+                "status": "skipped",
+                "error": "Aborted — protective wing failed, refusing naked short",
+            })
+            logger.warning(f"SKIPPED {order['trading_symbol']} — wing leg failed")
+            continue
         
-        # If basket fails due to margin, provide clear error
-        if "margin" in error_msg.lower() or "insufficient" in error_msg.lower():
-            return {
-                "success": False,
-                "error": f"Insufficient margin for basket order. Need ~₹30,000 for 1-lot IC spread. Error: {error_msg}",
-            }
-        return {"success": False, "error": error_msg}
+        try:
+            order_id = kite.place_order(
+                variety="regular",
+                exchange="NFO",
+                tradingsymbol=order["trading_symbol"],
+                transaction_type=order["transaction_type"],
+                quantity=order["quantity"],
+                order_type="MARKET",
+                product=order["product"],
+            )
+            
+            order_results.append({
+                "leg": f"{order['action']} {order['strike']} {order['option']}",
+                "trading_symbol": order["trading_symbol"],
+                "order_id": order_id,
+                "status": "placed",
+                "error": None,
+            })
+            logger.info(f"✓ {order['trading_symbol']} {order['transaction_type']} qty={order['quantity']} → {order_id}")
+            
+        except Exception as e:
+            error_msg = str(e)[:300]
+            order_results.append({
+                "leg": f"{order['action']} {order['strike']} {order['option']}",
+                "trading_symbol": order["trading_symbol"],
+                "order_id": None,
+                "status": "failed",
+                "error": error_msg,
+            })
+            logger.error(f"✗ {order['trading_symbol']} FAILED — {error_msg}")
+            if order["transaction_type"] == "BUY":
+                buy_phase_failed = True
+    
+    placed = [o for o in order_results if o["status"] == "placed"]
+    failed = [o for o in order_results if o["status"] == "failed"]
+    
+    if failed:
+        logger.error(f"PARTIAL FILL: {len(placed)} placed, {len(failed)} failed. Check Kite app!")
+    
+    return {
+        "success": len(failed) == 0,
+        "mode": "live",
+        "method": "individual_legs",
+        "product": product_type,
+        "phase": phase["name"],
+        "quantity": quantity,
+        "placed": len(placed),
+        "failed": len(failed),
+        "orders": order_results,
+        "message": f"{'All 4 legs placed' if not failed else f'PARTIAL: {len(placed)}/4 placed, {len(failed)} failed'}",
+    }
 
 
 def execute_iron_condor(signal: dict, mode: str = "live") -> dict:
