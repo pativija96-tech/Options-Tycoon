@@ -205,7 +205,7 @@ with patch("engine.broker.kite_auth.is_authenticated", return_value=True):
         mock_kite.place_order.return_value = "ORDER123"
         mock_client.return_value = mock_kite
         
-        result = execute_iron_condor(signal, mode="live")
+        result = execute_iron_condor(signal)
         
         if result.get("success"):
             # Check order of place_order calls

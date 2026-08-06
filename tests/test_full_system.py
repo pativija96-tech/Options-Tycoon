@@ -340,27 +340,11 @@ class TestKiteExecutor:
 
         from engine.broker.kite_executor import execute_iron_condor
         signal = self._make_nifty_signal()
-        result = execute_iron_condor(signal, mode="live")
+        result = execute_iron_condor(signal)
 
         assert mock_kite.place_order.called
         assert mock_kite.place_order.call_count == 4
         assert result["mode"] == "live"
-
-    @patch("engine.broker.kite_auth.get_kite_client")
-    @patch("engine.broker.kite_auth.is_authenticated")
-    def test_paper_mode_does_not_call_kite(self, mock_auth, mock_client):
-        """Paper mode must NOT call kite.place_order."""
-        mock_auth.return_value = True
-        mock_kite = MagicMock()
-        mock_client.return_value = mock_kite
-
-        from engine.broker.kite_executor import execute_iron_condor
-        signal = self._make_nifty_signal()
-        result = execute_iron_condor(signal, mode="paper")
-
-        mock_kite.place_order.assert_not_called()
-        assert result["mode"] == "paper"
-        assert result["success"] is True
 
     @patch("engine.broker.kite_auth.get_kite_client")
     @patch("engine.broker.kite_auth.is_authenticated")
@@ -377,7 +361,7 @@ class TestKiteExecutor:
 
         from engine.broker.kite_executor import execute_iron_condor
         signal = self._make_nifty_signal()
-        execute_iron_condor(signal, mode="live")
+        execute_iron_condor(signal)
 
         # First 2 calls should be BUY, last 2 should be SELL
         assert call_order[:2] == ["BUY", "BUY"], f"First orders should be BUY, got {call_order}"
@@ -394,7 +378,7 @@ class TestKiteExecutor:
 
         from engine.broker.kite_executor import execute_iron_condor
         signal = self._make_nifty_signal()
-        result = execute_iron_condor(signal, mode="live")
+        result = execute_iron_condor(signal)
 
         # Check qty in place_order calls
         for call in mock_kite.place_order.call_args_list:
@@ -408,7 +392,7 @@ class TestKiteExecutor:
 
         from engine.broker.kite_executor import execute_iron_condor
         signal = self._make_nifty_signal()
-        result = execute_iron_condor(signal, mode="live")
+        result = execute_iron_condor(signal)
 
         assert result["success"] is False
         assert "authenticated" in result["error"].lower() or "login" in result["error"].lower()
@@ -1179,7 +1163,7 @@ class TestEdgeCasesAndSafety:
                 ],
             },
         }
-        result = execute_iron_condor(signal, mode="live")
+        result = execute_iron_condor(signal)
 
         # SELL legs should be skipped (status: skipped)
         skipped = [o for o in result["orders"] if o["status"] == "skipped"]
@@ -1192,7 +1176,7 @@ class TestEdgeCasesAndSafety:
         with patch("engine.broker.kite_auth.is_authenticated", return_value=True):
             with patch("engine.broker.kite_auth.get_kite_client", return_value=MagicMock()):
                 signal = {"trade": {"legs": [{"action": "SELL", "option": "CE", "strike": 24750}]}}
-                result = execute_iron_condor(signal, mode="live")
+                result = execute_iron_condor(signal)
 
         assert result["success"] is False
         assert "4 legs" in result["error"] or "Expected 4" in result["error"]
