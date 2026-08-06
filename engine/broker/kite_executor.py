@@ -166,23 +166,50 @@ def execute_iron_condor(signal: dict) -> dict:
             continue
 
         try:
-            order_id = kite.place_order(
-                variety="regular",
-                exchange="NFO",
-                tradingsymbol=order["tradingsymbol"],
-                transaction_type=order["transaction_type"],
-                quantity=order["quantity"],
-                order_type="MARKET",
-                product=order["product"],
-            )
+            # Get LTP for limit price (Kite API doesn't allow naked market orders)
+            ltp = None
+            try:
+                ltp_data = kite.ltp([f"NFO:{order['tradingsymbol']}"])
+                if ltp_data:
+                    key = f"NFO:{order['tradingsymbol']}"
+                    ltp = ltp_data.get(key, {}).get("last_price")
+            except Exception as ltp_err:
+                logger.warning(f"LTP fetch failed for {order['tradingsymbol']}: {ltp_err}")
+
+            # Use LIMIT at LTP with 2% buffer for guaranteed fill
+            if ltp and ltp > 0:
+                if order["transaction_type"] == "BUY":
+                    limit_price = round(ltp * 1.02, 1)  # Pay up to 2% more
+                else:
+                    limit_price = round(ltp * 0.98, 1)  # Accept 2% less
+                order_type = "LIMIT"
+            else:
+                # Fallback: use MARKET with market protection
+                limit_price = 0
+                order_type = "MARKET"
+
+            order_params = {
+                "variety": "regular",
+                "exchange": "NFO",
+                "tradingsymbol": order["tradingsymbol"],
+                "transaction_type": order["transaction_type"],
+                "quantity": order["quantity"],
+                "order_type": order_type,
+                "product": order["product"],
+            }
+            if order_type == "LIMIT":
+                order_params["price"] = limit_price
+
+            order_id = kite.place_order(**order_params)
             results.append({
                 "leg": f"{order['transaction_type']} {order['strike']} {order['option']}",
                 "symbol": order["tradingsymbol"],
                 "order_id": order_id,
                 "status": "placed",
                 "error": None,
+                "price": limit_price if order_type == "LIMIT" else None,
             })
-            logger.info(f"✓ {order['tradingsymbol']} {order['transaction_type']} → {order_id}")
+            logger.info(f"✓ {order['tradingsymbol']} {order['transaction_type']} @ {limit_price if order_type == 'LIMIT' else 'MKT'} → {order_id}")
 
         except Exception as e:
             error_msg = str(e)[:300]
