@@ -150,11 +150,11 @@ def execute_iron_condor(signal: dict) -> dict:
 
     # ── Execute legs sequentially ──
     results = []
-    buy_failed = False
+    buy_phase_failed = False
 
     for order in execution_order:
         # Safety: if a BUY (hedge) failed, never place naked SELL
-        if buy_failed and order["transaction_type"] == "SELL":
+        if buy_phase_failed and order["transaction_type"] == "SELL":
             results.append({
                 "leg": f"{order['transaction_type']} {order['strike']} {order['option']}",
                 "symbol": order["tradingsymbol"],
@@ -195,7 +195,7 @@ def execute_iron_condor(signal: dict) -> dict:
             })
             logger.error(f"✗ {order['tradingsymbol']} — {error_msg}")
             if order["transaction_type"] == "BUY":
-                buy_failed = True
+                buy_phase_failed = True
 
     # ── Summary ──
     placed = sum(1 for r in results if r["status"] == "placed")
