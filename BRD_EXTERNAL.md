@@ -136,11 +136,17 @@ You: Sleep through it. Check results in the morning.
 
 | Option | Capital Needed | Monthly Return | Notes |
 |--------|---------------|----------------|-------|
-| **A: Fund ₹70K for NIFTY** | ₹70,000 | ~₹15-18K (21-25% monthly) | Manual basket order on Kite web. System generates signals + emails strikes. EOD auto-tracked. |
-| **B: Fund $1K for QQQ (IBKR)** | ~₹85,000 ($1,000) | ~$170/month (17% monthly) | Fully automated — no IP issues, no manual orders. IBKR REST API, OAuth, no daily login. 0% tax (PH resident). |
-| **C: Both** | ₹70K + $1K | ~₹15K + $170/month | Two independent income streams. NIFTY manual, QQQ automated. |
-| **D: Reduce NIFTY wings to 50pt** | ~₹40K (current funds) | ~₹1,000-1,200/month | Smaller reward, might fit current margin. Needs validation — may not be profitable after charges. |
-| **E: Park NIFTY, do QQQ only** | $1,000 | ~$170/month | Wait until NIFTY capital grows organically from QQQ profits. |
+| **A: Fund ₹70K for NIFTY (NRML)** | ₹70,000 | ~₹15-18K (21-25% monthly) | Manual basket order on Kite web. Hold to Tuesday expiry. System generates signals + emails strikes. EOD auto-tracked. |
+| **B: Use MIS (Intraday) with ₹38K** | ₹38,000 (current) | Needs validation | Intraday margin is lower (~₹20-25K for IC spread). Positions auto-close at 3:25 PM IST — cannot hold to expiry. Theta decay benefit reduced. |
+| **C: Reduce wings to 50pt** | ~₹35-40K (current) | ~₹800-1,200/month | Smaller max loss, lower margin. May not be profitable after ₹238 charges per trade. Needs backtesting. |
+| **D: Sell only one side (credit spread, not IC)** | ~₹35K | ~₹1,000-1,500/month | 2-leg trade instead of 4-leg. Lower margin. Higher directional risk. |
+
+### Questions for Reviewer
+
+1. Is MIS (intraday) viable for Iron Condor at ₹38K? What's the actual intraday margin for a 1-lot NIFTY IC spread?
+2. With 50pt wings instead of 100pt: does the reward-to-charges ratio still make sense (charges are ₹238 fixed)?
+3. Is a single credit spread (bull put or bear call, 2 legs) a better fit for ₹38K capital?
+4. Any broker alternatives to Zerodha that give better spread margin for API-based execution?
 
 ### Execution Model (Revised)
 
