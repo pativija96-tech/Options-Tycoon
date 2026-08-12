@@ -898,9 +898,12 @@ async def upload_tradebook(request: Request):
     """Parse uploaded Kite Tradebook CSV and import NIFTY F&O trades into live_trades.
     
     Kite Tradebook CSV columns:
-    trade_date, tradingsymbol, exchange, segment, trade_type, quantity, price, order_id, trade_id
+    symbol, isin, trade_date, exchange, segment, series, trade_type, auction, quantity, price, trade_id, order_id, order_execution_time, expiry_date
     
-    Groups orders by date into trades (Iron Condor = 4 legs on same day).
+    Handles:
+    - Round-trips (buy+sell same symbol same day = realized P&L)
+    - Open positions (net long/short at end of day)
+    - Groups by date for trade history
     """
     from db.database import get_connection
     import csv
@@ -926,31 +929,26 @@ async def upload_tradebook(request: Request):
         # Parse all rows, filter to NIFTY NFO
         all_orders = []
         for row in reader:
-            symbol = row.get("tradingsymbol", "") or row.get("symbol", "") or ""
-            segment = row.get("segment", "") or row.get("exchange", "") or ""
+            symbol = (row.get("symbol", "") or row.get("tradingsymbol", "") or "").strip()
+            segment = (row.get("segment", "") or "").strip()
             
-            # Only process NIFTY F&O trades
             if "NIFTY" not in symbol.upper():
                 continue
-            if "NFO" not in segment.upper() and "FO" not in segment.upper():
-                # Also accept if tradingsymbol contains NIFTY + CE/PE
-                if "CE" not in symbol.upper() and "PE" not in symbol.upper():
-                    continue
+            if "CE" not in symbol.upper() and "PE" not in symbol.upper():
+                continue
             
-            trade_date = row.get("trade_date", "") or row.get("order_execution_time", "") or ""
-            # Normalize date format (Kite uses DD-MM-YYYY or YYYY-MM-DD)
-            if trade_date and "-" in trade_date:
-                parts = trade_date.split(" ")[0].split("-")
-                if len(parts[0]) == 4:  # YYYY-MM-DD
-                    trade_date = parts[0] + "-" + parts[1] + "-" + parts[2]
-                elif len(parts[2]) == 4:  # DD-MM-YYYY
-                    trade_date = parts[2] + "-" + parts[1] + "-" + parts[0]
+            trade_date = (row.get("trade_date", "") or "").strip()
+            if not trade_date:
+                continue
+            # Handle YYYY-MM-DD format (already correct in this CSV)
+            trade_date = trade_date.split("T")[0]  # Strip time if present
             
-            trade_type = (row.get("trade_type", "") or row.get("type", "") or "").upper().strip()
+            trade_type = (row.get("trade_type", "") or "").upper().strip()
             quantity = abs(int(float(row.get("quantity", 0) or 0)))
-            price = float(row.get("price", 0) or row.get("avg._price", 0) or 0)
+            price = float(row.get("price", 0) or 0)
+            expiry = (row.get("expiry_date", "") or "").strip()
+            exec_time = (row.get("order_execution_time", "") or "").strip()
             
-            # Normalize BUY/SELL
             if trade_type in ("BUY", "B"):
                 action = "BUY"
             elif trade_type in ("SELL", "S"):
@@ -958,13 +956,13 @@ async def upload_tradebook(request: Request):
             else:
                 continue
             
-            # Extract strike and option type from symbol
+            # Extract strike and option type
             option_type = ""
             strike = ""
-            if "CE" in symbol.upper():
+            sym_upper = symbol.upper()
+            if "CE" in sym_upper:
                 option_type = "CE"
-                # Extract digits before CE
-                ce_idx = symbol.upper().index("CE")
+                ce_idx = sym_upper.rindex("CE")
                 digits = ""
                 for ch in reversed(symbol[:ce_idx]):
                     if ch.isdigit():
@@ -972,9 +970,9 @@ async def upload_tradebook(request: Request):
                     else:
                         break
                 strike = digits
-            elif "PE" in symbol.upper():
+            elif "PE" in sym_upper:
                 option_type = "PE"
-                pe_idx = symbol.upper().index("PE")
+                pe_idx = sym_upper.rindex("PE")
                 digits = ""
                 for ch in reversed(symbol[:pe_idx]):
                     if ch.isdigit():
@@ -991,6 +989,8 @@ async def upload_tradebook(request: Request):
                 "price": price,
                 "option_type": option_type,
                 "strike": strike,
+                "expiry": expiry,
+                "exec_time": exec_time,
             })
         
         if not all_orders:
@@ -999,13 +999,13 @@ async def upload_tradebook(request: Request):
                 "error": "No NIFTY F&O trades found in the CSV. Make sure you're uploading the Tradebook from Console → Reports → Tradebook."
             })
         
-        # Group by date → each date is one trade
+        # Group by date
         from collections import defaultdict
         trades_by_date = defaultdict(list)
         for order in all_orders:
             trades_by_date[order["date"]].append(order)
         
-        # Insert each date's orders as a single trade
+        # Process each date: match round-trips and compute P&L
         conn = get_connection()
         imported_trades = []
         try:
@@ -1016,71 +1016,103 @@ async def upload_tradebook(request: Request):
                     (int(user_id), trade_date)
                 ).fetchone()
                 if existing:
-                    continue  # Skip already imported dates
+                    continue
                 
-                # Build legs and compute credit
-                legs = []
-                total_credit = 0
-                total_debit = 0
+                # Match round-trips: same symbol buy+sell = closed trade
+                # Track by symbol
+                symbol_ledger = defaultdict(list)
                 for o in orders:
-                    legs.append({
-                        "action": o["action"],
-                        "strike": o["strike"],
-                        "option": o["option_type"],
-                        "premium": o["price"],
-                        "quantity": o["quantity"],
-                        "symbol": o["symbol"],
+                    symbol_ledger[o["symbol"]].append(o)
+                
+                total_realized_pnl = 0
+                legs_detail = []
+                has_open_positions = False
+                
+                for sym, sym_orders in symbol_ledger.items():
+                    buys = [o for o in sym_orders if o["action"] == "BUY"]
+                    sells = [o for o in sym_orders if o["action"] == "SELL"]
+                    
+                    buy_qty = sum(o["quantity"] for o in buys)
+                    sell_qty = sum(o["quantity"] for o in sells)
+                    buy_avg = sum(o["price"] * o["quantity"] for o in buys) / buy_qty if buy_qty > 0 else 0
+                    sell_avg = sum(o["price"] * o["quantity"] for o in sells) / sell_qty if sell_qty > 0 else 0
+                    
+                    matched_qty = min(buy_qty, sell_qty)
+                    
+                    if matched_qty > 0:
+                        # Realized P&L on matched quantity
+                        pnl = (sell_avg - buy_avg) * matched_qty
+                        total_realized_pnl += pnl
+                    
+                    if buy_qty != sell_qty:
+                        has_open_positions = True
+                    
+                    # Record leg detail
+                    net_action = "BUY" if buy_qty > sell_qty else "SELL" if sell_qty > buy_qty else "CLOSED"
+                    legs_detail.append({
+                        "symbol": sym,
+                        "action": net_action,
+                        "strike": sym_orders[0]["strike"],
+                        "option": sym_orders[0]["option_type"],
+                        "buy_qty": buy_qty,
+                        "sell_qty": sell_qty,
+                        "buy_avg": round(buy_avg, 2),
+                        "sell_avg": round(sell_avg, 2),
+                        "pnl": round((sell_avg - buy_avg) * matched_qty, 2) if matched_qty > 0 else 0,
                     })
-                    if o["action"] == "SELL":
-                        total_credit += o["price"] * o["quantity"]
-                    else:
-                        total_debit += o["price"] * o["quantity"]
                 
-                net_credit = round(total_credit - total_debit, 2)
+                total_realized_pnl = round(total_realized_pnl, 2)
                 
-                # Determine strategy
-                buy_count = len([l for l in legs if l["action"] == "BUY"])
-                sell_count = len([l for l in legs if l["action"] == "SELL"])
-                ce_count = len([l for l in legs if l["option"] == "CE"])
-                pe_count = len([l for l in legs if l["option"] == "PE"])
+                # Determine strategy and status
+                unique_strikes = set(l["strike"] for l in legs_detail)
+                unique_options = set(l["option"] for l in legs_detail)
+                num_symbols = len(legs_detail)
                 
                 strategy = "nifty_options"
-                if buy_count == 2 and sell_count == 2 and ce_count == 2 and pe_count == 2:
+                if num_symbols >= 4 and len(unique_options) == 2:
                     strategy = "iron_condor"
-                elif buy_count == 1 and sell_count == 1:
-                    if ce_count == 2:
-                        strategy = "call_spread"
-                    elif pe_count == 2:
-                        strategy = "put_spread"
+                elif num_symbols == 2 and len(unique_options) == 1:
+                    strategy = "call_spread" if "CE" in unique_options else "put_spread"
+                elif num_symbols <= 3:
+                    strategy = "scalp"
                 
-                # Max loss estimate (wing width * lot size - credit)
-                max_loss = max(0, (100 * 65) - net_credit)  # Default 100pt wings, 65 lot
+                # Status: if all positions closed (no open), mark as resolved
+                if not has_open_positions:
+                    status = "win" if total_realized_pnl > 0 else "loss"
+                    pnl_value = total_realized_pnl
+                else:
+                    status = "open"
+                    pnl_value = None
                 
                 conn.execute(
                     """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
-                       entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, mode, exit_reason)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'live', ?)""",
+                       entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, pnl, mode, exit_reason)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?)""",
                     (
                         int(user_id),
                         trade_date,
                         "neutral",
                         100,
                         strategy,
-                        json.dumps(legs),
-                        -net_credit,
-                        max_loss,
-                        net_credit,
-                        max_loss,
+                        json.dumps(legs_detail),
+                        0,
+                        0,
+                        abs(total_realized_pnl) if total_realized_pnl > 0 else 0,
+                        0,
                         0,
                         100,
-                        f"Imported from Kite Tradebook CSV ({len(legs)} legs)",
+                        status,
+                        pnl_value,
+                        f"Imported from Kite Tradebook ({len(orders)} fills, {num_symbols} symbols)",
                     )
                 )
                 imported_trades.append({
                     "date": trade_date,
                     "strategy": strategy,
-                    "net_credit": net_credit,
-                    "leg_count": len(legs),
+                    "net_credit": total_realized_pnl,
+                    "leg_count": num_symbols,
+                    "status": status,
+                    "pnl": total_realized_pnl,
                 })
             
             conn.commit()
@@ -1092,7 +1124,7 @@ async def upload_tradebook(request: Request):
         
         return {
             "success": True,
-            "message": f"Imported {len(imported_trades)} trade(s) from Kite Tradebook",
+            "message": f"Imported {len(imported_trades)} trading day(s) from Kite Tradebook",
             "trades": imported_trades,
             "total_orders_parsed": len(all_orders),
         }
