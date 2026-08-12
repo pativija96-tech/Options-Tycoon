@@ -619,9 +619,15 @@ async def get_settings():
         return {"capital": 1000, "risk_per_trade": 0.70, "risk_per_day": 0.70, "trading_mode": "qqq"}
     with open(settings_path) as f:
         settings = json.load(f)
+    trading_mode = settings.get("trading_mode", os.environ.get("TRADING_MODE", "qqq"))
+    # Return mode-specific capital
+    if trading_mode == "nifty":
+        capital = settings.get("nifty", {}).get("capital", settings.get("capital", 75000))
+    else:
+        capital = settings.get("qqq", {}).get("capital", settings.get("capital", 1000))
     return {
-        "trading_mode": settings.get("trading_mode", os.environ.get("TRADING_MODE", "qqq")),
-        "capital": settings.get("capital"),
+        "trading_mode": trading_mode,
+        "capital": capital,
         "risk_per_trade": settings.get("risk_per_trade"),
         "risk_per_day": settings.get("risk_per_day"),
     }
@@ -816,6 +822,324 @@ async def trail_sl(request: Request):
         return {"success": True, "trade_id": trade_id, "new_sl": new_sl}
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)[:100]})
+    finally:
+        conn.close()
+
+
+# --- Fetch Trades from Kite API ---
+
+@router.get("/fetch-kite-orders")
+async def fetch_kite_orders(request: Request):
+    """Fetch today's executed orders from Kite and return them for review before logging.
+    Returns NIFTY F&O orders only, grouped by trade date.
+    """
+    from engine.broker.kite_auth import is_authenticated, get_kite_client
+    
+    if not is_authenticated():
+        return JSONResponse(status_code=401, content={
+            "success": False, 
+            "error": "Not connected to Zerodha. Click 'Login to Zerodha' first."
+        })
+    
+    kite = get_kite_client()
+    if not kite:
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "error": "Could not create Kite client. Try re-login."
+        })
+    
+    try:
+        # Fetch today's orders
+        orders = kite.orders()
+        
+        # Filter: only COMPLETE orders, only NFO segment (options), only NIFTY
+        nifty_orders = []
+        for o in orders:
+            if (o.get("status") == "COMPLETE" and 
+                o.get("exchange") == "NFO" and
+                "NIFTY" in (o.get("tradingsymbol") or "")):
+                nifty_orders.append({
+                    "order_id": o.get("order_id"),
+                    "tradingsymbol": o.get("tradingsymbol"),
+                    "transaction_type": o.get("transaction_type"),  # BUY or SELL
+                    "quantity": o.get("quantity"),
+                    "average_price": o.get("average_price"),
+                    "product": o.get("product"),  # NRML or MIS
+                    "order_timestamp": str(o.get("order_timestamp", "")),
+                    "instrument_token": o.get("instrument_token"),
+                    "exchange": o.get("exchange"),
+                })
+        
+        if not nifty_orders:
+            return {"success": True, "orders": [], "message": "No NIFTY F&O orders found today."}
+        
+        # Group into legs and compute trade summary
+        total_credit = 0
+        total_debit = 0
+        legs = []
+        for o in nifty_orders:
+            symbol = o["tradingsymbol"]
+            # Parse strike and option type from tradingsymbol like "NIFTY2481424500CE"
+            strike = ""
+            option_type = ""
+            if "CE" in symbol:
+                option_type = "CE"
+                parts = symbol.split("CE")[0]
+                # Extract last digits as strike
+                strike = ''.join(filter(str.isdigit, parts[-5:]))
+            elif "PE" in symbol:
+                option_type = "PE"
+                parts = symbol.split("PE")[0]
+                strike = ''.join(filter(str.isdigit, parts[-5:]))
+            
+            premium_total = (o["average_price"] or 0) * (o["quantity"] or 0)
+            if o["transaction_type"] == "SELL":
+                total_credit += premium_total
+            else:
+                total_debit += premium_total
+            
+            legs.append({
+                "action": o["transaction_type"],
+                "strike": strike,
+                "option": option_type,
+                "premium": round(o["average_price"] or 0, 2),
+                "quantity": o["quantity"],
+                "symbol": symbol,
+                "order_id": o["order_id"],
+            })
+        
+        net_credit = round(total_credit - total_debit, 2)
+        
+        # Determine strategy type from legs
+        strategy = "unknown"
+        buy_count = len([l for l in legs if l["action"] == "BUY"])
+        sell_count = len([l for l in legs if l["action"] == "SELL"])
+        ce_count = len([l for l in legs if l["option"] == "CE"])
+        pe_count = len([l for l in legs if l["option"] == "PE"])
+        
+        if buy_count == 2 and sell_count == 2 and ce_count == 2 and pe_count == 2:
+            strategy = "iron_condor"
+        elif buy_count == 1 and sell_count == 1 and ce_count == 2:
+            strategy = "bull_call_spread" if legs[0]["action"] == "BUY" else "bear_call_spread"
+        elif buy_count == 1 and sell_count == 1 and pe_count == 2:
+            strategy = "bear_put_spread" if legs[0]["action"] == "BUY" else "bull_put_spread"
+        elif len(legs) == 2 and buy_count == 2:
+            strategy = "straddle" if ce_count == 1 and pe_count == 1 else "unknown"
+        
+        # Get current NIFTY price for reference
+        nifty_price = None
+        try:
+            ltp = kite.ltp(["NSE:NIFTY 50"])
+            if "NSE:NIFTY 50" in ltp:
+                nifty_price = ltp["NSE:NIFTY 50"]["last_price"]
+        except:
+            pass
+        
+        from datetime import date as dt_date
+        return {
+            "success": True,
+            "orders": nifty_orders,
+            "summary": {
+                "date": dt_date.today().strftime("%Y-%m-%d"),
+                "strategy": strategy,
+                "legs": legs,
+                "total_legs": len(legs),
+                "net_credit": net_credit,
+                "total_credit": round(total_credit, 2),
+                "total_debit": round(total_debit, 2),
+                "nifty_price": nifty_price,
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Kite orders fetch failed: {e}")
+        return JSONResponse(status_code=500, content={
+            "success": False,
+            "error": f"Failed to fetch orders: {str(e)[:200]}"
+        })
+
+
+@router.post("/import-kite-orders")
+async def import_kite_orders(request: Request):
+    """Import fetched Kite orders into the trade log.
+    Called after user reviews the fetch-kite-orders result and confirms.
+    """
+    from db.database import get_connection
+    body = await request.json()
+    
+    user_id = request.headers.get("X-User-Id") or body.get("user_id") or "1"
+    summary = body.get("summary", {})
+    
+    date = summary.get("date", "")
+    strategy = summary.get("strategy", "iron_condor")
+    legs = summary.get("legs", [])
+    net_credit = summary.get("net_credit", 0)
+    nifty_price = summary.get("nifty_price", 0)
+    
+    if not date:
+        from datetime import date as dt_date
+        date = dt_date.today().strftime("%Y-%m-%d")
+    
+    # For IC: max_loss = (wing_width * lot_size) - net_credit
+    # Default: wing_width=100pts, lot_size=65
+    lot_size = 65
+    wing_width = 100
+    max_loss = (wing_width * lot_size) - net_credit
+    
+    conn = get_connection()
+    try:
+        # Check if already imported today
+        existing = conn.execute(
+            "SELECT id FROM live_trades WHERE user_id = ? AND date = ? AND mode = 'live'",
+            (int(user_id), date)
+        ).fetchone()
+        
+        if existing:
+            return JSONResponse(status_code=409, content={
+                "success": False,
+                "error": f"Trade already logged for {date} (ID: {existing['id']}). Use Resolve to update it."
+            })
+        
+        conn.execute(
+            """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
+               entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, mode, exit_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'live', ?)""",
+            (
+                int(user_id),
+                date,
+                "neutral",  # IC is neutral
+                100,
+                strategy,
+                json.dumps(legs),
+                -net_credit,  # credit received = negative entry cost
+                max_loss,
+                net_credit,
+                max_loss,
+                nifty_price or 0,
+                wing_width,
+                f"Imported from Kite ({len(legs)} legs)",
+            )
+        )
+        conn.commit()
+        logger.info(f"Kite orders imported for user {user_id}: {strategy} on {date}, credit: {net_credit}")
+        return {"success": True, "message": f"Trade imported: {strategy} on {date}, net credit ₹{net_credit}"}
+    except Exception as e:
+        logger.error(f"Kite import failed: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
+    finally:
+        conn.close()
+
+
+# --- Manual Trade Logging (for trades executed manually on Kite) ---
+
+@router.post("/log-manual-trade")
+async def log_manual_trade(request: Request):
+    """Log a trade that was executed manually on Kite (not via API).
+    
+    Body JSON:
+      - date: trade date (YYYY-MM-DD)
+      - strategy: e.g. "iron_condor", "bull_call_spread", "bear_put_spread"
+      - direction: "bullish", "bearish", or "neutral"
+      - legs: array of leg objects [{action, strike, option, premium}]
+      - entry_cost: total premium paid/received (negative = credit received)
+      - max_profit: maximum possible profit
+      - max_loss: maximum possible loss
+      - pnl: realized P&L (optional, fill in later when resolved)
+      - status: "open" or "win" or "loss" (default "open")
+      - notes: free-text notes about the trade
+    """
+    from db.database import get_connection
+    body = await request.json()
+    
+    user_id = request.headers.get("X-User-Id") or body.get("user_id") or "1"
+    date = body.get("date", "")
+    strategy = body.get("strategy", "iron_condor")
+    direction = body.get("direction", "neutral")
+    legs = body.get("legs", [])
+    entry_cost = body.get("entry_cost", 0)
+    max_profit = body.get("max_profit", 0)
+    max_loss = body.get("max_loss", 0)
+    pnl = body.get("pnl")
+    status = body.get("status", "open")
+    notes = body.get("notes", "")
+    nifty_at_entry = body.get("nifty_at_entry", 0)
+    
+    if not date:
+        from datetime import date as dt_date
+        date = dt_date.today().strftime("%Y-%m-%d")
+    
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
+               entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, pnl, mode, exit_reason)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?)""",
+            (
+                int(user_id),
+                date,
+                direction,
+                100,  # confidence = 100 for manual trades (you decided to take it)
+                strategy,
+                json.dumps(legs),
+                entry_cost,
+                max_loss,
+                max_profit,
+                max_loss,  # SL = max loss for IC
+                nifty_at_entry,
+                100,  # width placeholder
+                status,
+                pnl,
+                notes,
+            )
+        )
+        conn.commit()
+        logger.info(f"Manual trade logged for user {user_id}: {strategy} on {date}, P&L: {pnl}")
+        return {"success": True, "message": f"Trade logged: {strategy} on {date}"}
+    except Exception as e:
+        logger.error(f"Manual trade log failed: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
+    finally:
+        conn.close()
+
+
+@router.put("/update-trade/{trade_id}")
+async def update_trade(trade_id: int, request: Request):
+    """Update an existing trade's P&L and status (for resolving manual trades)."""
+    from db.database import get_connection
+    body = await request.json()
+    
+    pnl = body.get("pnl")
+    status = body.get("status")  # "win" or "loss"
+    nifty_close = body.get("nifty_close")
+    exit_reason = body.get("exit_reason", "")
+    
+    conn = get_connection()
+    try:
+        updates = []
+        params = []
+        if pnl is not None:
+            updates.append("pnl = ?")
+            params.append(pnl)
+        if status:
+            updates.append("status = ?")
+            params.append(status)
+        if nifty_close is not None:
+            updates.append("nifty_close = ?")
+            params.append(nifty_close)
+        if exit_reason:
+            updates.append("exit_reason = ?")
+            params.append(exit_reason)
+        updates.append("resolved_at = datetime('now')")
+        
+        if not updates:
+            return JSONResponse(status_code=400, content={"error": "Nothing to update"})
+        
+        params.append(trade_id)
+        conn.execute(f"UPDATE live_trades SET {', '.join(updates)} WHERE id = ?", params)
+        conn.commit()
+        return {"success": True, "message": f"Trade #{trade_id} updated"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
     finally:
         conn.close()
 

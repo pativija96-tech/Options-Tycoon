@@ -1,5 +1,5 @@
 {
-  "trading_mode": "qqq",
+  "trading_mode": "nifty",
   "capital": 1000,
   "risk_per_trade": 0.70,
   "risk_per_day": 0.70,

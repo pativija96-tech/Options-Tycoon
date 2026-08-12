@@ -93,18 +93,110 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <div class="stat">Today's Risk Used: <span class="val" id="trDailyRisk">--</span></div>
   </div>
   <div class="track-record" style="margin-top:8px">
-    <div class="stat">Trades: <span class="val" id="trTotal">0</span>/30</div>
+    <div class="stat">Trades: <span class="val" id="trTotal">0</span></div>
     <div class="stat">Win Rate: <span class="val" id="trWinRate">--</span></div>
-    <div class="stat">P&L: <span class="val" id="trPnl">--</span></div>
-    <div class="stat">To Go Live: <span class="val" id="trRemaining">30 more</span></div>
-  </div>
-  <div class="track-record" style="margin-top:8px">
-    <div class="stat">Gates Passed: <span class="val" id="trGates">0/7</span></div>
-    <div class="stat">Status: <span class="val" id="trLockStatus" style="color:var(--red)">LOCKED</span></div>
+    <div class="stat">Total P&L: <span class="val" id="trPnl">--</span></div>
     <div class="stat">Streak: <span class="val" id="trStreak">--</span></div>
-    <div class="stat">Drawdown: <span class="val" id="trDrawdown">--</span></div>
   </div>
-  <div id="gateDetails" style="margin-top:12px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:.72rem"></div>
+
+  <!-- Manual Trade Log Button -->
+  <div style="margin-top:16px;text-align:center">
+    <button onclick="fetchFromKite()" style="background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:var(--green);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer">⚡ Fetch from Kite</button>
+    <button onclick="showLogForm()" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">+ Manual Entry</button>
+    <button onclick="showResolveForm()" style="background:rgba(234,179,8,.15);border:1px solid rgba(234,179,8,.4);color:var(--yellow);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">✓ Resolve</button>
+  </div>
+
+  <!-- Kite Fetch Result Panel (hidden by default) -->
+  <div id="kiteFetchPanel" style="display:none;margin-top:16px;padding:20px;background:var(--card);border:1px solid var(--green);border-radius:10px">
+    <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--green);margin-bottom:12px">📥 ORDERS FROM KITE</div>
+    <div id="kiteFetchContent"></div>
+  </div>
+
+  <!-- Manual Trade Form (hidden by default) -->
+  <div id="logFormPanel" style="display:none;margin-top:16px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+    <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px">LOG MANUAL TRADE</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.8rem">
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Date</label>
+        <input type="date" id="mtDate" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Strategy</label>
+        <select id="mtStrategy" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <option value="iron_condor">Iron Condor</option>
+          <option value="bull_call_spread">Bull Call Spread</option>
+          <option value="bear_put_spread">Bear Put Spread</option>
+          <option value="straddle">Straddle</option>
+          <option value="strangle">Strangle</option>
+        </select>
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">NIFTY at Entry</label>
+        <input type="number" id="mtNifty" placeholder="e.g. 24350" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Direction</label>
+        <select id="mtDirection" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <option value="neutral">Neutral (IC)</option>
+          <option value="bullish">Bullish</option>
+          <option value="bearish">Bearish</option>
+        </select>
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Net Credit Received (₹)</label>
+        <input type="number" id="mtCredit" placeholder="e.g. 2500" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Max Loss (₹)</label>
+        <input type="number" id="mtMaxLoss" placeholder="e.g. 3980" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+      <div style="grid-column:span 2">
+        <label style="color:var(--muted);font-size:.7rem">Legs (e.g. "24000PE S, 23900PE B, 24500CE S, 24600CE B")</label>
+        <input type="text" id="mtLegs" placeholder="24000PE SELL, 23900PE BUY, 24500CE SELL, 24600CE BUY" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono);font-size:.75rem">
+      </div>
+      <div style="grid-column:span 2">
+        <label style="color:var(--muted);font-size:.7rem">Notes</label>
+        <input type="text" id="mtNotes" placeholder="e.g. Placed via basket order, all legs filled" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button onclick="submitManualTrade()" style="background:var(--green);color:#000;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Save Trade</button>
+      <button onclick="document.getElementById('logFormPanel').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:6px;cursor:pointer;font-size:.85rem">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Resolve Trade Form (hidden by default) -->
+  <div id="resolveFormPanel" style="display:none;margin-top:16px;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:10px">
+    <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px">RESOLVE OPEN TRADE</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.8rem">
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Trade ID</label>
+        <input type="number" id="rtTradeId" placeholder="Trade #" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Result</label>
+        <select id="rtStatus" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text)">
+          <option value="win">WIN ✅</option>
+          <option value="loss">LOSS ❌</option>
+        </select>
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">Realized P&L (₹)</label>
+        <input type="number" id="rtPnl" placeholder="e.g. 2500 or -3980" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+      <div>
+        <label style="color:var(--muted);font-size:.7rem">NIFTY Close</label>
+        <input type="number" id="rtNiftyClose" placeholder="e.g. 24280" style="width:100%;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button onclick="submitResolve()" style="background:var(--yellow);color:#000;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Resolve Trade</button>
+      <button onclick="document.getElementById('resolveFormPanel').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:6px;cursor:pointer;font-size:.85rem">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Trade History Table -->
+  <div id="tradeHistory" style="margin-top:16px"></div>
 </div>
 <script>
 (function(){
@@ -150,7 +242,6 @@ function render(card){
   var data=(card.pattern_result||{}).conditions||c;
   var regime=getRegime(card._global_data||{data:c});
 
-  // Regime bar
   var us=c.us_change_pct||0;
   var vix=c.vix_change_pct||0;
   var dxy=c.dxy_change_pct||0;
@@ -165,13 +256,11 @@ function render(card){
   html+='<span class="regime-data">US '+us.toFixed(1)+'% | VIX '+vix.toFixed(1)+'% | DXY '+dxy.toFixed(1)+'%</span>';
   html+='</div>';
 
-  // Main card
   html+='<div class="main-card">';
   html+='<div class="play-label">TODAY\'S PLAY</div>';
   html+='<div class="play-regime">'+esc(card.direction||'').toUpperCase()+' — '+(card.direction==='bullish'?'Bounce expected':card.direction==='bearish'?'Downside expected':'Range-bound expected')+'</div>';
   html+='<div class="play-strategy">'+(t.type||'').replace(/_/g,' ').toUpperCase()+'</div>';
 
-  // Conviction bar
   var conf=card.confidence||0;
   var confCls=conf>=70?'high':conf>=55?'moderate':'low';
   var filtersP=qf.passed||0;
@@ -180,7 +269,6 @@ function render(card){
   html+='<div class="conviction-label '+confCls+'">'+conf+'% ('+filtersP+'/7)</div>';
   html+='</div>';
 
-  // Filter dots + details
   var filters=qf.filters||{};
   html+='<div style="margin:12px 0;padding:12px;background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px">';
   html+='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">7 QUALITY FILTERS</div>';
@@ -194,12 +282,10 @@ function render(card){
   }
   html+='</div>';
 
-  // Position size badge
   var sizeLabel=ps.label||'';
   var sizeCls=ps.size==='full'?'full':ps.size==='reduced'?'reduced':'minimum';
   if(sizeLabel) html+='<div class="size-badge '+sizeCls+'">'+esc(sizeLabel)+'</div>';
 
-  // Legs
   var legs=t.legs||[];
   if(legs.length>0){
     var expiryDate=t.expiry_date||'';
@@ -219,21 +305,17 @@ function render(card){
     html+='</div>';
   }
 
-  // Metrics
   html+='<div class="metrics">';
   html+='<div class="metric"><div class="label">Risk (incl charges)</div><div class="value red">Rs.'+(t.net_max_loss||t.max_loss||0)+'</div></div>';
   html+='<div class="metric"><div class="label">Reward (net)</div><div class="value green">Rs.'+(t.net_max_profit||t.max_profit||0)+'</div></div>';
   html+='<div class="metric"><div class="label">R:R</div><div class="value">'+(t.risk_reward||0)+':1</div></div>';
   html+='</div>';
-  // Charges line
   var charges=t.charges||{};
   if(charges.total) html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: Rs.'+charges.total+' (Brokerage Rs.'+charges.brokerage+' + GST + STT + Exchange)</div>';
   html+='<div style="font-size:.65rem;color:var(--yellow);text-align:center;margin-top:6px;opacity:.7">Premiums are Black-Scholes estimates. Actual prices will differ. Connect Zerodha for live prices.</div>';
 
-  // Why
   html+='<div class="why">'+esc(card.reasoning||'')+'</div>';
 
-  // Actions
   html+='<div class="actions" style="grid-template-columns:1fr 2fr 1fr">';
   html+='<button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem">ZERODHA</button>';
   html+='<button class="btn btn-execute" onclick="executeTrade()">EXECUTE</button>';
@@ -242,7 +324,6 @@ function render(card){
   html+='<div style="text-align:center;margin-top:10px"><button onclick="generateSignal()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Regenerate Signal</button> | <button onclick="runEOD()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Run EOD Report</button></div>';
   html+='</div>';
 
-  // Stock signals
   var stocks=card.stock_signals||[];
   if(stocks.length>0){
     html+='<div style="margin-top:12px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
@@ -259,6 +340,247 @@ function render(card){
   }
 
   document.getElementById('content').innerHTML=html;
+}
+
+// --- Manual Trade Functions ---
+window.showLogForm=function(){
+  var panel=document.getElementById('logFormPanel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  document.getElementById('resolveFormPanel').style.display='none';
+  // Set today's date as default
+  var today=new Date().toISOString().split('T')[0];
+  document.getElementById('mtDate').value=today;
+};
+
+window.showResolveForm=function(){
+  var panel=document.getElementById('resolveFormPanel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+  document.getElementById('logFormPanel').style.display='none';
+  document.getElementById('kiteFetchPanel').style.display='none';
+};
+
+window.fetchFromKite=function(){
+  document.getElementById('kiteFetchPanel').style.display='block';
+  document.getElementById('logFormPanel').style.display='none';
+  document.getElementById('resolveFormPanel').style.display='none';
+  document.getElementById('kiteFetchContent').innerHTML='<p style="color:var(--muted);font-size:.8rem">Fetching orders from Zerodha...</p>';
+  
+  fetch('/api/live/fetch-kite-orders',{headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+    if(!d.success){
+      document.getElementById('kiteFetchContent').innerHTML='<p style="color:var(--red)">'+esc(d.error)+'</p>';
+      return;
+    }
+    if(!d.orders||d.orders.length===0){
+      document.getElementById('kiteFetchContent').innerHTML='<p style="color:var(--muted)">No NIFTY F&O orders found today. Make sure you have executed orders on Kite.</p>';
+      return;
+    }
+    
+    var s=d.summary;
+    var html='';
+    html+='<div style="margin-bottom:12px;padding:10px;background:rgba(255,255,255,.02);border-radius:6px">';
+    html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>Strategy:</strong> '+esc(s.strategy).replace(/_/g,' ').toUpperCase()+'</div>';
+    html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>Date:</strong> '+esc(s.date)+'</div>';
+    html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>NIFTY:</strong> '+(s.nifty_price||'--')+'</div>';
+    html+='<div style="font-size:.8rem;font-weight:700;color:var(--green)">Net Credit: ₹'+s.net_credit.toLocaleString()+'</div>';
+    html+='</div>';
+    
+    // Legs table
+    html+='<div style="margin-bottom:12px">';
+    for(var i=0;i<s.legs.length;i++){
+      var leg=s.legs[i];
+      var aCls=leg.action==='BUY'?'color:var(--green)':'color:var(--red)';
+      html+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-family:var(--mono);font-size:.8rem;border-bottom:1px solid var(--border)">';
+      html+='<span style="'+aCls+';font-weight:700;width:40px">'+leg.action+'</span>';
+      html+='<span>'+esc(leg.symbol)+'</span>';
+      html+='<span>₹'+leg.premium+' × '+leg.quantity+'</span>';
+      html+='</div>';
+    }
+    html+='</div>';
+    
+    html+='<div style="display:flex;gap:8px">';
+    html+='<button onclick="importKiteOrders()" style="background:var(--green);color:#000;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">✅ Import This Trade</button>';
+    html+='<button onclick="document.getElementById(\'kiteFetchPanel\').style.display=\'none\'" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:6px;cursor:pointer;font-size:.85rem">Cancel</button>';
+    html+='</div>';
+    
+    document.getElementById('kiteFetchContent').innerHTML=html;
+    // Store summary for import
+    window._kiteSummary=s;
+  }).catch(function(e){
+    document.getElementById('kiteFetchContent').innerHTML='<p style="color:var(--red)">Network error: '+e+'</p>';
+  });
+};
+
+window.importKiteOrders=function(){
+  if(!window._kiteSummary){alert('No data to import');return;}
+  fetch('/api/live/import-kite-orders',{method:'POST',headers:{'Content-Type':'application/json','X-User-Id':String(userId)},body:JSON.stringify({summary:window._kiteSummary})}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){
+      alert(d.message);
+      document.getElementById('kiteFetchPanel').style.display='none';
+      loadTradeHistory();
+      loadTrackRecord();
+    } else {
+      alert('Error: '+(d.error||'Unknown'));
+    }
+  }).catch(function(e){alert('Network error: '+e);});
+};
+
+window.submitManualTrade=function(){
+  var date=document.getElementById('mtDate').value;
+  var strategy=document.getElementById('mtStrategy').value;
+  var direction=document.getElementById('mtDirection').value;
+  var nifty=parseFloat(document.getElementById('mtNifty').value)||0;
+  var credit=parseFloat(document.getElementById('mtCredit').value)||0;
+  var maxLoss=parseFloat(document.getElementById('mtMaxLoss').value)||0;
+  var legsRaw=document.getElementById('mtLegs').value;
+  var notes=document.getElementById('mtNotes').value;
+
+  // Parse legs string into array
+  var legs=[];
+  if(legsRaw){
+    var parts=legsRaw.split(',');
+    for(var i=0;i<parts.length;i++){
+      var p=parts[i].trim();
+      var match=p.match(/(\d+)\s*(CE|PE)\s*(BUY|SELL|B|S)/i);
+      if(match){
+        legs.push({strike:parseInt(match[1]),option:match[2].toUpperCase(),action:match[3].toUpperCase().startsWith('B')?'BUY':'SELL'});
+      }
+    }
+  }
+
+  var body={
+    date:date,
+    strategy:strategy,
+    direction:direction,
+    nifty_at_entry:nifty,
+    entry_cost:-credit, // credit received = negative cost
+    max_profit:credit,
+    max_loss:maxLoss,
+    legs:legs,
+    notes:notes,
+    status:'open'
+  };
+
+  fetch('/api/live/log-manual-trade',{method:'POST',headers:{'Content-Type':'application/json','X-User-Id':String(userId)},body:JSON.stringify(body)}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){
+      alert('Trade logged! '+d.message);
+      document.getElementById('logFormPanel').style.display='none';
+      loadTradeHistory();
+      loadTrackRecord();
+    } else {
+      alert('Error: '+(d.error||'Unknown'));
+    }
+  }).catch(function(e){alert('Network error: '+e);});
+};
+
+window.submitResolve=function(){
+  var tradeId=parseInt(document.getElementById('rtTradeId').value);
+  var status=document.getElementById('rtStatus').value;
+  var pnl=parseFloat(document.getElementById('rtPnl').value);
+  var niftyClose=parseFloat(document.getElementById('rtNiftyClose').value)||null;
+
+  if(!tradeId){alert('Enter a trade ID');return;}
+  if(isNaN(pnl)){alert('Enter the realized P&L');return;}
+
+  fetch('/api/live/update-trade/'+tradeId,{method:'PUT',headers:{'Content-Type':'application/json','X-User-Id':String(userId)},body:JSON.stringify({pnl:pnl,status:status,nifty_close:niftyClose})}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){
+      alert('Trade #'+tradeId+' resolved as '+status.toUpperCase()+' (P&L: Rs.'+pnl+')');
+      document.getElementById('resolveFormPanel').style.display='none';
+      loadTradeHistory();
+      loadTrackRecord();
+    } else {
+      alert('Error: '+(d.error||'Unknown'));
+    }
+  }).catch(function(e){alert('Network error: '+e);});
+};
+
+// --- Trade History Rendering ---
+function loadTradeHistory(){
+  fetch('/api/live/my-trades?user_id='+userId).then(function(r){return r.json();}).then(function(d){
+    var trades=d.trades||[];
+    if(trades.length===0){
+      document.getElementById('tradeHistory').innerHTML='<div style="padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;text-align:center;font-size:.8rem;color:var(--muted)">No trades logged yet. Use "Log Manual Trade" to record your Kite executions.</div>';
+      return;
+    }
+
+    var html='<div style="padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px">';
+    html+='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px">TRADE HISTORY ('+trades.length+' trades)</div>';
+    
+    // Summary stats
+    var totalPnl=0,wins=0,losses=0,openCount=0;
+    for(var i=0;i<trades.length;i++){
+      var tr=trades[i];
+      if(tr.status==='win'){wins++;totalPnl+=(tr.pnl||0);}
+      else if(tr.status==='loss'){losses++;totalPnl+=(tr.pnl||0);}
+      else{openCount++;}
+    }
+    var resolved=wins+losses;
+    var winRate=resolved>0?Math.round(wins/resolved*100):0;
+    var pnlColor=totalPnl>=0?'var(--green)':'var(--red)';
+
+    html+='<div style="display:flex;gap:16px;margin-bottom:12px;padding:10px;background:rgba(255,255,255,.02);border-radius:6px;font-family:var(--mono);font-size:.8rem">';
+    html+='<span>Total P&L: <strong style="color:'+pnlColor+'">₹'+totalPnl.toLocaleString()+'</strong></span>';
+    html+='<span>Win Rate: <strong style="color:'+(winRate>=50?'var(--green)':'var(--red)')+'">'+winRate+'%</strong> ('+wins+'W/'+losses+'L)</span>';
+    if(openCount>0) html+='<span>Open: <strong style="color:var(--yellow)">'+openCount+'</strong></span>';
+    html+='</div>';
+
+    // Trade rows
+    html+='<div style="overflow-x:auto">';
+    html+='<table style="width:100%;border-collapse:collapse;font-size:.75rem">';
+    html+='<tr style="border-bottom:1px solid var(--border);color:var(--muted);font-size:.65rem;text-transform:uppercase">';
+    html+='<th style="padding:6px 4px;text-align:left">#</th>';
+    html+='<th style="padding:6px 4px;text-align:left">Date</th>';
+    html+='<th style="padding:6px 4px;text-align:left">Strategy</th>';
+    html+='<th style="padding:6px 4px;text-align:right">Credit</th>';
+    html+='<th style="padding:6px 4px;text-align:right">P&L</th>';
+    html+='<th style="padding:6px 4px;text-align:center">Status</th>';
+    html+='</tr>';
+
+    for(var i=0;i<trades.length;i++){
+      var tr=trades[i];
+      var statusBadge='';
+      if(tr.status==='win') statusBadge='<span style="color:var(--green);font-weight:700">WIN ✅</span>';
+      else if(tr.status==='loss') statusBadge='<span style="color:var(--red);font-weight:700">LOSS ❌</span>';
+      else statusBadge='<span style="color:var(--yellow)">OPEN ⏳</span>';
+
+      var pnlDisplay=tr.pnl!=null?'₹'+tr.pnl.toLocaleString():'--';
+      var pnlC=tr.pnl>0?'var(--green)':tr.pnl<0?'var(--red)':'var(--muted)';
+      var creditDisplay=tr.max_profit?'₹'+tr.max_profit.toLocaleString():'--';
+
+      html+='<tr style="border-bottom:1px solid var(--border)">';
+      html+='<td style="padding:8px 4px;font-family:var(--mono);color:var(--muted)">'+tr.id+'</td>';
+      html+='<td style="padding:8px 4px">'+esc(tr.date)+'</td>';
+      html+='<td style="padding:8px 4px">'+(tr.strategy||'').replace(/_/g,' ')+'</td>';
+      html+='<td style="padding:8px 4px;text-align:right;font-family:var(--mono)">'+creditDisplay+'</td>';
+      html+='<td style="padding:8px 4px;text-align:right;font-family:var(--mono);color:'+pnlC+';font-weight:700">'+pnlDisplay+'</td>';
+      html+='<td style="padding:8px 4px;text-align:center">'+statusBadge+'</td>';
+      html+='</tr>';
+    }
+    html+='</table></div></div>';
+    document.getElementById('tradeHistory').innerHTML=html;
+  }).catch(function(){});
+}
+
+function loadTrackRecord(){
+  fetch('/api/live/my-trades?user_id='+userId).then(function(r){return r.json();}).then(function(d){
+    var trades=d.trades||[];
+    var total=trades.length;
+    var wins=0,totalPnl=0,streak=0,maxStreak=0,currentStreak=0;
+    for(var i=trades.length-1;i>=0;i--){
+      var t=trades[i];
+      if(t.status==='win'){wins++;totalPnl+=(t.pnl||0);currentStreak++;maxStreak=Math.max(maxStreak,currentStreak);}
+      else if(t.status==='loss'){totalPnl+=(t.pnl||0);currentStreak=0;}
+    }
+    var resolved=0;
+    for(var i=0;i<trades.length;i++){if(trades[i].status==='win'||trades[i].status==='loss')resolved++;}
+    var winRate=resolved>0?Math.round(wins/resolved*100)+'%':'--';
+    var pnlColor=totalPnl>=0?'var(--green)':'var(--red)';
+
+    document.getElementById('trTotal').textContent=total;
+    document.getElementById('trWinRate').textContent=winRate;
+    document.getElementById('trPnl').textContent='₹'+totalPnl.toLocaleString();
+    document.getElementById('trPnl').style.color=pnlColor;
+    document.getElementById('trStreak').textContent=currentStreak>0?currentStreak+'W':'--';
+  }).catch(function(){});
 }
 
 window.exitTrade=function(tradeId,pnl){
@@ -307,16 +629,13 @@ function checkKiteStatus(){
     if(d.authenticated){
       el.innerHTML='<span style="color:var(--green)">🟢 Zerodha Connected ('+( d.user||'')+')</span>';
     } else {
-      el.innerHTML='<span style="color:var(--muted)">🔴 Not connected — login to enable auto-trade</span>';
+      el.innerHTML='<span style="color:var(--muted)">🔴 Not connected — login to enable live prices</span>';
     }
   }).catch(function(){});
 }
-// Check status on load
 checkKiteStatus();
 
 window.executeTrade=function(){
-  var user=JSON.parse(localStorage.getItem('ot_user')||'null');
-  var userId=user?user.user_id||user.id||'0':'0';
   var btn=document.querySelector('.btn-execute');
   if(btn){btn.textContent='PLACING...';btn.disabled=true;}
   fetch('/api/live/live-execute?mode=nifty',{method:'POST',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
@@ -339,7 +658,11 @@ window.passTrade=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-weight:600">Passed.</p><p style="font-size:.8rem;color:var(--muted)">No trade taken today. Capital preserved.</p></div>';
 };
 
-// Load
+// --- User ID ---
+var user=JSON.parse(localStorage.getItem('ot_user')||'null');
+var userId=user?user.user_id||user.id||'0':'0';
+
+// --- Load Signal ---
 fetch('/api/live/signal?mode=nifty').then(function(r){
   if(r.status===404) return null;
   return r.json();
@@ -350,68 +673,21 @@ fetch('/api/live/signal?mode=nifty').then(function(r){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button><div style="margin-top:16px;display:flex;gap:10px;justify-content:center"><button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem;padding:8px 20px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);border-radius:6px;cursor:pointer">🔗 Login to Zerodha</button></div><div id="kite-status" style="text-align:center;margin-top:8px;font-size:.7rem;color:var(--muted)"></div></div>';checkKiteStatus();
 });
 
-// Track record (per-user)
-var user=JSON.parse(localStorage.getItem('ot_user')||'null');
-var userId=user?user.user_id||user.id||'0':'0';
-fetch('/api/live/my-trades?user_id='+userId).then(function(r){return r.json();}).then(function(d){
-  var total=d.total||0;
-  var wins=d.wins||0;
-  var remaining=Math.max(0,30-total);
-  var winRate=total>0?Math.round(wins/total*100)+'%':'--';
-  document.getElementById('trTotal').textContent=total;
-  document.getElementById('trWinRate').textContent=winRate;
-  document.getElementById('trRemaining').textContent=remaining>0?remaining+' more':'READY';
-  document.getElementById('trRemaining').style.color=remaining>0?'var(--yellow)':'var(--green)';
-}).catch(function(){});
-
-// Gate status (per-user from DB)
-fetch('/api/live/gate-status?user_id='+userId).then(function(r){return r.json();}).then(function(g){
-  var md=g.metrics_detail||{};
-  var metrics=g.metrics||{};
-  document.getElementById('trPnl').textContent=md.expectancy||'--';
-  var gatesPassed=0;
-  for(var k in metrics){if(metrics[k])gatesPassed++;}
-  document.getElementById('trGates').textContent=gatesPassed+'/7';
-  document.getElementById('trGates').style.color=gatesPassed>=7?'var(--green)':gatesPassed>=5?'var(--yellow)':'var(--red)';
-  document.getElementById('trLockStatus').textContent=g.locked?'LOCKED':'LIVE';
-  document.getElementById('trLockStatus').style.color=g.locked?'var(--red)':'var(--green)';
-  document.getElementById('trDrawdown').textContent=md.max_drawdown||'--';
-  document.getElementById('trStreak').textContent=md.max_consec_losses?md.max_consec_losses+' losses':'--';
-  // Gate details
-  var gateHtml='<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:8px">UNLOCK REQUIREMENTS</div>';
-  var gateItems=[
-    {key:'trade_count',label:'Trades',target:'30+',val:md.trade_count||'0/30'},
-    {key:'win_rate',label:'Win Rate',target:'>50%',val:md.win_rate||'--'},
-    {key:'profit_factor',label:'Profit Factor',target:'>1.5',val:md.profit_factor||'--'},
-    {key:'avg_win_loss',label:'Avg Win/Loss',target:'>1.0',val:md.avg_win_loss||'--'},
-    {key:'max_drawdown',label:'Max Drawdown',target:'<15%',val:md.max_drawdown||'--'},
-    {key:'max_consec_losses',label:'Consec Losses',target:'<5',val:md.max_consec_losses||'--'},
-    {key:'expectancy',label:'Expectancy',target:'>Rs.0',val:md.expectancy||'--'}
-  ];
-  for(var i=0;i<gateItems.length;i++){
-    var gi=gateItems[i];
-    var pass=metrics[gi.key];
-    var color=pass?'var(--green)':'var(--red)';
-    var icon=pass?'PASS':'FAIL';
-    gateHtml+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">';
-    gateHtml+='<span style="color:var(--muted)">'+gi.label+' (need '+gi.target+')</span>';
-    gateHtml+='<span style="color:'+color+';font-weight:600;font-family:var(--mono)">'+gi.val+' '+icon+'</span>';
-    gateHtml+='</div>';
-  }
-  document.getElementById('gateDetails').innerHTML=gateHtml;
-}).catch(function(){});
-
-// Capital info
+// --- Capital Display ---
 fetch('/api/live/settings').then(function(r){return r.json();}).then(function(s){
   var cap=s.capital||0;
   var riskPct=s.risk_per_trade||0.02;
   var maxRisk=cap*riskPct;
-  document.getElementById('trCapital').textContent='Rs.'+cap.toLocaleString();
-  document.getElementById('trRiskTrade').textContent='Rs.'+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
-  document.getElementById('trDailyRisk').textContent='Rs.0 / Rs.'+(cap*(s.risk_per_day||0.05)).toLocaleString();
+  document.getElementById('trCapital').textContent='₹'+cap.toLocaleString();
+  document.getElementById('trRiskTrade').textContent='₹'+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
+  document.getElementById('trDailyRisk').textContent='₹0 / ₹'+(cap*(s.risk_per_day||0.05)).toLocaleString();
 }).catch(function(){});
 
-// Open Positions
+// --- Load Trade History + Track Record ---
+loadTradeHistory();
+loadTrackRecord();
+
+// --- Open Positions ---
 fetch('/api/live/open-positions?user_id='+userId).then(function(r){return r.json();}).then(function(d){
   var positions=d.positions||[];
   if(positions.length===0){document.getElementById('positionsPanel').innerHTML='';return;}
