@@ -891,6 +891,217 @@ async def trail_sl(request: Request):
         conn.close()
 
 
+# --- Upload Kite Tradebook CSV ---
+
+@router.post("/upload-tradebook")
+async def upload_tradebook(request: Request):
+    """Parse uploaded Kite Tradebook CSV and import NIFTY F&O trades into live_trades.
+    
+    Kite Tradebook CSV columns:
+    trade_date, tradingsymbol, exchange, segment, trade_type, quantity, price, order_id, trade_id
+    
+    Groups orders by date into trades (Iron Condor = 4 legs on same day).
+    """
+    from db.database import get_connection
+    import csv
+    import io
+    
+    user_id = request.headers.get("X-User-Id") or "1"
+    
+    # Parse multipart form data
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        return JSONResponse(status_code=400, content={"success": False, "error": "No file uploaded"})
+    
+    try:
+        content = await file.read()
+        text = content.decode("utf-8-sig")  # Handle BOM
+        reader = csv.DictReader(io.StringIO(text))
+        
+        # Normalize column headers (strip whitespace, lowercase)
+        if reader.fieldnames:
+            reader.fieldnames = [f.strip().lower().replace(" ", "_") for f in reader.fieldnames]
+        
+        # Parse all rows, filter to NIFTY NFO
+        all_orders = []
+        for row in reader:
+            symbol = row.get("tradingsymbol", "") or row.get("symbol", "") or ""
+            segment = row.get("segment", "") or row.get("exchange", "") or ""
+            
+            # Only process NIFTY F&O trades
+            if "NIFTY" not in symbol.upper():
+                continue
+            if "NFO" not in segment.upper() and "FO" not in segment.upper():
+                # Also accept if tradingsymbol contains NIFTY + CE/PE
+                if "CE" not in symbol.upper() and "PE" not in symbol.upper():
+                    continue
+            
+            trade_date = row.get("trade_date", "") or row.get("order_execution_time", "") or ""
+            # Normalize date format (Kite uses DD-MM-YYYY or YYYY-MM-DD)
+            if trade_date and "-" in trade_date:
+                parts = trade_date.split(" ")[0].split("-")
+                if len(parts[0]) == 4:  # YYYY-MM-DD
+                    trade_date = parts[0] + "-" + parts[1] + "-" + parts[2]
+                elif len(parts[2]) == 4:  # DD-MM-YYYY
+                    trade_date = parts[2] + "-" + parts[1] + "-" + parts[0]
+            
+            trade_type = (row.get("trade_type", "") or row.get("type", "") or "").upper().strip()
+            quantity = abs(int(float(row.get("quantity", 0) or 0)))
+            price = float(row.get("price", 0) or row.get("avg._price", 0) or 0)
+            
+            # Normalize BUY/SELL
+            if trade_type in ("BUY", "B"):
+                action = "BUY"
+            elif trade_type in ("SELL", "S"):
+                action = "SELL"
+            else:
+                continue
+            
+            # Extract strike and option type from symbol
+            option_type = ""
+            strike = ""
+            if "CE" in symbol.upper():
+                option_type = "CE"
+                # Extract digits before CE
+                ce_idx = symbol.upper().index("CE")
+                digits = ""
+                for ch in reversed(symbol[:ce_idx]):
+                    if ch.isdigit():
+                        digits = ch + digits
+                    else:
+                        break
+                strike = digits
+            elif "PE" in symbol.upper():
+                option_type = "PE"
+                pe_idx = symbol.upper().index("PE")
+                digits = ""
+                for ch in reversed(symbol[:pe_idx]):
+                    if ch.isdigit():
+                        digits = ch + digits
+                    else:
+                        break
+                strike = digits
+            
+            all_orders.append({
+                "date": trade_date,
+                "symbol": symbol,
+                "action": action,
+                "quantity": quantity,
+                "price": price,
+                "option_type": option_type,
+                "strike": strike,
+            })
+        
+        if not all_orders:
+            return JSONResponse(status_code=400, content={
+                "success": False, 
+                "error": "No NIFTY F&O trades found in the CSV. Make sure you're uploading the Tradebook from Console → Reports → Tradebook."
+            })
+        
+        # Group by date → each date is one trade
+        from collections import defaultdict
+        trades_by_date = defaultdict(list)
+        for order in all_orders:
+            trades_by_date[order["date"]].append(order)
+        
+        # Insert each date's orders as a single trade
+        conn = get_connection()
+        imported_trades = []
+        try:
+            for trade_date, orders in sorted(trades_by_date.items()):
+                # Check if already imported
+                existing = conn.execute(
+                    "SELECT id FROM live_trades WHERE user_id = ? AND date = ? AND mode = 'live'",
+                    (int(user_id), trade_date)
+                ).fetchone()
+                if existing:
+                    continue  # Skip already imported dates
+                
+                # Build legs and compute credit
+                legs = []
+                total_credit = 0
+                total_debit = 0
+                for o in orders:
+                    legs.append({
+                        "action": o["action"],
+                        "strike": o["strike"],
+                        "option": o["option_type"],
+                        "premium": o["price"],
+                        "quantity": o["quantity"],
+                        "symbol": o["symbol"],
+                    })
+                    if o["action"] == "SELL":
+                        total_credit += o["price"] * o["quantity"]
+                    else:
+                        total_debit += o["price"] * o["quantity"]
+                
+                net_credit = round(total_credit - total_debit, 2)
+                
+                # Determine strategy
+                buy_count = len([l for l in legs if l["action"] == "BUY"])
+                sell_count = len([l for l in legs if l["action"] == "SELL"])
+                ce_count = len([l for l in legs if l["option"] == "CE"])
+                pe_count = len([l for l in legs if l["option"] == "PE"])
+                
+                strategy = "nifty_options"
+                if buy_count == 2 and sell_count == 2 and ce_count == 2 and pe_count == 2:
+                    strategy = "iron_condor"
+                elif buy_count == 1 and sell_count == 1:
+                    if ce_count == 2:
+                        strategy = "call_spread"
+                    elif pe_count == 2:
+                        strategy = "put_spread"
+                
+                # Max loss estimate (wing width * lot size - credit)
+                max_loss = max(0, (100 * 65) - net_credit)  # Default 100pt wings, 65 lot
+                
+                conn.execute(
+                    """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
+                       entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, mode, exit_reason)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', 'live', ?)""",
+                    (
+                        int(user_id),
+                        trade_date,
+                        "neutral",
+                        100,
+                        strategy,
+                        json.dumps(legs),
+                        -net_credit,
+                        max_loss,
+                        net_credit,
+                        max_loss,
+                        0,
+                        100,
+                        f"Imported from Kite Tradebook CSV ({len(legs)} legs)",
+                    )
+                )
+                imported_trades.append({
+                    "date": trade_date,
+                    "strategy": strategy,
+                    "net_credit": net_credit,
+                    "leg_count": len(legs),
+                })
+            
+            conn.commit()
+        finally:
+            conn.close()
+        
+        if not imported_trades:
+            return {"success": True, "message": "All trades in this CSV were already imported.", "trades": []}
+        
+        return {
+            "success": True,
+            "message": f"Imported {len(imported_trades)} trade(s) from Kite Tradebook",
+            "trades": imported_trades,
+            "total_orders_parsed": len(all_orders),
+        }
+    
+    except Exception as e:
+        logger.error(f"Tradebook upload failed: {e}")
+        return JSONResponse(status_code=500, content={"success": False, "error": f"Parse error: {str(e)[:200]}"})
+
+
 # --- Fetch Trades from Kite API ---
 
 @router.get("/fetch-kite-orders")
