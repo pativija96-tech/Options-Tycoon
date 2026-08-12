@@ -109,19 +109,35 @@ def _run_auto_trade():
                     trade = signal.get("trade", {})
                     legs = trade.get("legs", [])
                     projected = signal.get("projected_open", 0)
+                    profit_target = trade.get("profit_target", {})
+                    basket = trade.get("basket_order", [])
                     
-                    # Build Telegram message with exact strikes
-                    legs_text = ""
-                    for leg in legs:
-                        legs_text += f"\n  {leg['action']} NIFTY {leg['strike']} {leg['option']} @ ~Rs.{leg.get('premium_est', 0):.1f}"
+                    # Build basket-ready leg format for Kite web
+                    basket_text = ""
+                    if basket:
+                        basket_text = "\n\n📋 KITE BASKET ORDER (copy exact):"
+                        for b in basket:
+                            basket_text += f"\n  {b['seq']}. {b['action']} {b['symbol']} × {b['qty']} ({b['product']})"
+                    else:
+                        # Fallback: build from legs
+                        basket_text = "\n\nLegs (place as BASKET on Kite web):"
+                        for leg in legs:
+                            basket_text += f"\n  {leg['action']} NIFTY {leg['strike']} {leg['option']} @ ~Rs.{leg.get('premium_est', 0):.1f}"
+                    
+                    # Profit target info
+                    pt_text = ""
+                    if profit_target:
+                        pt_text = f"\n\n🎯 PROFIT TARGET: Exit at Rs.{profit_target.get('value', 0):.0f} profit ({profit_target.get('pct', 0.5)*100:.0f}% of max)"
+                        pt_text += f"\n   Buy back all legs when total cost ≤ Rs.{profit_target.get('exit_premium_total', 0):.0f}"
                     
                     msg = (
                         f"📊 NIFTY IC Signal Ready\n\n"
                         f"NIFTY: {projected:.0f}\n"
                         f"Expiry: {trade.get('expiry_date', 'Tue')}\n"
-                        f"\nLegs (place as BASKET on Kite web):{legs_text}\n"
+                        f"{basket_text}\n"
                         f"\nReward: Rs.{trade.get('net_max_profit', trade.get('max_profit', 0)):.0f}"
                         f"\nRisk: Rs.{trade.get('net_max_loss', trade.get('max_loss', 0)):.0f}"
+                        f"{pt_text}"
                         f"\n\n⚠️ Place via Kite WEB basket order (not app) for spread margin."
                         f"\nOrder: BUY wings first, then SELL shorts."
                     )

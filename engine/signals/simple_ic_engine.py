@@ -225,6 +225,23 @@ def generate_daily_signal(capital: float = None) -> dict:
     net_max_loss = round(max_loss + charges["total"], 2)
     rr = round(max_profit / max_loss, 2) if max_loss > 0 else 0
     
+    # Step 6b: Profit target (50% of net credit — exit early to lock gains)
+    try:
+        config_path = Path(__file__).resolve().parent.parent.parent / "config" / "settings.json"
+        if config_path.exists():
+            with open(config_path) as f:
+                _cfg = json.load(f)
+            profit_target_pct = _cfg.get("nifty", {}).get("profit_target_pct", 0.50)
+        else:
+            profit_target_pct = 0.50
+    except Exception:
+        profit_target_pct = 0.50
+    
+    profit_target_value = round(net_max_profit * profit_target_pct, 2)
+    # Target exit premium = remaining premium to buy back (credit - target profit)
+    target_exit_premium_per_share = round(net_credit * (1 - profit_target_pct), 2)
+    target_exit_total = round(target_exit_premium_per_share * LOT_SIZE, 2)
+    
     # Step 6a: SAFETY CHECK — Negative reward (charges > credit)
     if net_max_profit <= 0:
         return {
@@ -253,12 +270,25 @@ def generate_daily_signal(capital: float = None) -> dict:
                 {"action": "SELL", "option": "PE", "strike": short_put, "premium_est": short_put_prem},
                 {"action": "BUY", "option": "PE", "strike": long_put, "premium_est": long_put_prem},
             ],
+            "basket_order": [
+                {"seq": 1, "action": "BUY", "symbol": f"NIFTY {long_put} PE", "qty": LOT_SIZE, "product": "NRML", "note": "Hedge — place FIRST"},
+                {"seq": 2, "action": "BUY", "symbol": f"NIFTY {long_call} CE", "qty": LOT_SIZE, "product": "NRML", "note": "Hedge"},
+                {"seq": 3, "action": "SELL", "symbol": f"NIFTY {short_put} PE", "qty": LOT_SIZE, "product": "NRML", "note": "Short leg"},
+                {"seq": 4, "action": "SELL", "symbol": f"NIFTY {short_call} CE", "qty": LOT_SIZE, "product": "NRML", "note": "Short leg — place LAST"},
+            ],
             "net_cost": round(-net_credit, 2),
             "net_cost_total": round(-net_credit_total, 2),
             "max_profit": round(max_profit, 2),
             "max_loss": round(max_loss, 2),
             "net_max_profit": net_max_profit,
             "net_max_loss": net_max_loss,
+            "profit_target": {
+                "pct": profit_target_pct,
+                "value": profit_target_value,
+                "exit_premium_per_share": target_exit_premium_per_share,
+                "exit_premium_total": target_exit_total,
+                "instruction": f"EXIT when net position can be bought back for ≤ Rs.{target_exit_total:.0f} total (Rs.{target_exit_premium_per_share:.1f}/share). That locks in Rs.{profit_target_value:.0f} profit ({profit_target_pct*100:.0f}% of max).",
+            },
             "sl_value": round(net_credit * 0.5 * LOT_SIZE, 2),
             "risk_reward": rr,
             "breakeven": f"{short_put + net_credit:.0f} / {short_call - net_credit:.0f}",

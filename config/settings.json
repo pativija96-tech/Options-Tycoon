@@ -19,7 +19,9 @@
     "offset_pts": 250,
     "wing_width": 100,
     "lot_size": 65,
-    "preferred_expiry": "current_week"
+    "preferred_expiry": "current_week",
+    "profit_target_pct": 0.50,
+    "profit_target_exit_note": "Exit all legs when 50% of max credit is captured"
   },
   "qqq": {
     "capital": 1000,

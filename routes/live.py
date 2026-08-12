@@ -445,12 +445,24 @@ async def run_eod():
     """
     Smart EOD Resolution:
     - Iron Condors: check if NIFTY breached short strikes (SL trigger) OR if it's expiry day
+    - Check profit target: if position can be closed at 50% profit, flag PROFIT_TARGET_MET
     - If breached → resolve as loss (max loss)
     - If expiry day (Tuesday) and in range → resolve as win (full premium)
     - If not expiry and in range → leave open (hold to expiry)
     """
     from db.database import get_connection
     from datetime import date
+    
+    # Load profit target config
+    profit_target_pct = 0.50
+    try:
+        config_path = Path(__file__).resolve().parent.parent / "config" / "settings.json"
+        if config_path.exists():
+            with open(config_path) as f:
+                _cfg = json.load(f)
+            profit_target_pct = _cfg.get("nifty", {}).get("profit_target_pct", 0.50)
+    except Exception:
+        pass
     
     try:
         # Fetch NIFTY data — Kite REQUIRED for accurate resolution
@@ -503,10 +515,11 @@ async def run_eod():
         is_expiry_day = today.weekday() == 1  # Tuesday = 1
         
         conn = get_connection()
-        open_trades = conn.execute("SELECT * FROM live_trades WHERE status = 'open'").fetchall()
+        open_trades = conn.execute("SELECT * FROM live_trades WHERE status IN ('open', 'PROFIT_TARGET_MET')").fetchall()
         
         resolved_count = 0
         held_count = 0
+        profit_target_count = 0
         results = []
         
         for trade in open_trades:
@@ -567,6 +580,46 @@ async def run_eod():
                     resolved_count += 1
                     results.append({"id": trade_dict["id"], "action": "EXPIRED", "pnl": pnl})
                     
+                elif in_range and max_profit > 0:
+                    # Check profit target: NIFTY well within range suggests premium has decayed
+                    # Distance from nearest short strike as % of total range
+                    range_width = short_call - short_put
+                    dist_to_call = short_call - nifty_close
+                    dist_to_put = nifty_close - short_put
+                    min_dist = min(dist_to_call, dist_to_put)
+                    cushion_pct = min_dist / (range_width / 2) if range_width > 0 else 0
+                    
+                    # If NIFTY is comfortably in the middle (>60% cushion on both sides)
+                    # and we're past 50% of time to expiry, flag profit target
+                    trade_date_str = trade_dict.get("date", "")
+                    days_held = 0
+                    if trade_date_str:
+                        try:
+                            from datetime import datetime as dt
+                            trade_dt = dt.strptime(trade_date_str, "%Y-%m-%d").date()
+                            days_held = (today - trade_dt).days
+                        except:
+                            pass
+                    
+                    # Profit target logic: if held 2+ days AND well in range, mark for exit
+                    if days_held >= 2 and cushion_pct >= 0.40 and trade_dict.get("status") != "PROFIT_TARGET_MET":
+                        profit_target_value = round(max_profit * profit_target_pct, 2)
+                        conn.execute(
+                            "UPDATE live_trades SET status='PROFIT_TARGET_MET' WHERE id=?",
+                            (trade_dict["id"],)
+                        )
+                        profit_target_count += 1
+                        results.append({
+                            "id": trade_dict["id"], 
+                            "action": "PROFIT_TARGET_MET",
+                            "target_profit": profit_target_value,
+                            "cushion_pct": round(cushion_pct * 100, 1),
+                            "days_held": days_held,
+                            "instruction": f"EXIT NOW — close all 4 legs. Target profit Rs.{profit_target_value:.0f} ({profit_target_pct*100:.0f}% of max). NIFTY at {nifty_close:.0f}, {cushion_pct*100:.0f}% cushion to nearest strike.",
+                        })
+                    else:
+                        held_count += 1
+                        results.append({"id": trade_dict["id"], "action": "HOLDING", "in_range": in_range, "nifty": nifty_close, "cushion_pct": round(cushion_pct * 100, 1)})
                 else:
                     # Not expiry, not breached — hold position
                     held_count += 1
@@ -595,14 +648,26 @@ async def run_eod():
         conn.commit()
         conn.close()
         
+        # Send Telegram alert if profit target hit
+        if profit_target_count > 0:
+            try:
+                from engine.scheduler import _send_telegram_alert
+                for r in results:
+                    if r.get("action") == "PROFIT_TARGET_MET":
+                        _send_telegram_alert(f"🎯 PROFIT TARGET: {r['instruction']}")
+            except Exception:
+                pass
+        
         return {
             "success": True,
             "resolved": resolved_count,
             "held": held_count,
+            "profit_target_hit": profit_target_count,
             "nifty_close": nifty_close,
             "nifty_high": nifty_high,
             "nifty_low": nifty_low,
             "is_expiry_day": is_expiry_day,
+            "data_source": data_source,
             "results": results,
         }
     
