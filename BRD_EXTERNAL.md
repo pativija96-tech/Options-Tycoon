@@ -100,7 +100,7 @@ You: Sleep through it. Check results in the morning.
 
 ---
 
-## 3. MODE B: NIFTY (India via Zerodha) — LIVE
+## 3. MODE B: NIFTY (India via Zerodha) — ON HOLD (Capital Insufficient)
 
 ### Strategy
 **NIFTY ±250pt Iron Condor, 100pt wings, hold to Tuesday weekly expiry**
@@ -109,57 +109,70 @@ You: Sleep through it. Check results in the morning.
 
 | Metric | Value |
 |--------|-------|
-| Win rate | 86.5% |
-| Realistic EV/trade | Rs.192 (before tax) |
+| Win rate (backtested) | 86.5% |
+| Reward per trade (net after charges) | ₹2,519 |
+| Risk per trade (max loss) | ₹3,980 |
+| R:R | 0.74:1 |
 | Tax | 0% (wife's resident account — no TDS) |
-| Capital | ₹39,000 |
-| Risk per trade | ₹4,184 max loss (~10.7% of capital) |
-| Risk cap | 25% of capital = ₹9,750 |
+| Trades per week | 3-4 (Wed, Thu, Fri, Tue) |
+| Monthly net estimate (realistic) | ₹15,000–18,000 |
 
-### Execution Pipeline (Single Path — No Fallbacks)
+### CURRENT PROBLEM: Margin Requirement vs Capital
+
+| Item | Amount |
+|------|--------|
+| Available capital | ₹38,814 |
+| **Actual margin required** (Kite basket, 4-leg IC, NRML) | **₹67,234** |
+| **Shortfall** | **₹28,420** |
+
+**Root cause:** Zerodha's margin for a 1-lot NIFTY Iron Condor (±250pt, 100pt wings, NRML) is ₹67K — not ₹35K as originally estimated. The ₹35K estimate was wrong. Kite's basket order shows the actual "Final margin" which includes SPAN + exposure margin for the spread.
+
+**Why auto-execution via API failed additionally:**
+1. Kite IP whitelist: Railway changes outbound IP on every deploy. Kite allows only 2 whitelisted IPs, updatable once per week.
+2. Kite blocks market orders via API (requires LIMIT with price).
+3. Individual API legs don't get spread margin — need basket order via web UI.
+
+### OPTIONS FOR EXTERNAL REVIEW
+
+| Option | Capital Needed | Monthly Return | Notes |
+|--------|---------------|----------------|-------|
+| **A: Fund ₹70K for NIFTY** | ₹70,000 | ~₹15-18K (21-25% monthly) | Manual basket order on Kite web. System generates signals + emails strikes. EOD auto-tracked. |
+| **B: Fund $1K for QQQ (IBKR)** | ~₹85,000 ($1,000) | ~$170/month (17% monthly) | Fully automated — no IP issues, no manual orders. IBKR REST API, OAuth, no daily login. 0% tax (PH resident). |
+| **C: Both** | ₹70K + $1K | ~₹15K + $170/month | Two independent income streams. NIFTY manual, QQQ automated. |
+| **D: Reduce NIFTY wings to 50pt** | ~₹40K (current funds) | ~₹1,000-1,200/month | Smaller reward, might fit current margin. Needs validation — may not be profitable after charges. |
+| **E: Park NIFTY, do QQQ only** | $1,000 | ~$170/month | Wait until NIFTY capital grows organically from QQQ profits. |
+
+### Execution Model (Revised)
 
 ```
-ENTRY (9:20 AM IST, automated via scheduler OR manual Execute button):
+SIGNAL GENERATION (automated, 9:20 AM IST daily):
+  - System generates signal on Railway
+  - Sends EMAIL to founder with exact strikes + order sequence
+  - Signal visible on live-nifty.html page
 
-  1. Signal engine generates IC parameters:
-     - Gets NIFTY price (Kite primary, yfinance fallback)
-     - Gets VIX (must be < 40)
-     - Sets strikes: ATM ±250pt (short), ±350pt (long/wings)
-     - Estimates premiums via Black-Scholes
-     - Risk cap check: max loss < 25% of ₹39K capital
+EXECUTION (manual by user):
+  - User opens Kite WEB (not app)
+  - Creates basket order with 4 legs (BUY first, SELL second)
+  - Kite calculates spread margin (₹67K for current strategy)
+  - User executes if margin available
 
-  2. Execution (execute_iron_condor):
-     - Validates Kite session (user logged in today)
-     - Builds 4 orders with correct Kite symbols (NIFTY26AUG24850CE format)
-     - Places BUY legs FIRST (wings/hedges):
-         ✓ BUY 24250 PE  → creates hedge position
-         ✓ BUY 24950 CE  → creates hedge position
-     - Places SELL legs SECOND (shorts get hedge margin benefit ~₹35K):
-         ✓ SELL 24350 PE  → margin reduced because 24250 PE hedge exists
-         ✓ SELL 24850 CE  → margin reduced because 24950 CE hedge exists
-     - If any BUY fails → all SELL legs SKIPPED (no naked shorts ever)
+EOD TRACKING (automated, 3:35 PM IST daily):
+  - System checks NIFTY close vs short strikes
+  - Resolves win/loss on Tuesday expiry
+  - Logs to DB for performance tracking
 
-  3. Result logged to DB + Telegram notification sent
-
-EXIT (automated, 3:35 PM IST daily EOD check):
-  - If NIFTY breached short strike → SL triggered, resolve as loss
-  - If Tuesday (expiry day) and in range → resolve as win (full premium)
-  - If not Tuesday and in range → hold (do nothing)
-
-MARGIN NOTE:
-  - Individual naked SELL requires ~₹1.6L margin
-  - With BUY-first ordering, hedge exists before SELL → margin ~₹35-40K
-  - ₹39K capital is sufficient because hedges are placed first
+NO AUTO-EXECUTION via API — margin and IP issues make it unreliable.
 ```
 
 ### Status (as of Aug 6, 2026)
 - Zerodha NFO: ✅ Activated
-- Kite API: ✅ Connected (Badakala Raghu Raj)
-- Kite Connect subscription: ✅ Active
-- Railway deployment: ✅ Auto-deploy from GitHub
-- First live trade: Aug 5, 2026 — +₹3K profit (placed manually due to execution bug)
-- Execution bug fix: Aug 6, 2026 — removed non-existent basket API call
-- Account funded: ₹39,000 (₹36K + ₹3K profit)
+- Kite API: ✅ Connected (Badakala Raghu Raj) — used for price data + signal generation
+- First live trade: Aug 5, 2026 — +₹3K profit (placed manually via basket order)
+- Auto-execution: ❌ Not viable (IP whitelist + margin issues)
+- Current mode: Signal generation + email alerts → user places manually
+- Account balance: ₹38,814
+- Margin needed: ₹67,234 (shortfall ₹28,420)
+- **Decision needed: Fund more or pivot to QQQ**
 
 ---
 
