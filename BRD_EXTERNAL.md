@@ -1,6 +1,6 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 8.0 | **Last Updated:** 2026-08-12
+> **Version:** 8.1 | **Last Updated:** 2026-08-13
 > **Status:** NIFTY Live (manual execution from signals) | QQQ pending IBKR activation
 > **Disclaimer:** Personal trading tool. Not financial advice.
 
@@ -20,7 +20,7 @@ Both modes are independent: different broker APIs, different strategies, differe
 
 ---
 
-## 2. CURRENT STATUS (August 12, 2026)
+## 2. CURRENT STATUS (August 13, 2026)
 
 ### What's Working Now
 
@@ -28,25 +28,32 @@ Both modes are independent: different broker APIs, different strategies, differe
 |-----------|--------|---------|
 | NIFTY signal generation | ✅ Active | Generates IC strikes daily at 9:20 AM IST |
 | NIFTY manual execution | ✅ Active | User places trades via Kite web basket order |
-| Email alerts | ✅ Active | Sends exact strikes + order sequence to founder |
+| Email/Telegram alerts | ✅ Active | Sends exact strikes + basket-ready format + profit target |
 | EOD tracking | ✅ Active | Auto-resolves win/loss on Tuesday expiry |
+| 50% profit target | ✅ Active | Alerts when position can be closed early at 50% max profit |
+| Kite basket format | ✅ Active | Numbered leg sequence (BUY 1→2, SELL 3→4) in signals |
+| Trade history (Fetch from Kite) | ✅ Active | Pull executed orders via Kite API |
+| Trade history (Tradebook CSV upload) | ✅ Active | Upload Kite Console CSV for batch import |
+| Trade history (Manual entry) | ✅ Active | Manual form for logging trades |
+| Trade resolution | ✅ Active | Mark trades as win/loss with actual P&L |
 | Railway deployment | ✅ Running | Auto-deploys from GitHub main branch |
-| Live UI (NIFTY tab) | ✅ Active | `live-nifty.html` shows signals + connection status |
+| Live UI (NIFTY tab) | ✅ Active | `live-nifty.html` — signals, trade history, P&L tracking |
 
 ### What's Blocked
 
 | Component | Status | Blocker | Resolution |
 |-----------|--------|---------|------------|
 | QQQ auto-execution | ⏳ Pending | IBKR account can't trade options with India tax residence | Changed tax residence to Philippines, submitted documents for validation + support ticket |
-| NIFTY auto-execution via API | ❌ Abandoned | Railway IP changes (Kite allows 2 IPs, updatable weekly), Kite blocks market orders, API legs don't get spread margin | Manual execution is the permanent model |
+| NIFTY auto-execution via API | ❌ Abandoned | Railway IP changes, Kite blocks market orders, API legs don't get spread margin | Manual execution is the permanent model |
 
 ### Key Decisions Made
 
-1. **NIFTY = signal-only, manual execution** — Auto-execution via Kite API is not viable (IP whitelist + margin + order type restrictions). System generates signals, user places via Kite web UI basket order.
-2. **QQQ/IBKR = waiting** — India account cannot trade US options. Tax residence change to Philippines submitted. Code is complete and deployed, just needs account activation.
-3. **Capital funded: ₹75,000** — Covers the ₹67,234 margin requirement for 1-lot NIFTY IC (NRML).
-4. **First live trade: Aug 5, 2026** — +₹3K profit (manually placed via basket order).
-5. **Aug 12, 2026** — Executed another manual trade successfully.
+1. **NIFTY = signal-only, manual execution** — System generates signals, user places via Kite web UI basket order.
+2. **QQQ/IBKR = waiting** — Tax residence change to Philippines submitted. Code complete, needs account activation.
+3. **Capital funded: ₹75,000** — Covers ₹67,234 margin requirement.
+4. **50% profit target exit rule** — Close early when 50% of max credit is captured (avoids Tuesday gamma risk).
+5. **0DTE Tuesday strategy: SHELVED** — Backtested at 84% win rate but only ₹85/trade realistic edge after friction. Not viable.
+6. **Tradebook CSV upload** — Primary method for importing trade history from Kite Console.
 
 ---
 
@@ -294,7 +301,8 @@ QQQ Mode (pending IBKR activation):
 
 | Date | Mode | Strategy | Result | Notes |
 |------|------|----------|--------|-------|
-| Aug 5, 2026 | NIFTY | IC ±250pt | +₹3,000 | First live trade, manual basket order |
+| Aug 5, 2026 | NIFTY | Scalp (3 round-trips) | +₹3,120 | 24950CE +₹709, 24250CE +₹2,408, 24250PE +₹3 |
+| Aug 6, 2026 | NIFTY | Scalp (2 round-trips) | +₹16.25 | 25000CE +₹13, 24300PE +₹3.25 |
 | Aug 12, 2026 | NIFTY | IC ±250pt | TBD | Manual execution, successful placement |
 
 ---
@@ -331,15 +339,21 @@ QQQ Mode (pending IBKR activation):
 
 ## 9. NEXT ACTIONS
 
-### Immediate (Waiting)
+### Immediate (Do after restart)
+- [ ] Clean old test trades from Railway: visit `options-tycoon.com/api/live/cleanup-old-trades?before=2026-08-05` (DELETE request from browser console)
+- [ ] Re-upload tradebook CSV on production to populate real trades only
+
+### Waiting
 - [ ] IBKR document validation (India → PH tax residence) — waiting on IBKR
 - [ ] Once approved: Set IBKR env vars on Railway → paper test → go live
 
 ### Active (NIFTY)
-- [x] Generate daily signals
-- [x] Execute manually via Kite basket order
-- [ ] Track and log all trades for performance review
-- [ ] Build automated P&L tracking dashboard
+- [x] Generate daily signals with basket-ready format
+- [x] 50% profit target exit rule + Telegram alerts
+- [x] Trade history tracking via Tradebook CSV upload
+- [x] Kite API order fetch for real-time import
+- [ ] Continue logging all trades for performance review
+- [ ] Validate profit target alerts work in next trading cycle
 
 ### Future (QQQ — once IBKR unblocked)
 - [ ] Set env vars: IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM
