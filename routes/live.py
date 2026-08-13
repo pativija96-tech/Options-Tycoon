@@ -440,6 +440,24 @@ async def get_eod_report():
         return json.load(f)
 
 
+@router.delete("/cleanup-old-trades")
+async def cleanup_old_trades(request: Request):
+    """Delete test/paper trades before a cutoff date. Keeps only real live trades."""
+    from db.database import get_connection
+    cutoff = request.query_params.get("before", "2026-08-05")
+    conn = get_connection()
+    try:
+        count = conn.execute("SELECT COUNT(*) as cnt FROM live_trades WHERE date < ?", (cutoff,)).fetchone()
+        deleted_count = count["cnt"] if count else 0
+        conn.execute("DELETE FROM live_trades WHERE date < ?", (cutoff,))
+        conn.commit()
+        return {"success": True, "deleted": deleted_count, "cutoff": cutoff}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
+    finally:
+        conn.close()
+
+
 @router.post("/run-eod")
 async def run_eod():
     """
