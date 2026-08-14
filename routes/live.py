@@ -95,7 +95,7 @@ async def generate_signal(request: Request, mode: str = None):
         with ThreadPoolExecutor() as pool:
             result = await asyncio.wait_for(
                 loop.run_in_executor(pool, gen_func),
-                timeout=60
+                timeout=90
             )
         
         if not result:

@@ -86,14 +86,15 @@ def _run_auto_trade():
         resp = httpx.post(
             f"http://localhost:{port}/api/live/generate-signal",
             headers={"X-User-Id": "1"},
-            timeout=60,
+            timeout=120,
         )
         gen_result = resp.json()
         logger.info(f"Signal generated: {gen_result}")
         
         if not gen_result.get("success"):
-            logger.warning(f"Signal generation failed: {gen_result.get('error')}")
-            _send_telegram_alert(f"⚠️ Signal generation failed: {gen_result.get('error', 'unknown')}")
+            error_msg = gen_result.get('error') or gen_result.get('detail') or str(gen_result)[:200]
+            logger.warning(f"Signal generation failed: {error_msg}")
+            _send_telegram_alert(f"⚠️ Signal generation failed: {error_msg}")
             return
         
         # Load the full signal to get strikes for Telegram
@@ -154,20 +155,9 @@ def _run_auto_trade():
 
 
 def _send_telegram_alert(message: str):
-    """Send alert via email (primary) and Telegram (if configured). Best-effort, non-blocking."""
-    # Email notification (primary)
-    try:
-        import os
-        from engine.email_service import send_email
-        founder_email = os.environ.get("FOUNDER_ALLOWED_EMAILS", "").split(",")[0].strip()
-        if founder_email:
-            # Convert plain text message to simple HTML
-            html_body = f"<pre style='font-family:monospace;font-size:14px;line-height:1.6'>{message}</pre>"
-            send_email(founder_email, "Options Tycoon — Signal Alert", html_body)
-    except Exception as e:
-        logger.debug(f"Email alert skipped: {e}")
-    
-    # Telegram (secondary, if configured)
+    """Send alert via Telegram (if configured). Email disabled — user generates signals manually."""
+    # Email disabled — user logs in and generates signals manually each week
+    # Keeping Telegram as optional secondary alert (non-blocking)
     try:
         import sys
         import os
