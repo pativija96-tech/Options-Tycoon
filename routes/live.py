@@ -937,52 +937,18 @@ async def upload_tradebook(request: Request):
     
     try:
         content = await file.read()
-        text = content.decode("utf-8-sig")  # Handle BOM
-        reader = csv.DictReader(io.StringIO(text))
+        filename = (file.filename or "").lower()
         
-        # Normalize column headers (strip whitespace, lowercase)
-        if reader.fieldnames:
-            reader.fieldnames = [f.strip().lower().replace(" ", "_") for f in reader.fieldnames]
-        
-        # Parse all rows, filter to NIFTY NFO
-        all_orders = []
-        for row in reader:
-            symbol = (row.get("symbol", "") or row.get("tradingsymbol", "") or "").strip()
-            segment = (row.get("segment", "") or "").strip()
-            
-            if "NIFTY" not in symbol.upper():
-                continue
-            if "CE" not in symbol.upper() and "PE" not in symbol.upper():
-                continue
-            
-            trade_date = (row.get("trade_date", "") or "").strip()
-            if not trade_date:
-                continue
-            # Handle YYYY-MM-DD format (already correct in this CSV)
-            trade_date = trade_date.split("T")[0]  # Strip time if present
-            
-            trade_type = (row.get("trade_type", "") or "").upper().strip()
-            quantity = abs(int(float(row.get("quantity", 0) or 0)))
-            price = float(row.get("price", 0) or 0)
-            expiry = (row.get("expiry_date", "") or "").strip()
-            exec_time = (row.get("order_execution_time", "") or "").strip()
-            
-            if trade_type in ("BUY", "B"):
-                action = "BUY"
-            elif trade_type in ("SELL", "S"):
-                action = "SELL"
-            else:
-                continue
-            
-            # Extract strike and option type
+        # Helper: extract strike and option type from symbol
+        def _parse_symbol(symbol):
             option_type = ""
             strike = ""
             sym_upper = symbol.upper()
             if "CE" in sym_upper:
                 option_type = "CE"
-                ce_idx = sym_upper.rindex("CE")
+                idx = sym_upper.rindex("CE")
                 digits = ""
-                for ch in reversed(symbol[:ce_idx]):
+                for ch in reversed(symbol[:idx]):
                     if ch.isdigit():
                         digits = ch + digits
                     else:
@@ -990,26 +956,103 @@ async def upload_tradebook(request: Request):
                 strike = digits
             elif "PE" in sym_upper:
                 option_type = "PE"
-                pe_idx = sym_upper.rindex("PE")
+                idx = sym_upper.rindex("PE")
                 digits = ""
-                for ch in reversed(symbol[:pe_idx]):
+                for ch in reversed(symbol[:idx]):
                     if ch.isdigit():
                         digits = ch + digits
                     else:
                         break
                 strike = digits
+            return option_type, strike
+        
+        all_orders = []
+        
+        if filename.endswith('.xlsx') or filename.endswith('.xls'):
+            # Excel file
+            import openpyxl
+            from io import BytesIO
+            wb = openpyxl.load_workbook(BytesIO(content), read_only=True, data_only=True)
+            ws = wb.active
+            rows_iter = ws.iter_rows(values_only=True)
+            headers_raw = next(rows_iter)
+            headers = [str(h).strip().lower().replace(" ", "_") if h else f"col{i}" for i, h in enumerate(headers_raw)]
             
-            all_orders.append({
-                "date": trade_date,
-                "symbol": symbol,
-                "action": action,
-                "quantity": quantity,
-                "price": price,
-                "option_type": option_type,
-                "strike": strike,
-                "expiry": expiry,
-                "exec_time": exec_time,
-            })
+            for row_values in rows_iter:
+                if not row_values:
+                    continue
+                row = dict(zip(headers, [v if v is not None else "" for v in row_values]))
+                symbol = str(row.get("symbol", "") or row.get("tradingsymbol", "") or "").strip()
+                
+                if "NIFTY" not in symbol.upper():
+                    continue
+                if "CE" not in symbol.upper() and "PE" not in symbol.upper():
+                    continue
+                
+                trade_date = str(row.get("trade_date", "") or "").strip()
+                if not trade_date:
+                    continue
+                # Handle datetime objects from Excel
+                if hasattr(row.get("trade_date"), "strftime"):
+                    trade_date = row["trade_date"].strftime("%Y-%m-%d")
+                else:
+                    trade_date = trade_date.split("T")[0].split(" ")[0]
+                
+                trade_type = str(row.get("trade_type", "") or "").upper().strip()
+                try:
+                    quantity = abs(int(float(row.get("quantity", 0) or 0)))
+                    price = float(row.get("price", 0) or 0)
+                except (ValueError, TypeError):
+                    continue
+                
+                if trade_type in ("BUY", "B"):
+                    action = "BUY"
+                elif trade_type in ("SELL", "S"):
+                    action = "SELL"
+                else:
+                    continue
+                
+                option_type, strike = _parse_symbol(symbol)
+                all_orders.append({
+                    "date": trade_date, "symbol": symbol, "action": action,
+                    "quantity": quantity, "price": price, "option_type": option_type, "strike": strike,
+                })
+            wb.close()
+        else:
+            # CSV file
+            text = content.decode("utf-8-sig")
+            reader = csv.DictReader(io.StringIO(text))
+            if reader.fieldnames:
+                reader.fieldnames = [f.strip().lower().replace(" ", "_") for f in reader.fieldnames]
+            
+            for row in reader:
+                symbol = (row.get("symbol", "") or row.get("tradingsymbol", "") or "").strip()
+                if "NIFTY" not in symbol.upper():
+                    continue
+                if "CE" not in symbol.upper() and "PE" not in symbol.upper():
+                    continue
+                
+                trade_date = (row.get("trade_date", "") or "").strip()
+                if not trade_date:
+                    continue
+                trade_date = trade_date.split("T")[0]
+                
+                trade_type = (row.get("trade_type", "") or "").upper().strip()
+                quantity = abs(int(float(row.get("quantity", 0) or 0)))
+                price = float(row.get("price", 0) or 0)
+                
+                if trade_type in ("BUY", "B"):
+                    action = "BUY"
+                elif trade_type in ("SELL", "S"):
+                    action = "SELL"
+                else:
+                    continue
+                
+                option_type, strike = _parse_symbol(symbol)
+                all_orders.append({
+                    "date": trade_date, "symbol": symbol, "action": action,
+                    "quantity": quantity, "price": price, "option_type": option_type, "strike": strike,
+                })
         
         if not all_orders:
             return JSONResponse(status_code=400, content={

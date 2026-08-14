@@ -111,7 +111,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
   <div id="uploadPanel" style="display:none;margin-top:16px;padding:20px;background:var(--card);border:1px solid rgba(168,85,247,.4);border-radius:10px">
     <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:#a855f7;margin-bottom:12px">📄 UPLOAD KITE TRADEBOOK CSV</div>
     <p style="font-size:.75rem;color:var(--muted);margin-bottom:12px">Download from: <a href="https://console.zerodha.com/reports/tradebook" target="_blank" style="color:var(--blue)">Kite Console → Reports → Tradebook</a> → Select date range → Download CSV</p>
-    <input type="file" id="tradebookFile" accept=".csv" style="margin-bottom:12px;font-size:.8rem;color:var(--text)">
+    <input type="file" id="tradebookFile" accept=".csv,.xlsx,.xls" style="margin-bottom:12px;font-size:.8rem;color:var(--text)">
     <div style="display:flex;gap:8px">
       <button onclick="uploadTradebook()" style="background:#a855f7;color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Upload & Parse</button>
       <button onclick="document.getElementById('uploadPanel').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:6px;cursor:pointer;font-size:.85rem">Cancel</button>

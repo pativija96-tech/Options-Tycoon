@@ -15,6 +15,7 @@ numpy
 python-telegram-bot
 scipy
 kiteconnect
+openpyxl
 
 # IBKR Web API v1.0 (OAuth 2.0 / REST)
 PyJWT[crypto]>=2.8.0
