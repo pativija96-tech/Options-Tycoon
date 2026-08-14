@@ -105,6 +105,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <button onclick="showUploadForm()" style="background:rgba(168,85,247,.15);border:1px solid rgba(168,85,247,.4);color:#a855f7;padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">📄 Upload Tradebook</button>
     <button onclick="showLogForm()" style="background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">+ Manual</button>
     <button onclick="showResolveForm()" style="background:rgba(234,179,8,.15);border:1px solid rgba(234,179,8,.4);color:var(--yellow);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">✓ Resolve</button>
+    <button onclick="cleanupOldTrades()" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:var(--red);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">🗑 Clean Old</button>
   </div>
 
   <!-- Upload Tradebook Panel -->
@@ -379,6 +380,21 @@ window.showUploadForm=function(){
   document.getElementById('logFormPanel').style.display='none';
   document.getElementById('resolveFormPanel').style.display='none';
   document.getElementById('kiteFetchPanel').style.display='none';
+};
+
+window.cleanupOldTrades=function(){
+  var cutoff=prompt('Delete all trades BEFORE this date (YYYY-MM-DD):','2026-08-05');
+  if(!cutoff)return;
+  if(!confirm('Delete all trades before '+cutoff+'? This cannot be undone.'))return;
+  fetch('/api/live/cleanup-old-trades?before='+cutoff,{method:'DELETE',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){
+      alert('Deleted '+d.deleted+' old trade(s).');
+      loadTradeHistory();
+      loadTrackRecord();
+    } else {
+      alert('Error: '+(d.error||'Unknown'));
+    }
+  }).catch(function(e){alert('Network error: '+e);});
 };
 
 window.uploadTradebook=function(){
