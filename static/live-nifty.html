@@ -808,15 +808,30 @@ fetch('/api/live/signal?mode=nifty').then(function(r){
 
 // --- Capital Display ---
 fetch('/api/live/settings').then(function(r){return r.json();}).then(function(s){
-  var cap=s.capital||0;
+  var base=s.capital||0;  // funded base capital
   var riskPct=s.risk_per_trade||0.02;
-  // Prefer explicit max_loss_per_trade (NIFTY IC), else compute from pct
-  var maxRisk=s.max_loss_per_trade||Math.round(cap*riskPct);
+  var maxRisk=s.max_loss_per_trade||Math.round(base*riskPct);
   var margin=s.margin_per_lot;
-  document.getElementById('trCapital').textContent='₹'+cap.toLocaleString();
+
+  // Capital = base + cumulative realized P&L (from resolved trades)
+  fetch('/api/live/my-trades?user_id='+userId).then(function(r){return r.json();}).then(function(d){
+    var trades=d.trades||[];
+    var realized=0;
+    for(var i=0;i<trades.length;i++){
+      if((trades[i].status==='win'||trades[i].status==='loss') && trades[i].pnl!=null){
+        realized+=trades[i].pnl;
+      }
+    }
+    var current=base+realized;
+    var capEl=document.getElementById('trCapital');
+    capEl.textContent='₹'+Math.round(current).toLocaleString();
+    capEl.title='Base ₹'+base.toLocaleString()+' + Realized P&L ₹'+Math.round(realized).toLocaleString();
+  }).catch(function(){
+    document.getElementById('trCapital').textContent='₹'+base.toLocaleString();
+  });
+
   document.getElementById('trRiskTrade').textContent='₹'+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
-  var dailyLabel='₹0 / ₹'+maxRisk.toLocaleString();
-  if(margin) dailyLabel='Margin/lot: ₹'+margin.toLocaleString();
+  var dailyLabel='Margin/lot: ₹'+(margin||67000).toLocaleString();
   document.getElementById('trDailyRisk').textContent=dailyLabel;
 }).catch(function(){});
 
