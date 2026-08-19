@@ -108,6 +108,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <button onclick="cleanupOldTrades()" style="background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:var(--red);padding:10px 24px;border-radius:8px;font-size:.85rem;font-weight:600;cursor:pointer;margin-left:8px">🗑 Clean Old</button>
   </div>
 
+  <!-- Clean Old Trades Panel -->
+  <div id="cleanupPanel" style="display:none;margin-top:16px;padding:20px;background:var(--card);border:1px solid rgba(239,68,68,.4);border-radius:10px">
+    <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:12px">🗑 DELETE OLD TRADES</div>
+    <p style="font-size:.75rem;color:var(--muted);margin-bottom:12px">Deletes all trades BEFORE the cutoff date. Cannot be undone.</p>
+    <label style="color:var(--muted);font-size:.7rem">Delete trades before (YYYY-MM-DD)</label>
+    <input type="date" id="cleanupCutoff" value="2026-08-05" style="width:100%;padding:8px;margin:6px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+    <div style="display:flex;gap:8px">
+      <button onclick="doCleanup()" style="background:var(--red);color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Delete Old Trades</button>
+      <button onclick="document.getElementById('cleanupPanel').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:6px;cursor:pointer;font-size:.85rem">Cancel</button>
+    </div>
+    <div id="cleanupResult" style="margin-top:12px;font-size:.8rem"></div>
+  </div>
+
   <!-- Upload Tradebook Panel -->
   <div id="uploadPanel" style="display:none;margin-top:16px;padding:20px;background:var(--card);border:1px solid rgba(168,85,247,.4);border-radius:10px">
     <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:#a855f7;margin-bottom:12px">📄 UPLOAD KITE TRADEBOOK CSV</div>
@@ -398,18 +411,31 @@ window.showUploadForm=function(){
 };
 
 window.cleanupOldTrades=function(){
-  var cutoff=prompt('Delete all trades BEFORE this date (YYYY-MM-DD):','2026-08-05');
-  if(!cutoff)return;
-  if(!confirm('Delete all trades before '+cutoff+'? This cannot be undone.'))return;
+  // Toggle an inline panel instead of using prompt/confirm (browsers can block those)
+  var panel=document.getElementById('cleanupPanel');
+  if(panel){
+    panel.style.display=panel.style.display==='none'?'block':'none';
+  }
+  // hide other panels
+  var others=['logFormPanel','resolveFormPanel','kiteFetchPanel','uploadPanel'];
+  for(var i=0;i<others.length;i++){var el=document.getElementById(others[i]);if(el)el.style.display='none';}
+};
+
+window.doCleanup=function(){
+  var cutoffEl=document.getElementById('cleanupCutoff');
+  var cutoff=cutoffEl?cutoffEl.value:'2026-08-05';
+  if(!cutoff){alert('Enter a cutoff date');return;}
+  var resultEl=document.getElementById('cleanupResult');
+  if(resultEl)resultEl.innerHTML='<span style="color:var(--muted)">Deleting...</span>';
   fetch('/api/live/cleanup-old-trades?before='+cutoff,{method:'DELETE',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
-      alert('Deleted '+d.deleted+' old trade(s).');
+      if(resultEl)resultEl.innerHTML='<span style="color:var(--green)">Deleted '+d.deleted+' trade(s) before '+cutoff+'</span>';
       loadTradeHistory();
       loadTrackRecord();
     } else {
-      alert('Error: '+(d.error||'Unknown'));
+      if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+(d.error||'Unknown')+'</span>';
     }
-  }).catch(function(e){alert('Network error: '+e);});
+  }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+e+'</span>';});
 };
 
 window.uploadTradebook=function(){
