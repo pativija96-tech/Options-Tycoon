@@ -458,6 +458,32 @@ async def cleanup_old_trades(request: Request):
         conn.close()
 
 
+@router.delete("/delete-open-trades")
+async def delete_open_trades(request: Request):
+    """Delete all stale OPEN/unresolved trades (ghost entries from old imports).
+    Keeps resolved win/loss trades intact.
+    """
+    from db.database import get_connection
+    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id") or "1"
+    conn = get_connection()
+    try:
+        count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM live_trades WHERE user_id = ? AND status IN ('open','PROFIT_TARGET_MET','SIGNAL_GENERATED')",
+            (int(user_id),)
+        ).fetchone()
+        deleted_count = count["cnt"] if count else 0
+        conn.execute(
+            "DELETE FROM live_trades WHERE user_id = ? AND status IN ('open','PROFIT_TARGET_MET','SIGNAL_GENERATED')",
+            (int(user_id),)
+        )
+        conn.commit()
+        return {"success": True, "deleted": deleted_count}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)[:200]})
+    finally:
+        conn.close()
+
+
 @router.post("/run-eod")
 async def run_eod():
     """
@@ -703,17 +729,29 @@ async def get_settings():
     with open(settings_path) as f:
         settings = json.load(f)
     trading_mode = settings.get("trading_mode", os.environ.get("TRADING_MODE", "qqq"))
-    # Return mode-specific capital
+    # Return mode-specific capital + risk
     if trading_mode == "nifty":
-        capital = settings.get("nifty", {}).get("capital", settings.get("capital", 75000))
+        nifty = settings.get("nifty", {})
+        capital = nifty.get("capital", settings.get("capital", 75000))
+        max_loss = nifty.get("max_loss_per_trade", 4400)
+        margin = nifty.get("margin_per_lot", 67000)
+        risk_pct = round(max_loss / capital, 4) if capital else 0
+        return {
+            "trading_mode": trading_mode,
+            "capital": capital,
+            "max_loss_per_trade": max_loss,
+            "risk_per_trade": risk_pct,      # actual IC max-loss as % of capital
+            "risk_per_day": risk_pct,        # single trade/day
+            "margin_per_lot": margin,
+        }
     else:
         capital = settings.get("qqq", {}).get("capital", settings.get("capital", 1000))
-    return {
-        "trading_mode": trading_mode,
-        "capital": capital,
-        "risk_per_trade": settings.get("risk_per_trade"),
-        "risk_per_day": settings.get("risk_per_day"),
-    }
+        return {
+            "trading_mode": trading_mode,
+            "capital": capital,
+            "risk_per_trade": settings.get("risk_per_trade"),
+            "risk_per_day": settings.get("risk_per_day"),
+        }
 
 
 @router.get("/open-positions")

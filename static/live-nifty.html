@@ -114,10 +114,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <p style="font-size:.75rem;color:var(--muted);margin-bottom:12px">Deletes all trades BEFORE the cutoff date. Cannot be undone.</p>
     <label style="color:var(--muted);font-size:.7rem">Delete trades before (YYYY-MM-DD)</label>
     <input type="date" id="cleanupCutoff" value="2026-08-05" style="width:100%;padding:8px;margin:6px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="doCleanup()" style="background:var(--red);color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Delete Old Trades</button>
+      <button onclick="deleteOpenTrades()" style="background:rgba(234,179,8,.15);border:1px solid var(--yellow);color:var(--yellow);padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Clear Stale OPEN Trades</button>
       <button onclick="document.getElementById('cleanupPanel').style.display='none'" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:10px 20px;border-radius:6px;cursor:pointer;font-size:.85rem">Cancel</button>
     </div>
+    <div style="font-size:.65rem;color:var(--muted);margin-top:8px">"Clear Stale OPEN" removes ghost/unresolved positions (like old #15, #16) but keeps your WIN/LOSS history.</div>
     <div id="cleanupResult" style="margin-top:12px;font-size:.8rem"></div>
   </div>
 
@@ -432,11 +434,34 @@ window.doCleanup=function(){
       if(resultEl)resultEl.innerHTML='<span style="color:var(--green)">Deleted '+d.deleted+' trade(s) before '+cutoff+'</span>';
       loadTradeHistory();
       loadTrackRecord();
+      reloadPositions();
     } else {
       if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+(d.error||'Unknown')+'</span>';
     }
   }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+e+'</span>';});
 };
+
+window.deleteOpenTrades=function(){
+  var resultEl=document.getElementById('cleanupResult');
+  if(resultEl)resultEl.innerHTML='<span style="color:var(--muted)">Clearing stale open trades...</span>';
+  fetch('/api/live/delete-open-trades',{method:'DELETE',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){
+      if(resultEl)resultEl.innerHTML='<span style="color:var(--green)">Cleared '+d.deleted+' stale open trade(s)</span>';
+      loadTradeHistory();
+      loadTrackRecord();
+      reloadPositions();
+    } else {
+      if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+(d.error||'Unknown')+'</span>';
+    }
+  }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+e+'</span>';});
+};
+
+function reloadPositions(){
+  fetch('/api/live/open-positions?user_id='+userId).then(function(r){return r.json();}).then(function(d){
+    var positions=d.positions||[];
+    if(positions.length===0){document.getElementById('positionsPanel').innerHTML='';}
+  }).catch(function(){});
+}
 
 window.uploadTradebook=function(){
   var fileInput=document.getElementById('tradebookFile');
@@ -785,10 +810,14 @@ fetch('/api/live/signal?mode=nifty').then(function(r){
 fetch('/api/live/settings').then(function(r){return r.json();}).then(function(s){
   var cap=s.capital||0;
   var riskPct=s.risk_per_trade||0.02;
-  var maxRisk=cap*riskPct;
+  // Prefer explicit max_loss_per_trade (NIFTY IC), else compute from pct
+  var maxRisk=s.max_loss_per_trade||Math.round(cap*riskPct);
+  var margin=s.margin_per_lot;
   document.getElementById('trCapital').textContent='₹'+cap.toLocaleString();
   document.getElementById('trRiskTrade').textContent='₹'+maxRisk.toLocaleString()+' ('+Math.round(riskPct*100)+'%)';
-  document.getElementById('trDailyRisk').textContent='₹0 / ₹'+(cap*(s.risk_per_day||0.05)).toLocaleString();
+  var dailyLabel='₹0 / ₹'+maxRisk.toLocaleString();
+  if(margin) dailyLabel='Margin/lot: ₹'+margin.toLocaleString();
+  document.getElementById('trDailyRisk').textContent=dailyLabel;
 }).catch(function(){});
 
 // --- Load Trade History + Track Record ---
