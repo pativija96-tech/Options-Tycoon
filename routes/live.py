@@ -1013,9 +1013,11 @@ async def upload_tradebook(request: Request):
                     continue
                 
                 option_type, strike = _parse_symbol(symbol)
+                expiry = str(row.get("expiry_date", "") or "").split("T")[0].split(" ")[0]
                 all_orders.append({
                     "date": trade_date, "symbol": symbol, "action": action,
                     "quantity": quantity, "price": price, "option_type": option_type, "strike": strike,
+                    "expiry": expiry,
                 })
             wb.close()
         else:
@@ -1049,9 +1051,11 @@ async def upload_tradebook(request: Request):
                     continue
                 
                 option_type, strike = _parse_symbol(symbol)
+                expiry = (row.get("expiry_date", "") or "").strip().split("T")[0]
                 all_orders.append({
                     "date": trade_date, "symbol": symbol, "action": action,
                     "quantity": quantity, "price": price, "option_type": option_type, "strike": strike,
+                    "expiry": expiry,
                 })
         
         if not all_orders:
@@ -1060,18 +1064,22 @@ async def upload_tradebook(request: Request):
                 "error": "No NIFTY F&O trades found in the CSV. Make sure you're uploading the Tradebook from Console → Reports → Tradebook."
             })
         
-        # Group by date
+        # Group by EXPIRY (so an IC opened one day and closed another = one trade).
+        # Fall back to trade_date if expiry missing.
         from collections import defaultdict
-        trades_by_date = defaultdict(list)
+        trades_by_group = defaultdict(list)
         for order in all_orders:
-            trades_by_date[order["date"]].append(order)
+            group_key = order.get("expiry") or order["date"]
+            trades_by_group[group_key].append(order)
         
-        # Process each date: match round-trips and compute P&L
+        # Process each group (one option-cycle): match round-trips and compute P&L
         conn = get_connection()
         imported_trades = []
         try:
-            for trade_date, orders in sorted(trades_by_date.items()):
-                # Check if already imported
+            for group_key, orders in sorted(trades_by_group.items()):
+                # Trade date = earliest fill date in this group (the entry day)
+                trade_date = min(o["date"] for o in orders)
+                # Check if already imported (by entry date)
                 existing = conn.execute(
                     "SELECT id FROM live_trades WHERE user_id = ? AND date = ? AND mode = 'live'",
                     (int(user_id), trade_date)
