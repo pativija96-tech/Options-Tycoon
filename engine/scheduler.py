@@ -111,17 +111,20 @@ def _run_auto_trade():
                     legs = trade.get("legs", [])
                     projected = signal.get("projected_open", 0)
                     profit_target = trade.get("profit_target", {})
-                    basket = trade.get("basket_order", [])
+                    exec_seq = trade.get("execution_sequence", {})
                     
-                    # Build basket-ready leg format for Kite web
+                    # Build SEQUENTIAL leg format (hedges first, then shorts — NOT basket)
                     basket_text = ""
-                    if basket:
-                        basket_text = "\n\n📋 KITE BASKET ORDER (copy exact):"
-                        for b in basket:
-                            basket_text += f"\n  {b['seq']}. {b['action']} {b['symbol']} × {b['qty']} ({b['product']})"
+                    if exec_seq:
+                        basket_text = "\n\n⚙️ PLACE ONE ORDER AT A TIME (not basket):"
+                        basket_text += "\n\nPHASE A — Buy hedges first, wait for COMPLETE:"
+                        for b in exec_seq.get("phase_a_hedges_first", []):
+                            basket_text += f"\n  {b['seq']}. {b['action']} {b['symbol']} × {b['qty']} (LIMIT/NRML)"
+                        basket_text += "\n\nPHASE B — Then sell shorts:"
+                        for b in exec_seq.get("phase_b_shorts_after_hedges_filled", []):
+                            basket_text += f"\n  {b['seq']}. {b['action']} {b['symbol']} × {b['qty']} (LIMIT/NRML)"
                     else:
-                        # Fallback: build from legs
-                        basket_text = "\n\nLegs (place as BASKET on Kite web):"
+                        basket_text = "\n\nLegs (place ONE at a time, hedges/BUY first):"
                         for leg in legs:
                             basket_text += f"\n  {leg['action']} NIFTY {leg['strike']} {leg['option']} @ ~Rs.{leg.get('premium_est', 0):.1f}"
                     
@@ -139,8 +142,9 @@ def _run_auto_trade():
                         f"\nReward: Rs.{trade.get('net_max_profit', trade.get('max_profit', 0)):.0f}"
                         f"\nRisk: Rs.{trade.get('net_max_loss', trade.get('max_loss', 0)):.0f}"
                         f"{pt_text}"
-                        f"\n\n⚠️ Place via Kite WEB basket order (not app) for spread margin."
-                        f"\nOrder: BUY wings first, then SELL shorts."
+                        f"\n\n⚠️ Place each leg as an INDIVIDUAL order (NOT basket)."
+                        f"\nBUY hedges first → wait COMPLETE → then SELL shorts."
+                        f"\nLIMIT at LTP. Hedges must fill before shorts (spread margin)."
                     )
                     _send_telegram_alert(msg)
                 else:

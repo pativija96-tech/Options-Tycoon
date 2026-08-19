@@ -317,6 +317,21 @@ function render(card){
       html+='<div class="leg"><span class="action '+aCls+'">'+leg.action+'</span><span class="contract">NIFTY '+leg.strike+' '+leg.option+'</span><span class="price">Rs.'+leg.premium_est+'</span></div>';
     }
     html+='</div>';
+
+    // Execution sequence guidance (sequential, hedges first — NOT basket)
+    var es=t.execution_sequence;
+    if(es){
+      html+='<div style="margin:12px 0;padding:14px;background:rgba(234,179,8,.06);border:1px solid rgba(234,179,8,.3);border-radius:8px">';
+      html+='<div style="font-size:.72rem;font-weight:700;color:var(--yellow);margin-bottom:8px">⚙️ HOW TO PLACE — ONE ORDER AT A TIME (NOT basket)</div>';
+      html+='<div style="font-size:.7rem;color:var(--muted);margin-bottom:6px">PHASE A — Buy hedges first, wait for COMPLETE:</div>';
+      var pa=es.phase_a_hedges_first||[];
+      for(var i=0;i<pa.length;i++){html+='<div style="font-family:var(--mono);font-size:.75rem;padding:2px 0;color:var(--green)">'+pa[i].seq+'. '+pa[i].action+' '+esc(pa[i].symbol)+' × '+pa[i].qty+' (LIMIT)</div>';}
+      html+='<div style="font-size:.7rem;color:var(--muted);margin:6px 0">PHASE B — Then sell shorts:</div>';
+      var pb=es.phase_b_shorts_after_hedges_filled||[];
+      for(var i=0;i<pb.length;i++){html+='<div style="font-family:var(--mono);font-size:.75rem;padding:2px 0;color:var(--red)">'+pb[i].seq+'. '+pb[i].action+' '+esc(pb[i].symbol)+' × '+pb[i].qty+' (LIMIT)</div>';}
+      html+='<div style="font-size:.65rem;color:var(--muted);margin-top:8px;line-height:1.5">• Individual orders only — basket duplicates legs on retry<br>• LIMIT at live LTP so it fills fast<br>• Hedges must be COMPLETE before shorts (spread margin)<br>• To exit a leg: fresh opposite order with exact qty (not "Exit")</div>';
+      html+='</div>';
+    }
   }
 
   html+='<div class="metrics">';

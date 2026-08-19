@@ -270,12 +270,24 @@ def generate_daily_signal(capital: float = None) -> dict:
                 {"action": "SELL", "option": "PE", "strike": short_put, "premium_est": short_put_prem},
                 {"action": "BUY", "option": "PE", "strike": long_put, "premium_est": long_put_prem},
             ],
-            "basket_order": [
-                {"seq": 1, "action": "BUY", "symbol": f"NIFTY {long_put} PE", "qty": LOT_SIZE, "product": "NRML", "note": "Hedge — place FIRST"},
-                {"seq": 2, "action": "BUY", "symbol": f"NIFTY {long_call} CE", "qty": LOT_SIZE, "product": "NRML", "note": "Hedge"},
-                {"seq": 3, "action": "SELL", "symbol": f"NIFTY {short_put} PE", "qty": LOT_SIZE, "product": "NRML", "note": "Short leg"},
-                {"seq": 4, "action": "SELL", "symbol": f"NIFTY {short_call} CE", "qty": LOT_SIZE, "product": "NRML", "note": "Short leg — place LAST"},
-            ],
+            "execution_sequence": {
+                "method": "SEQUENTIAL — place ONE regular LIMIT order at a time. Do NOT use Kite basket (it duplicates legs on retry).",
+                "phase_a_hedges_first": [
+                    {"seq": 1, "action": "BUY", "symbol": f"NIFTY {long_put} PE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Put hedge — place FIRST, wait for COMPLETE"},
+                    {"seq": 2, "action": "BUY", "symbol": f"NIFTY {long_call} CE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Call hedge — wait for COMPLETE"},
+                ],
+                "phase_b_shorts_after_hedges_filled": [
+                    {"seq": 3, "action": "SELL", "symbol": f"NIFTY {short_put} PE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Short put — only after put hedge is COMPLETE (gets spread margin)"},
+                    {"seq": 4, "action": "SELL", "symbol": f"NIFTY {short_call} CE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Short call — only after call hedge is COMPLETE (gets spread margin)"},
+                ],
+                "rules": [
+                    "Place each leg as an INDIVIDUAL regular order (not basket).",
+                    "Set LIMIT price at the live LTP so it fills immediately.",
+                    "Confirm each order shows COMPLETE before placing the next.",
+                    "Hedges (BUY) MUST be COMPLETE before placing shorts (SELL) — else naked margin rejection.",
+                    "To reduce/exit a leg: place a fresh opposite order with EXACT qty (never use 'Exit' — it defaults to full position).",
+                ],
+            },
             "net_cost": round(-net_credit, 2),
             "net_cost_total": round(-net_credit_total, 2),
             "max_profit": round(max_profit, 2),

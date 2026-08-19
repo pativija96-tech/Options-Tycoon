@@ -90,12 +90,19 @@ SIGNAL GENERATION (automated, 9:20 AM IST daily):
   → Sends EMAIL to founder with exact strikes + order sequence
   → Signal visible on live-nifty.html page
 
-EXECUTION (manual by user):
+EXECUTION (manual by user) — SEQUENTIAL, ONE ORDER AT A TIME:
   → User opens Kite WEB (not app)
-  → Creates basket order with 4 legs (BUY first, SELL second)
-  → Uses LIMIT orders at LTP (Kite blocks naked market orders)
-  → Kite calculates spread margin (₹67K for current strategy)
-  → User executes if margin available
+  → DO NOT use the basket order — it duplicates legs on partial-fill/retry
+  → PHASE A: Place BOTH buy hedges first (long PE + long CE), LIMIT at LTP.
+    Wait until both show COMPLETE.
+  → PHASE B: Then place the two short legs (short PE + short CE), LIMIT at LTP.
+    Shorts get spread margin (~₹32K each) only because hedges are already filled.
+  → Confirm each order COMPLETE before placing the next.
+  → To reduce/exit a leg: fresh opposite order with EXACT qty (never "Exit" —
+    it defaults to full position and can create a naked short → margin rejection).
+
+  LESSON (Aug 19, 2026): Basket order caused leg duplication (130 qty hedges) and
+  repeated naked-margin rejections. Sequential hedges-first is the reliable method.
 
 EOD TRACKING (automated, 3:35 PM IST daily):
   → System checks NIFTY close vs short strikes
@@ -107,7 +114,15 @@ EOD TRACKING (automated, 3:35 PM IST daily):
 
 1. **IP whitelist**: Railway changes outbound IP on every deploy. Kite allows only 2 whitelisted IPs, updatable once per week.
 2. **Order type**: Kite blocks market orders via API for options — requires LIMIT with price.
-3. **Margin**: Individual API legs don't get spread margin benefit — need basket order via web UI.
+3. **Margin**: Individual API legs don't get spread margin unless the hedge is filled first.
+
+### Manual Execution Best Practice (learned Aug 19, 2026)
+
+- **Sequential, one order at a time** — NOT Kite basket.
+- **Hedges (BUY) first**, wait for COMPLETE, then **shorts (SELL)**.
+- Shorts get spread margin (~₹32K) only when the paired hedge is already in the account.
+- Basket order caused duplication (retries re-added filled legs → 130 qty) and naked-margin
+  rejections (shorts firing before hedges registered). Sequential method avoids both.
 
 ### Broker: Zerodha (Kite)
 - Account: Badakala Raghu Raj (wife's account)
