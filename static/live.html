@@ -113,6 +113,48 @@ document.getElementById('timeDisplay').textContent=new Date().toLocaleString('en
 
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+function copyOrder(btn){
+  var text=btn.getAttribute('data-order')||'';
+  function done(ok){var o=btn.textContent;btn.textContent=ok?'✓ Copied':'Copy failed';setTimeout(function(){btn.textContent=o;},1200);}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){done(true);},function(){done(false);});}
+  else{try{var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done(true);}catch(e){done(false);}}
+}
+
+// Render a QQQ combo block (ENTRY/EXIT). QQQ is placed as ONE atomic combo ticket.
+// kind='entry'|'exit'. seqObj = signal execution_sequence / exit_sequence.
+function comboBlock(kind,seqObj){
+  if(!seqObj||!seqObj.combo_order)return '';
+  var isExit=kind==='exit';
+  var accent=isExit?'#3b82f6':'#eab308';
+  var txt=isExit?'#fff':'#1a1a1a';
+  var bg=isExit?'rgba(59,130,246,.06)':'rgba(234,179,8,.06)';
+  var arrow=isExit?'◀ EXIT':'▶ ENTRY';
+  var title=isExit?'ATOMIC COMBO — one closing ticket':'ATOMIC COMBO — one ticket, all-or-nothing';
+  var legs=seqObj.combo_order;
+  var copyLines=[];
+  var h='<div style="margin:12px 0;padding:14px;background:'+bg+';border:2px solid '+accent+';border-radius:8px">';
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+  h+='<span style="font-size:.7rem;font-weight:800;letter-spacing:1px;padding:4px 12px;border-radius:20px;background:'+accent+';color:'+txt+'">'+arrow+'</span>';
+  h+='<span style="font-size:.72rem;font-weight:700;color:'+accent+'">'+title+'</span>';
+  h+='</div>';
+  for(var i=0;i<legs.length;i++){
+    var l=legs[i];
+    var c=l.action==='BUY'?'var(--green)':'var(--red)';
+    var line=l.action+' '+l.symbol;
+    copyLines.push(line);
+    h+='<div style="font-family:var(--mono);font-size:.78rem;font-weight:600;color:'+c+';padding:3px 0;border-bottom:1px dashed var(--border)">• '+esc(line)+'</div>';
+  }
+  var allOrder=copyLines.join('\n');
+  h+='<div style="display:flex;align-items:center;gap:8px;margin-top:8px">';
+  h+='<button onclick="copyOrder(this)" data-order="'+esc(allOrder)+'" style="font-size:.62rem;padding:3px 10px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);border-radius:5px;cursor:pointer">📋 Copy all legs</button>';
+  h+='</div>';
+  var rules=seqObj.rules||[];
+  if(rules.length){h+='<div style="font-size:.65rem;color:var(--muted);margin-top:8px;line-height:1.5">';for(var r=0;r<rules.length;r++){h+='• '+esc(rules[r])+'<br>';}h+='</div>';}
+  if(seqObj.trigger_note){h+='<div style="font-size:.68rem;color:var(--yellow);margin-top:6px;font-weight:600">⏱ '+esc(seqObj.trigger_note)+'</div>';}
+  h+='</div>';
+  return h;
+}
+
 function getRegime(data){
   if(!data)return{word:'LOADING',cls:'calm'};
   var vix=data.vix?data.vix.change_pct:0;
@@ -221,6 +263,10 @@ function render(card){
     }
     html+='</div>';
   }
+
+  // Entry / Exit sequence blocks (QQQ = atomic combo)
+  html+=comboBlock('entry', t.execution_sequence);
+  html+=comboBlock('exit', t.exit_sequence);
 
   // Metrics
   html+='<div class="metrics">';

@@ -234,6 +234,31 @@ document.getElementById('timeDisplay').textContent=new Date().toLocaleString('en
 
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+// Copy an order string to clipboard and flash the button
+function copyOrder(btn){
+  var text=btn.getAttribute('data-order')||'';
+  function done(ok){var o=btn.textContent;btn.textContent=ok?'✓ Copied':'Copy failed';setTimeout(function(){btn.textContent=o;},1200);}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){done(true);},function(){done(false);});}
+  else{try{var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done(true);}catch(e){done(false);}}
+}
+
+// Render one copy-pasteable order line. label = e.g. "1" (entry) or "Exit 1".
+// color = 'green' (BUY) or 'red' (SELL). kind = 'entry' | 'exit' (badge color).
+// Returns HTML string with a bold step badge + copy-pasteable order + Copy button.
+function orderLine(label,action,symbol,qty,color,kind){
+  var order=action+' '+symbol+' '+qty+' LIMIT';
+  var c=color==='green'?'var(--green)':'var(--red)';
+  // Step badge: amber for entry, blue for exit — visually separates the two flows.
+  var badgeBg=kind==='exit'?'#3b82f6':'#eab308';
+  var badgeTxt=kind==='exit'?'#fff':'#1a1a1a';
+  var h='<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px dashed var(--border)">';
+  h+='<span style="flex:0 0 auto;min-width:52px;text-align:center;font-size:.62rem;font-weight:800;letter-spacing:.5px;padding:3px 6px;border-radius:5px;background:'+badgeBg+';color:'+badgeTxt+'">'+esc(String(label))+'</span>';
+  h+='<span style="font-family:var(--mono);font-size:.78rem;font-weight:600;color:'+c+';flex:1">'+esc(order)+'</span>';
+  h+='<button onclick="copyOrder(this)" data-order="'+esc(order)+'" style="font-size:.62rem;padding:3px 10px;border:1px solid var(--border);background:rgba(255,255,255,.04);color:var(--muted);border-radius:5px;cursor:pointer">📋 Copy</button>';
+  h+='</div>';
+  return h;
+}
+
 function getRegime(data){
   if(!data)return{word:'LOADING',cls:'calm'};
   var vix=data.vix?data.vix.change_pct:0;
@@ -336,15 +361,38 @@ function render(card){
     // Execution sequence guidance (sequential, hedges first — NOT basket)
     var es=t.execution_sequence;
     if(es){
-      html+='<div style="margin:12px 0;padding:14px;background:rgba(234,179,8,.06);border:1px solid rgba(234,179,8,.3);border-radius:8px">';
-      html+='<div style="font-size:.72rem;font-weight:700;color:var(--yellow);margin-bottom:8px">⚙️ HOW TO PLACE — ONE ORDER AT A TIME (NOT basket)</div>';
+      html+='<div style="margin:12px 0;padding:14px;background:rgba(234,179,8,.06);border:2px solid rgba(234,179,8,.45);border-radius:8px">';
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+      html+='<span style="font-size:.7rem;font-weight:800;letter-spacing:1px;padding:4px 12px;border-radius:20px;background:#eab308;color:#1a1a1a">▶ ENTRY</span>';
+      html+='<span style="font-size:.72rem;font-weight:700;color:var(--yellow)">ONE ORDER AT A TIME — NOT basket</span>';
+      html+='</div>';
       html+='<div style="font-size:.7rem;color:var(--muted);margin-bottom:6px">PHASE A — Buy hedges first, wait for COMPLETE:</div>';
       var pa=es.phase_a_hedges_first||[];
-      for(var i=0;i<pa.length;i++){html+='<div style="font-family:var(--mono);font-size:.75rem;padding:2px 0;color:var(--green)">'+pa[i].seq+'. '+pa[i].action+' '+esc(pa[i].symbol)+' × '+pa[i].qty+' (LIMIT)</div>';}
+      for(var i=0;i<pa.length;i++){html+=orderLine(pa[i].seq,pa[i].action,pa[i].symbol,pa[i].qty,'green','entry');}
       html+='<div style="font-size:.7rem;color:var(--muted);margin:6px 0">PHASE B — Then sell shorts:</div>';
       var pb=es.phase_b_shorts_after_hedges_filled||[];
-      for(var i=0;i<pb.length;i++){html+='<div style="font-family:var(--mono);font-size:.75rem;padding:2px 0;color:var(--red)">'+pb[i].seq+'. '+pb[i].action+' '+esc(pb[i].symbol)+' × '+pb[i].qty+' (LIMIT)</div>';}
-      html+='<div style="font-size:.65rem;color:var(--muted);margin-top:8px;line-height:1.5">• Individual orders only — basket duplicates legs on retry<br>• LIMIT at live LTP so it fills fast<br>• Hedges must be COMPLETE before shorts (spread margin)<br>• To exit a leg: fresh opposite order with exact qty (not "Exit")</div>';
+      for(var i=0;i<pb.length;i++){html+=orderLine(pb[i].seq,pb[i].action,pb[i].symbol,pb[i].qty,'red','entry');}
+      html+='<div style="font-size:.65rem;color:var(--muted);margin-top:8px;line-height:1.5">• Individual orders only — basket duplicates legs on retry<br>• LIMIT at live LTP so it fills fast<br>• Hedges must be COMPLETE before shorts (spread margin)<br>• Tap Copy to paste the order into Kite</div>';
+      html+='</div>';
+    }
+
+    // Exit sequence guidance (sequential, buy back shorts first — reverse of entry)
+    var xs=t.exit_sequence;
+    if(xs){
+      html+='<div style="margin:12px 0;padding:14px;background:rgba(59,130,246,.06);border:2px solid rgba(59,130,246,.45);border-radius:8px">';
+      html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">';
+      html+='<span style="font-size:.7rem;font-weight:800;letter-spacing:1px;padding:4px 12px;border-radius:20px;background:#3b82f6;color:#fff">◀ EXIT</span>';
+      html+='<span style="font-size:.72rem;font-weight:700;color:#3b82f6">ONE ORDER AT A TIME — reverse of entry</span>';
+      html+='</div>';
+      var exitN=0;  // dedicated exit counter → "Exit 1, Exit 2, ..."
+      html+='<div style="font-size:.7rem;color:var(--muted);margin-bottom:6px">PHASE A — Buy back shorts first, wait for COMPLETE:</div>';
+      var xa=xs.phase_a_buy_back_shorts_first||[];
+      for(var i=0;i<xa.length;i++){exitN++;html+=orderLine('Exit '+exitN,xa[i].action,xa[i].symbol,xa[i].qty,'green','exit');}
+      html+='<div style="font-size:.7rem;color:var(--muted);margin:6px 0">PHASE B — Then sell the hedges:</div>';
+      var xb=xs.phase_b_sell_hedges_after_shorts_closed||[];
+      for(var i=0;i<xb.length;i++){exitN++;html+=orderLine('Exit '+exitN,xb[i].action,xb[i].symbol,xb[i].qty,'red','exit');}
+      if(xs.trigger_note){html+='<div style="font-size:.68rem;color:var(--yellow);margin-top:8px;font-weight:600">⏱ '+esc(xs.trigger_note)+'</div>';}
+      html+='<div style="font-size:.65rem;color:var(--muted);margin-top:6px;line-height:1.5">• Fresh opposite order, EXACT qty — never use "Exit" button in Kite<br>• Buy back BOTH shorts before selling any hedge (stays hedged, avoids naked-margin)<br>• Tap Copy to paste the closing order into Kite</div>';
       html+='</div>';
     }
   }
