@@ -60,11 +60,19 @@ def _run_eod_job():
 def _run_auto_trade():
     """
     Auto-generate signal + send Telegram alert with strikes.
-    
-    NO auto-execution — user places orders manually via Kite web basket order
-    (gets spread margin benefit that API individual legs don't get).
-    
-    Signal is generated and saved so the live-nifty page shows it.
+
+    MANUAL-EXECUTION-FIRST POLICY (both modes):
+    This job ONLY generates and saves the signal (POST /api/live/generate-signal).
+    It intentionally does NOT auto-place any order. Execution is manual:
+      - NIFTY: user places legs via Kite web (sequential hedges-first, not basket).
+      - QQQ:   signal auto-generates on the EST schedule; user reviews it and then
+               triggers POST /api/live/live-execute?mode=qqq to place the IBKR IC.
+
+    DO NOT wire execute_qqq_sync / kite_executor into this job until the operator
+    has validated live fills and explicitly decides to switch QQQ to hands-off.
+    (IBKR session is kept warm separately via startup auth + 55s heartbeat below.)
+
+    Signal is generated and saved so the live page shows it.
     Telegram alert sent with exact strikes to place.
     """
     import httpx

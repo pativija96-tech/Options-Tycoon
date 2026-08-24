@@ -288,6 +288,25 @@ def generate_daily_signal(capital: float = None) -> dict:
                     "To reduce/exit a leg: place a fresh opposite order with EXACT qty (never use 'Exit' — it defaults to full position).",
                 ],
             },
+            "exit_sequence": {
+                "method": "SEQUENTIAL — close ONE leg at a time with a fresh opposite LIMIT order at exact qty. Do NOT use 'Exit' (defaults to full position → can create a naked leg). Do NOT use basket.",
+                "phase_a_buy_back_shorts_first": [
+                    {"seq": 1, "action": "BUY", "symbol": f"NIFTY {short_put} PE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Buy back short put FIRST — removes naked-short risk before touching hedges"},
+                    {"seq": 2, "action": "BUY", "symbol": f"NIFTY {short_call} CE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Buy back short call — wait for COMPLETE"},
+                ],
+                "phase_b_sell_hedges_after_shorts_closed": [
+                    {"seq": 3, "action": "SELL", "symbol": f"NIFTY {long_put} PE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Sell put hedge — only after both shorts are closed"},
+                    {"seq": 4, "action": "SELL", "symbol": f"NIFTY {long_call} CE", "qty": LOT_SIZE, "product": "NRML", "order_type": "LIMIT", "note": "Sell call hedge — closes the position"},
+                ],
+                "rules": [
+                    "Close each leg as an INDIVIDUAL regular order with EXACT qty (never 'Exit').",
+                    "BUY BACK the two SHORT legs FIRST — this removes the naked-short margin risk.",
+                    "Only SELL the long hedges AFTER both shorts show COMPLETE.",
+                    "Set LIMIT at live LTP so each closing order fills.",
+                    "Exit-order (shorts-first) is the REVERSE of entry (hedges-first) — this keeps you hedged throughout.",
+                ],
+                "trigger_note": "Exit when 50% profit target hit, OR before expiry morning to avoid the expiry-day ELM margin spike.",
+            },
             "net_cost": round(-net_credit, 2),
             "net_cost_total": round(-net_credit_total, 2),
             "max_profit": round(max_profit, 2),

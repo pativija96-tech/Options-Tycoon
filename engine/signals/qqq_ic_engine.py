@@ -2,7 +2,7 @@
 QQQ Iron Condor Engine — Daily 0DTE signal generator for US market.
 
 Same philosophy as simple_ic_engine.py (NIFTY) but for QQQ via IBKR.
-No directional prediction. Mechanical ±$15 IC, $7 wings, daily.
+No directional prediction. Mechanical ±$15 IC, $5 wings (Phase 1), daily.
 
 Usage:
     from engine.signals.qqq_ic_engine import generate_qqq_signal
@@ -225,6 +225,35 @@ def generate_qqq_signal(capital: float = 1000) -> dict:
             "commission": commission,
             "expiry": "0DTE (same day)",
             "width": QQQ_WING,
+            "execution_sequence": {
+                "method": "ATOMIC COMBO — QQQ IC is placed as a single 4-leg combo ticket (all-or-nothing) via IBKR. NOT leg-by-leg. If the combo cannot fill, NO legs are placed (avoids orphaned 0DTE wings).",
+                "combo_order": [
+                    {"seq": 1, "action": "SELL", "symbol": f"QQQ {short_call}C", "note": "short call — part of combo"},
+                    {"seq": 1, "action": "BUY", "symbol": f"QQQ {long_call}C", "note": "long call wing — part of combo"},
+                    {"seq": 1, "action": "SELL", "symbol": f"QQQ {short_put}P", "note": "short put — part of combo"},
+                    {"seq": 1, "action": "BUY", "symbol": f"QQQ {long_put}P", "note": "long put wing — part of combo"},
+                ],
+                "rules": [
+                    "All 4 legs submit together as ONE combo (net credit LMT).",
+                    "Price-walk up to 3 attempts ($0.02/attempt, $0.05 max concession).",
+                    "If unfilled after 3 attempts → abort, take NO position.",
+                    "Never leg in individually on 0DTE (orphaned long wings bleed theta).",
+                ],
+            },
+            "exit_sequence": {
+                "method": "ATOMIC COMBO — close the IC as a single 4-leg combo (buy-to-close net debit), or let it expire. Do NOT leg out on 0DTE.",
+                "combo_order": [
+                    {"seq": 1, "action": "BUY", "symbol": f"QQQ {short_call}C", "note": "buy back short call"},
+                    {"seq": 1, "action": "SELL", "symbol": f"QQQ {long_call}C", "note": "sell call wing"},
+                    {"seq": 1, "action": "BUY", "symbol": f"QQQ {short_put}P", "note": "buy back short put"},
+                    {"seq": 1, "action": "SELL", "symbol": f"QQQ {long_put}P", "note": "sell put wing"},
+                ],
+                "rules": [
+                    "0DTE typically held to expiry: winners expire worthless (keep credit), losers capped at wing width.",
+                    "If closing early, close as ONE combo — never leg out.",
+                ],
+                "trigger_note": "0DTE — usually let expire. Early close only as an atomic combo if managing a breach.",
+            },
         },
         "reasoning": f"QQQ at ${qqq_price:.2f} (source: {market_data['source']}). VIX: {vix:.1f}%. Sell ±${QQQ_OFFSET} IC, ${QQQ_WING} wings. Win if QQQ stays between ${short_put} and ${short_call}.",
         "conditions": {"qqq_price": qqq_price, "vix": vix},
