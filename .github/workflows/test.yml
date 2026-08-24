@@ -66,16 +66,20 @@ jobs:
           print('✅ Kite executor: Risk-first wing purchasing verified.')
           "
 
-      - name: 🛡️ Safety Verification — IBKR Individual Legs Risk-First
+      - name: 🛡️ Safety Verification — IBKR Atomic Combo (no leg-by-leg fallback)
         run: |
           python -c "
           from engine.broker.ibkr_executor import IBKRExecutor
           import inspect
-          source = inspect.getsource(IBKRExecutor._place_individual_legs)
-          assert 'buy_legs' in source, 'Safety Check Failed: BUY legs separation missing!'
-          assert 'sell_legs' in source, 'Safety Check Failed: SELL legs separation missing!'
-          assert 'buy_phase_failed' in source, 'Safety Check Failed: Abort-on-wing-failure logic missing!'
-          print('✅ IBKR executor: Risk-first wing purchasing verified.')
+          # Policy (external review 2026-08-24): QQQ IC must execute as an ATOMIC combo.
+          # The individual-leg fallback is deprecated and MUST NOT exist in the live path,
+          # because legging into a partial fill on 0DTE risks orphaned long wings.
+          assert not hasattr(IBKRExecutor, '_place_individual_legs'), \
+              'Safety Check Failed: live individual-leg fallback must be removed (0DTE legging risk)!'
+          combo = inspect.getsource(IBKRExecutor.place_iron_condor)
+          assert 'conidex' in combo, 'Safety Check Failed: atomic combo (conidex) missing!'
+          assert 'aborted' in combo, 'Safety Check Failed: abort-on-unfilled path missing!'
+          print('✅ IBKR executor: Atomic combo verified, leg-by-leg fallback removed.')
           "
 
       - name: 🛡️ Safety Verification — Cross-Contamination Block

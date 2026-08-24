@@ -133,14 +133,22 @@ class TestKiteSymbols:
     """TEST 5: Kite executor generates correct trading symbols."""
 
     def test_symbols_use_expiry_month(self):
-        """All symbols must use the expiry month (next Tuesday's month)."""
+        """All symbols must use the expiry month (next Tuesday's month).
+
+        Compute the expected expiry with the SAME IST-based logic the production
+        function uses. Using the local/system date here caused false failures
+        across the IST/UTC midnight and weekday boundaries (e.g. when the local
+        date is Tuesday but IST is still Monday, or vice versa).
+        """
+        from datetime import datetime, timezone, timedelta as td
         from engine.broker.kite_executor import get_expiry_symbol_format
 
-        today = date.today()
+        ist = timezone(td(hours=5, minutes=30))
+        today = datetime.now(ist).date()
         days_until_tuesday = (1 - today.weekday()) % 7
         if days_until_tuesday == 0:
             days_until_tuesday = 7
-        expiry = today + timedelta(days=days_until_tuesday)
+        expiry = today + td(days=days_until_tuesday)
         expected_month = expiry.strftime("%b").upper()
 
         signal = _get_signal()
