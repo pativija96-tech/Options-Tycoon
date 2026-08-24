@@ -1,7 +1,7 @@
 # OPTIONS TYCOON — Business Requirements Document (BRD)
 
-> **Version:** 8.1 | **Last Updated:** 2026-08-13
-> **Status:** NIFTY Live (manual execution from signals) | QQQ pending IBKR activation
+> **Version:** 8.2 | **Last Updated:** 2026-08-24
+> **Status:** NIFTY Live (manual execution from signals) | QQQ Live — IBKR activated, manual execution first (auto signal generation)
 > **Disclaimer:** Personal trading tool. Not financial advice.
 
 ---
@@ -12,15 +12,15 @@ Options Tycoon is a **dual-mode automated options trading system** with behavior
 
 | Mode | Market | Broker | Underlying | Strategy | Status |
 |------|--------|--------|-----------|----------|--------|
-| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | ±250pt IC, 100pt wings | ✅ Live — signals generated, manual execution via Kite basket |
-| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF | ±$15 IC, $5 wings (0DTE) | ⏳ Blocked — IBKR document validation pending |
+| **NIFTY** | India (NSE) | Zerodha (Kite) | NIFTY 50 Index | ±250pt IC, 100pt wings | ✅ Live — signals generated, manual execution (sequential, hedges-first) |
+| **QQQ** | US (NASDAQ) | Interactive Brokers | QQQ ETF | ±$15 IC, $5 wings (0DTE) | ✅ Live — IBKR activated (PH residence). Manual execution first: signal auto-generates on EST schedule, operator executes manually |
 
 Both modes share: Railway hosting, PostgreSQL DB, signal history, UI, automated scheduler.
 Both modes are independent: different broker APIs, different strategies, different schedules, different tabs.
 
 ---
 
-## 2. CURRENT STATUS (August 13, 2026)
+## 2. CURRENT STATUS (August 24, 2026)
 
 ### What's Working Now
 
@@ -39,17 +39,26 @@ Both modes are independent: different broker APIs, different strategies, differe
 | Railway deployment | ✅ Running | Auto-deploys from GitHub main branch |
 | Live UI (NIFTY tab) | ✅ Active | `live-nifty.html` — signals, trade history, P&L tracking |
 
-### What's Blocked
+### QQQ Status (Aug 24, 2026)
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| IBKR account (PH residence) | ✅ Activated | Tax residence change India → Philippines approved; account can trade US options |
+| Options permission level | ⏳ Upgrade required | Account currently at **Options Level 1** (long options + covered calls only). Iron Condor is a defined-risk spread and needs the level that lists **spreads / combinations / iron condors** — on this account that is **Level 3**. Must request the upgrade (choose by the described capability, not the number). Level 1 will reject the IC. |
+| QQQ signal generation | ✅ Active | Auto-generates on EST schedule (9:35 AM EST / 13:35 UTC) |
+| QQQ execution | 🔧 Manual first | Operator reviews signal, then triggers `/api/live/live-execute?mode=qqq` manually. Auto-execution intentionally OFF until live fills are validated (mirrors NIFTY's cautious rollout) |
+| IBKR session keep-alive | ✅ Active | Startup OAuth auth + 55s heartbeat (tickle) when TRADING_MODE=qqq |
+
+### What's Abandoned
 
 | Component | Status | Blocker | Resolution |
 |-----------|--------|---------|------------|
-| QQQ auto-execution | ⏳ Pending | IBKR account can't trade options with India tax residence | Changed tax residence to Philippines, submitted documents for validation + support ticket |
 | NIFTY auto-execution via API | ❌ Abandoned | Railway IP changes, Kite blocks market orders, API legs don't get spread margin | Manual execution is the permanent model |
 
 ### Key Decisions Made
 
-1. **NIFTY = signal-only, manual execution** — System generates signals, user places via Kite web UI basket order.
-2. **QQQ/IBKR = waiting** — Tax residence change to Philippines submitted. Code complete, needs account activation.
+1. **NIFTY = signal-only, manual execution** — System generates signals, user places sequentially via Kite web (hedges-first, not basket).
+2. **QQQ = manual execution first** — IBKR PH account activated. Signal auto-generates on the EST schedule; operator executes manually via `/live-execute?mode=qqq` while learning how fills behave. Switch to fully hands-off later, after live validation.
 3. **Capital funded: ₹75,000** — Covers ₹67,234 margin requirement.
 4. **50% profit target exit rule** — Close early when 50% of max credit is captured (avoids Tuesday gamma risk).
 5. **0DTE Tuesday strategy: SHELVED** — Backtested at 84% win rate but only ₹85/trade realistic edge after friction. Not viable.
@@ -80,7 +89,10 @@ Both modes are independent: different broker APIs, different strategies, differe
 |------|--------|
 | Available capital | ₹75,000 |
 | Actual margin required (Kite basket, 4-leg IC, NRML) | ₹67,234 |
-| Buffer | ₹7,766 |
+| Buffer (steady-state) | ₹7,766 |
+| ⚠️ Expiry-day peak (incl. additional ELM, observed 24 Aug 2026) | ~₹1,32,367 — exceeds capital by ~₹53.8k |
+
+> **Capital note:** ₹75,000 is sized for the *steady-state* IC margin. On expiry day, the exchange adds ELM on expiring contracts and the requirement can nearly double (~₹1.32L observed). Either exit before expiry morning (preferred — matches the 50% target) or hold a ~₹55k buffer. See Risk Register.
 
 ### Execution Model
 
@@ -132,7 +144,7 @@ EOD TRACKING (automated, 3:35 PM IST daily):
 
 ---
 
-## 4. MODE B: QQQ (US Market via IBKR) — PENDING
+## 4. MODE B: QQQ (US Market via IBKR) — LIVE (MANUAL EXECUTION FIRST)
 
 ### Strategy
 **QQQ ±$15 Iron Condor, $5 wings (Phase 1), daily, hold to same-day expiry (0DTE)**
@@ -151,27 +163,32 @@ EOD TRACKING (automated, 3:35 PM IST daily):
 | Annual ROI | ~115-120% |
 | Tax (PH resident) | 0% |
 
-### Current Blocker
+### Blocker — RESOLVED (Aug 24, 2026)
 
-**IBKR account with India tax residence cannot trade US options.**
+**IBKR PH account is now activated.** Tax residence changed India → Philippines and approved; the account can trade US options. QQQ is live.
 
-Resolution in progress:
-- Changed tax residence from India → Philippines
-- Documents submitted for IBKR validation
-- Support ticket filed with IBKR
-- Waiting for approval (timeline unknown)
+### Current Execution Flow — MANUAL FIRST
 
-### Once Unblocked — Execution Flow
+Rationale: NIFTY's manual rollout surfaced many execution bugs (leg duplication, naked-margin
+rejections). QQQ starts the same cautious way — operator watches live fills before going
+hands-off. QQQ trades during US hours (operator is in IST), so the plan is to validate a
+handful of trades manually, then switch to end-to-end automation.
 
 ```
-9:35 AM EST (scheduled, fully automated):
-  → Scheduler triggers auto-trade
+9:35 AM EST (scheduled — AUTOMATED signal generation only):
+  → Scheduler triggers _run_auto_trade (TRADING_MODE=qqq)
   → Signal engine generates QQQ IC parameters
+  → Signal saved to today_signal_qqq.json + Telegram alert with strikes
+  → NO order placed automatically
+
+EXECUTION (MANUAL by operator, when watching the US market):
+  → Operator reviews the QQQ signal on the live page
+  → Triggers POST /api/live/live-execute?mode=qqq
   → ibkr_executor authenticates (OAuth 2.0 signed JWT)
   → Fetches QQQ price from IBKR (yfinance fallback)
   → Resolves 4 option conids (short/long call + short/long put)
   → Places 4-leg combo order via REST API
-  → If combo rejected → places 4 individual market orders
+  → If combo rejected → places 4 individual market orders (risk-first: BUY wings first)
   → Auto-confirms any IBKR prompts
   → Trade is live
 
@@ -181,9 +198,27 @@ Resolution in progress:
   → Loss: settled by IBKR (capped at wing width)
   → EOD resolver logs result to DB
 
-Every 55 seconds (always running):
+Every 55 seconds (always running when TRADING_MODE=qqq):
   → IBKR session heartbeat (tickle) keeps REST session alive
+  → (Plus startup OAuth auth on scheduler boot — self-healing across Railway restarts)
 ```
+
+### Combo Execution Policy (implemented Aug 24, 2026)
+
+- IC executes as a single atomic combo via IBKR Web API `conidex`
+  (`28812380;;;{conid}/{ratio},...`; ratio +1 = BUY, −1 = SELL).
+- Order type is **LMT** at estimated net credit (combo mid from per-leg snapshots).
+- **Price walk:** up to **3 attempts**, conceding **$0.02/attempt** (max **$0.05** total).
+- If unfilled after 3 attempts → **ABORT, place no legs**, alert
+  `"QQQ IC combo limit order unfilled — trade aborted"`.
+- **Individual-leg fallback DEPRECATED** (`_place_individual_legs_DEPRECATED`, unused) —
+  0DTE legging risk (orphaned long wings) outweighs a missed trade.
+
+### Future — Switch to Hands-Off (after manual validation)
+
+Once live fills are validated over several manual trades, wire `execute_qqq_sync` into
+`_run_auto_trade()` (scheduler) so the 9:35 AM EST trigger places the order automatically.
+Until then, auto-execution is intentionally OFF (documented in `engine/scheduler.py`).
 
 ### Capital & Scaling Plan
 
@@ -211,7 +246,7 @@ Every 55 seconds (always running):
 - Auth: OAuth 2.0 (signed JWT → access token, auto-refresh)
 - Session: Heartbeat tickle every 55s via background scheduler
 - Funding: Wise USD → IBKR wire
-- **Status: ⏳ Document validation pending (India → PH tax residence change)**
+- **Status: ✅ Activated (India → PH tax residence change approved). Manual execution first.**
 
 ---
 
@@ -295,10 +330,11 @@ NIFTY Mode (currently active):
   - 3:35 PM IST: EOD SL check
   - Tuesday 3:35 PM IST: Expiry resolution
 
-QQQ Mode (pending IBKR activation):
-  - 9:35 AM EST (13:35 UTC): Auto-generate signal + place trade
+QQQ Mode (IBKR activated — TRADING_MODE=qqq):
+  - 9:35 AM EST (13:35 UTC): Auto-generate signal ONLY (manual execution via /live-execute?mode=qqq)
   - 4:05 PM EST (20:05 UTC): EOD verify expiry result
   - Every 55 seconds: IBKR session heartbeat (tickle)
+  - Scheduler boot: IBKR startup OAuth auth (self-healing across restarts)
 ```
 
 ### Deployment
@@ -306,9 +342,9 @@ QQQ Mode (pending IBKR activation):
 | Environment | Status | Details |
 |-------------|--------|---------|
 | GitHub (main) | ✅ Up to date | Auto-deploys to Railway |
-| Railway (production) | ✅ Running | Hosts both NIFTY signals + QQQ (when ready) |
+| Railway (production) | ✅ Running | Hosts both NIFTY signals + QQQ |
 | Kite Auth (NIFTY) | ✅ Connected | OAuth flow verified, API key set |
-| IBKR Auth (QQQ) | ⏳ Pending | Env vars not set (waiting on account) |
+| IBKR Auth (QQQ) | ✅ Activated | PH account live. Set env vars: IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM |
 
 ---
 
@@ -319,6 +355,7 @@ QQQ Mode (pending IBKR activation):
 | Aug 5, 2026 | NIFTY | Scalp (3 round-trips) | +₹3,120 | 24950CE +₹709, 24250CE +₹2,408, 24250PE +₹3 |
 | Aug 6, 2026 | NIFTY | Scalp (2 round-trips) | +₹16.25 | 25000CE +₹13, 24300PE +₹3.25 |
 | Aug 12, 2026 | NIFTY | IC ±250pt | TBD | Manual execution, successful placement |
+| Aug 24, 2026 | NIFTY | IC (23850/23750 PE + 24350/24450 CE, 65 qty) | +₹1,475.50 | Closed early (~68% of max credit captured, past 50% target). Exited due to profit target + expiry-day ELM margin call (see Risk Register). Entry credit ~₹33.2/sh → close cost ~₹10.5/sh. |
 
 ---
 
@@ -341,14 +378,16 @@ QQQ Mode (pending IBKR activation):
 
 | Risk | Impact | Mitigation |
 |------|--------|-----------|
-| IBKR account never approved | QQQ mode dead | Focus on NIFTY; explore alternative brokers (Tastytrade, Saxo) |
+| IBKR PH account restricted/frozen | QQQ mode dead | RESOLVED for now (account activated). Fallback: explore alternative brokers (Tastytrade, Saxo) |
+| Manual QQQ execution during IST night hours | Missed/late trade (US market open = IST night) | Manual-first is deliberate for learning; switch to hands-off automation once fills validated |
 | NIFTY gaps beyond ±250pt | Max loss ₹3,980 per trade | Pre-committed stop rules; weekly expiry limits exposure |
+| **Expiry-day ELM margin spike (NIFTY)** | Additional ELM on expiring contracts can nearly double margin requirement. Observed 24 Aug 2026: required jumped to ₹1,32,367 vs ₹78,556 available → ~₹53,811 extra needed by 9:14 AM, risking penalty/auto-square-off | ₹75k capital covers steady-state margin (~₹67k) but NOT the expiry-day ELM peak. Mitigation: exit/de-risk expiring positions before expiry day (aligns with 50% profit target), or hold ~₹55k buffer. Do not carry an open IC into expiry morning without either. |
 | Railway downtime | Missed signal | Email still sends; manual check of live-nifty.html |
 | Kite token expiry | Can't fetch LTP for signals | Daily re-auth via login flow |
 | QQQ gaps >$15 overnight (earnings) | Loss capped at $500 (Phase 1) | $5 wings; FOMC/CPI/NFP event filter skips high-impact days |
 | IBKR connection failure | Missed trade | Retry logic (3x exponential backoff); self-healing restart auth |
 | Slippage higher than backtest | EV reduced or negative | Phase 1 validates; stop if >$12/trade |
-| Partial execution (QQQ) | Unhedged position | Risk-first ordering (BUY wings first); abort SELL if wing fails |
+| Partial execution (QQQ) — orphaned long wings | Longs bleed theta fast on 0DTE with no offsetting credit → avoidable loss | Execute IC ATOMICALLY as a combo (conidex). On combo failure, RETRY combo at adjusted limit; do NOT split into individual market orders. If combo still won't fill → place no legs, skip trade + alert. (Individual-leg fallback deprecated per external review — legging risk on 0DTE outweighs the missed-trade cost.) |
 
 ---
 
@@ -358,9 +397,15 @@ QQQ Mode (pending IBKR activation):
 - [ ] Clean old test trades from Railway: visit `options-tycoon.com/api/live/cleanup-old-trades?before=2026-08-05` (DELETE request from browser console)
 - [ ] Re-upload tradebook CSV on production to populate real trades only
 
-### Waiting
-- [ ] IBKR document validation (India → PH tax residence) — waiting on IBKR
-- [ ] Once approved: Set IBKR env vars on Railway → paper test → go live
+### QQQ — Activation in progress (manual execution first)
+- [x] IBKR document validation (India → PH tax residence) — APPROVED, account activated
+- [ ] **BLOCKER: Upgrade options permission.** Account is at Level 1 (long/covered only). Update financial profile, then request the level that includes **spreads / iron condors** (Level 3 on this account). QQQ is an ETF, so Index Options permission is NOT needed. Do not trade until approved.
+- [ ] Set IBKR env vars on Railway: IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM
+- [ ] Set TRADING_MODE=qqq so scheduler uses EST times + IBKR heartbeat
+- [ ] Confirm IBKR OAuth auth succeeds (check scheduler startup log / heartbeat)
+- [ ] Execute first QQQ IC manually via /api/live/live-execute?mode=qqq (1 contract)
+- [ ] Verify fills in IBKR + EOD resolution logs correctly
+- [ ] After several validated manual trades → switch to hands-off (wire execute_qqq_sync into scheduler)
 
 ### Active (NIFTY)
 - [x] Generate daily signals with basket-ready format
@@ -370,11 +415,11 @@ QQQ Mode (pending IBKR activation):
 - [ ] Continue logging all trades for performance review
 - [ ] Validate profit target alerts work in next trading cycle
 
-### Future (QQQ — once IBKR unblocked)
-- [ ] Set env vars: IBKR_CLIENT_ID, IBKR_ACCOUNT_ID, IBKR_PRIVATE_KEY_PEM
-- [ ] Paper sandbox test (10 trades)
-- [ ] Fund $1,000 via Wise → IBKR
-- [ ] Go live Phase 1
+### Future (QQQ — path to hands-off)
+- [ ] Fund $1,000 via Wise → IBKR (if not already funded)
+- [ ] Complete several manual Phase 1 trades and review fills/slippage
+- [ ] Wire execute_qqq_sync into scheduler _run_auto_trade() to enable auto-execution
+- [ ] Monitor first automated trades closely before scaling contracts
 
 ---
 
