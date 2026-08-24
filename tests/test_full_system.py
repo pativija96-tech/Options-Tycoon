@@ -513,37 +513,19 @@ class TestIBKRExecutor:
         assert conid == 320227571
         assert call_count[0] == 2  # Retried once
 
-    def test_partial_execution_detection(self):
-        """Detects partial execution when some legs fail."""
+    def test_no_individual_leg_fallback_in_live_path(self):
+        """
+        Atomic-combo policy: the individual-leg fallback is deprecated and must
+        not be reachable under its live name. On 0DTE, legging into a partial
+        fill risks orphaned long wings; the IC executes as a combo or not at all.
+        """
         from engine.broker.ibkr_executor import IBKRExecutor
 
         executor = IBKRExecutor()
-        executor.access_token = "tok_123"
-        executor.token_expiry = time.time() + 3600
-        executor.account_id = "U12345"
-
-        # Simulate: combo fails, individual legs — 2 succeed, 2 fail
-        resolved_legs = [
-            {"strike": 695, "right": "C", "side": "BUY", "label": "Buy C695", "conid": 1001},
-            {"strike": 665, "right": "P", "side": "BUY", "label": "Buy P665", "conid": 1002},
-            {"strike": 695, "right": "C", "side": "SELL", "label": "Sell C680", "conid": 1003},
-            {"strike": 665, "right": "P", "side": "SELL", "label": "Sell P665", "conid": 1004},
-        ]
-
-        call_count = [0]
-        def mock_place(conid, side, quantity, order_type):
-            call_count[0] += 1
-            if call_count[0] <= 2:
-                return {"order_id": f"ORD_{call_count[0]}"}
-            raise Exception("Insufficient margin")
-
-        with patch.object(executor, "place_order", side_effect=mock_place):
-            result = executor._place_individual_legs(resolved_legs)
-
-        assert result["success"] is False
-        assert result["partial_execution"] is True
-        assert result["filled_count"] == 2
-        assert result["failed_count"] == 2
+        # The live method name must no longer exist (renamed to *_DEPRECATED).
+        assert not hasattr(executor, "_place_individual_legs"), (
+            "Individual-leg fallback must be removed from the live path"
+        )
 
 
 # ===========================================================================

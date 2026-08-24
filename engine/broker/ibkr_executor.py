@@ -97,6 +97,9 @@ class IBKRExecutor:
     QQQ_OFFSET = 15
     QQQ_WING = 5  # Phase 1: $5 wings ($500 max loss on $1K capital)
 
+    # USD spread conid for US combo orders (per IBKR Web API combos/spreads docs)
+    USD_SPREAD_CONID = 28812380
+
     def __init__(self):
         self.client_id = os.getenv("IBKR_CLIENT_ID", "")
         self.account_id = os.getenv("IBKR_ACCOUNT_ID", "")
@@ -451,12 +454,13 @@ class IBKRExecutor:
         """
         Place a 4-leg Iron Condor on QQQ.
         
-        Strategy: ±$15 from spot, $7 wings, 0DTE, 1 contract.
-        Legs:
-            SELL call @ spot+15
-            BUY  call @ spot+22
-            SELL put  @ spot-15
-            BUY  put  @ spot-8
+        Strategy: ±$15 from spot, $5 wings (Phase 1), 0DTE, 1 contract.
+        Wing width is read from config (self.QQQ_WING); example below uses $5.
+        Legs (spot = 680 example):
+            SELL call @ spot+15   (695)
+            BUY  call @ spot+15+wing (700)
+            SELL put  @ spot-15   (665)
+            BUY  put  @ spot-15-wing (660)
         
         Uses IBKR combo order (all 4 legs in one ticket).
         """
@@ -510,74 +514,82 @@ class IBKRExecutor:
             resolved_legs.append({**leg, "conid": conid})
             logger.info(f"  Resolved {leg['label']} → conid {conid}")
 
-        # Build combo order (all 4 legs as one order)
+        # ── Build ATOMIC 4-leg combo (conidex) ──
+        # IBKR Web API conidex format (per official docs):
+        #   {spread_conid};;;{conid1}/{ratio1},{conid2}/{ratio2},...
+        # For US combos, spread_conid = USD spread conid (28812380).
+        # Ratio sign encodes direction: positive = BUY, negative = SELL.
         endpoint = f"{self.BASE_URL}/iserver/account/{self.account_id}/orders"
-        
-        order_legs = []
+
+        leg_parts = []
         for leg in resolved_legs:
-            order_legs.append({
-                "conid": leg["conid"],
-                "side": leg["side"],
-                "ratio": 1,
-            })
+            ratio = 1 if leg["side"] == "BUY" else -1
+            leg_parts.append(f"{leg['conid']}/{ratio}")
+        conidex = f"{self.USD_SPREAD_CONID};;;{','.join(leg_parts)}"
 
-        combo_order = {
-            "orders": [
-                {
-                    "conidex": f"{resolved_legs[0]['conid']};;;{resolved_legs[1]['conid']}",
-                    "orderType": "LMT",
-                    "price": 0.0,  # Will be replaced by mid-price logic below
-                    "side": "SELL",  # Net credit order (selling the IC)
-                    "quantity": 1,
-                    "tif": "DAY",
-                    "legs": order_legs,
-                }
-            ]
-        }
+        # ── ATOMIC combo execution with limit price-walking (3 attempts) ──
+        # DECISION (external review, 2026-08-24): NO individual-leg fallback.
+        # On 0DTE, legging into a partial fill risks orphaned long wings bleeding
+        # theta to zero. The IC MUST fill all-or-nothing as a combo, or we take
+        # no position at all. Missing a trade is far cheaper than a partial fill.
+        #
+        # Price walk: start at estimated net credit (combo mid), then reduce the
+        # asking credit by $0.01–$0.02 per retry (max total $0.05 concession) to
+        # improve fill odds without giving up meaningful edge. Abort after 3 tries.
+        credit_est = self._estimate_combo_credit(resolved_legs)
+        if credit_est is None:
+            logger.warning("Combo credit estimate unavailable — starting walk from $0.10 credit.")
+            credit_est = 0.10
 
-        # ── Mid-Price Limit Order with Price-Walking ──
-        # Strategy: Start at mid-price, walk $0.02 every 15s, give up after 60s → MKT
-        logger.info(f"Submitting 4-leg IC combo order (limit @ mid, price-walking)...")
-        try:
-            # First attempt: limit at mid-price (natural price)
-            # IBKR will estimate mid when price=0 for combo — or use MKT as first try
-            # Since we can't pre-fetch combo mid, start with MKT-like behavior via limit
-            # Set aggressive limit: submit as MKT first, fall back to individual if rejected
-            combo_order["orders"][0]["orderType"] = "MKT"
-            
-            # Retry combo order submission on timeout
-            res = None
-            for attempt in range(MAX_RETRIES):
-                try:
-                    res = self.client.post(endpoint, json=combo_order)
-                    break  # Success — exit retry loop
-                except httpx.TimeoutException:
-                    delay = RETRY_DELAY_BASE * (2 ** attempt)
-                    logger.warning(
-                        f"Combo order timeout (attempt {attempt + 1}/{MAX_RETRIES}). "
-                        f"Retrying in {delay:.1f}s..."
-                    )
-                    time.sleep(delay)
+        WALK_STEP = 0.02       # concession per retry (within $0.01–$0.02 guidance)
+        MAX_CONCESSION = 0.05  # never give up more than $0.05 total edge
 
-            if res is None:
-                # All retries exhausted on combo — fall back to individual legs
-                logger.error("Combo order timed out after all retries. Trying individual legs...")
-                return self._place_individual_legs(resolved_legs)
+        last_response = None
+        for attempt in range(MAX_RETRIES):  # MAX_RETRIES == 3
+            concession = min(WALK_STEP * attempt, MAX_CONCESSION)
+            limit_credit = round(max(credit_est - concession, 0.01), 2)
+
+            combo_order = {
+                "orders": [
+                    {
+                        "conidex": conidex,
+                        "orderType": "LMT",
+                        "price": limit_credit,   # net credit we require to sell the IC
+                        "side": "SELL",          # selling the IC = receiving credit
+                        "quantity": 1,
+                        "tif": "DAY",
+                    }
+                ]
+            }
+
+            logger.info(
+                f"Submitting 4-leg IC combo (attempt {attempt + 1}/{MAX_RETRIES}) "
+                f"LMT credit ${limit_credit:.2f} (est ${credit_est:.2f}, concession ${concession:.2f})"
+            )
+            try:
+                res = self.client.post(endpoint, json=combo_order)
+            except httpx.TimeoutException:
+                logger.warning(f"Combo submit timeout (attempt {attempt + 1}). Retrying...")
+                time.sleep(RETRY_DELAY_BASE * (2 ** attempt))
+                continue
 
             if res.status_code != 200:
-                # Fallback: place as 4 individual legs
-                logger.warning(f"Combo order failed ({res.status_code}). Trying individual legs...")
-                return self._place_individual_legs(resolved_legs)
+                logger.warning(f"Combo rejected ({res.status_code}): {res.text[:200]}")
+                last_response = res.text[:200]
+                time.sleep(RETRY_DELAY_BASE)
+                continue
 
             data = res.json()
-            # Handle IBKR confirmation prompts
+            # Handle IBKR confirmation prompts (price cap, size warnings, etc.)
             if isinstance(data, list) and len(data) > 0 and "id" in data[0]:
                 data = self._reply_order_prompt(data[0]["id"])
 
-            logger.info(f"IC order response: {data}")
+            logger.info(f"IC combo accepted: {data}")
             return {
                 "success": True,
                 "method": "combo",
+                "limit_credit": limit_credit,
+                "attempts": attempt + 1,
                 "order_response": data,
                 "legs": [
                     {"label": l["label"], "conid": l["conid"], "side": l["side"]}
@@ -591,13 +603,67 @@ class IBKRExecutor:
                 },
                 "expiry": expiry,
             }
-        except Exception as e:
-            logger.error(f"IC order exception: {e}")
-            return {"success": False, "error": str(e)[:200]}
 
-    def _place_individual_legs(self, resolved_legs: List[Dict]) -> Dict[str, Any]:
+        # All combo attempts exhausted — ABORT, take no position (no legging).
+        logger.error("QQQ IC combo limit order unfilled — trade aborted (no legs placed).")
+        return {
+            "success": False,
+            "aborted": True,
+            "method": "combo",
+            "error": "QQQ IC combo limit order unfilled — trade aborted",
+            "last_response": last_response,
+            "attempts": MAX_RETRIES,
+        }
+
+    def _estimate_combo_credit(self, resolved_legs: List[Dict]) -> Optional[float]:
         """
-        Fallback: place 4 legs as individual market orders if combo fails.
+        Estimate the net credit for the IC from per-leg market-data snapshots.
+        Net credit = sum(short leg mids) - sum(long leg mids), per share.
+        Returns None if any leg price is unavailable.
+        """
+        try:
+            conids = ",".join(str(l["conid"]) for l in resolved_legs)
+            res = self.client.get(
+                f"{self.BASE_URL}/iserver/marketdata/snapshot",
+                params={"conids": conids, "fields": "31,84,86"},  # last, bid, ask
+            )
+            res.raise_for_status()
+            snap = {str(row.get("conid")): row for row in res.json()} if res.json() else {}
+
+            def mid(conid: int) -> Optional[float]:
+                row = snap.get(str(conid))
+                if not row:
+                    return None
+                bid, ask = row.get("84"), row.get("86")
+                try:
+                    if bid is not None and ask is not None:
+                        return (float(bid) + float(ask)) / 2.0
+                    last = row.get("31")
+                    return float(last) if last is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            credit = 0.0
+            for leg in resolved_legs:
+                m = mid(leg["conid"])
+                if m is None:
+                    return None
+                credit += m if leg["side"] == "SELL" else -m
+            return round(credit, 2) if credit > 0 else None
+        except Exception as e:
+            logger.debug(f"Combo credit estimate failed: {e}")
+            return None
+
+    # ── DEPRECATED (external review 2026-08-24) ──
+    # Individual-leg fallback removed from the live path. On 0DTE, legging into a
+    # partial fill risks orphaned long wings bleeding theta with no offsetting
+    # credit. The IC now executes atomically as a combo, or not at all. This method
+    # is retained (unused) only for reference and must NOT be re-wired into
+    # place_iron_condor without a deliberate risk review.
+    def _place_individual_legs_DEPRECATED(self, resolved_legs: List[Dict]) -> Dict[str, Any]:
+        """
+        DEPRECATED — do not use. Fallback that placed 4 individual market orders
+        if the combo failed. Removed from the live path due to 0DTE legging risk.
         
         RISK-FIRST ORDERING: Places long options (BUY/wings) first, then short options.
         This ensures if a short leg fails, we're never left with a naked short position.

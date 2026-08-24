@@ -219,20 +219,25 @@ class TestIronCondorPlacement:
         
         today = date.today().strftime("%Y%m%d")
         
-        # Mock GET calls: search_contract + 4x resolve_option_conid
+        # Mock GET calls: search_contract + 4x resolve_option_conid + 1x credit snapshot
         mock_get.side_effect = [
             make_response(200, [{"conid": 320227571}]),  # QQQ conid
             make_response(200, [{"conid": 90001, "strike": 697.0, "right": "C", "maturityDate": today}]),
             make_response(200, [{"conid": 90002, "strike": 702.0, "right": "C", "maturityDate": today}]),
             make_response(200, [{"conid": 90003, "strike": 667.0, "right": "P", "maturityDate": today}]),
             make_response(200, [{"conid": 90004, "strike": 662.0, "right": "P", "maturityDate": today}]),
+            # Credit-estimate snapshot: shorts richer than longs → net credit ~0.90
+            make_response(200, [
+                {"conid": 90001, "84": 1.00, "86": 1.10},  # short call mid 1.05
+                {"conid": 90002, "84": 0.30, "86": 0.40},  # long call mid 0.35
+                {"conid": 90003, "84": 1.00, "86": 1.10},  # short put mid 1.05
+                {"conid": 90004, "84": 0.30, "86": 0.40},  # long put mid 0.35
+            ]),
         ]
         
-        # Mock POST: combo order succeeds with confirmation prompt
-        mock_post.return_value = make_response(200, [{"id": "prompt-123"}])
-        # Second POST: reply to prompt
+        # Mock POST: combo LMT order accepted with confirmation prompt, then reply
         mock_post.side_effect = [
-            make_response(200, [{"id": "prompt-123"}]),  # Initial order response
+            make_response(200, [{"id": "prompt-123"}]),  # Initial combo order response
             make_response(200, {"order_id": "ORD-456", "order_status": "Submitted"}),  # Reply
         ]
         
@@ -240,6 +245,9 @@ class TestIronCondorPlacement:
         
         assert result["success"] is True
         assert result["method"] == "combo"
+        assert result["attempts"] == 1
+        # Net credit estimate = (1.05 + 1.05) - (0.35 + 0.35) = 1.40; first attempt no concession
+        assert result["limit_credit"] == 1.40
         assert result["strikes"]["short_call"] == 697
         assert result["strikes"]["long_call"] == 702   # 697 + 5 (wing width from config)
         assert result["strikes"]["short_put"] == 667
@@ -368,35 +376,53 @@ class TestExecuteQQQSync:
 # TEST: Partial Execution
 # ─────────────────────────────────────────────────────────────────────
 
-class TestPartialExecution:
+class TestAtomicComboAbort:
+    """Atomic-combo policy: NO individual-leg fallback. On repeated combo
+    rejection the trade aborts and NO legs are placed (0DTE legging risk)."""
 
     @patch("httpx.Client.get")
     @patch("httpx.Client.post")
-    def test_individual_legs_partial_failure(self, mock_post, mock_get, mock_env):
-        """When some individual legs fail, result shows partial execution."""
-        from engine.broker.ibkr_executor import get_ibkr_executor
+    def test_combo_rejection_aborts_no_legs_placed(self, mock_post, mock_get, mock_env):
+        """When the combo order is rejected on every attempt, the IC aborts."""
+        from engine.broker.ibkr_executor import get_ibkr_executor, MAX_RETRIES
         executor = get_ibkr_executor()
         executor.access_token = "test-token"
         executor.token_expiry = time.time() + 3600
-        
-        resolved_legs = [
-            {"conid": 90001, "side": "SELL", "label": "Sell C697"},
-            {"conid": 90002, "side": "BUY", "label": "Buy C704"},
-            {"conid": 90003, "side": "SELL", "label": "Sell P667"},
-            {"conid": 90004, "side": "BUY", "label": "Buy P660"},
+
+        today = date.today().strftime("%Y%m%d")
+
+        # GET: QQQ conid + 4 legs + credit snapshot
+        mock_get.side_effect = [
+            make_response(200, [{"conid": 320227571}]),
+            make_response(200, [{"conid": 90001, "strike": 697.0, "right": "C", "maturityDate": today}]),
+            make_response(200, [{"conid": 90002, "strike": 702.0, "right": "C", "maturityDate": today}]),
+            make_response(200, [{"conid": 90003, "strike": 667.0, "right": "P", "maturityDate": today}]),
+            make_response(200, [{"conid": 90004, "strike": 662.0, "right": "P", "maturityDate": today}]),
+            make_response(200, [
+                {"conid": 90001, "84": 1.00, "86": 1.10},
+                {"conid": 90002, "84": 0.30, "86": 0.40},
+                {"conid": 90003, "84": 1.00, "86": 1.10},
+                {"conid": 90004, "84": 0.30, "86": 0.40},
+            ]),
         ]
-        
-        # Legs 1-2 succeed, leg 3 fails, leg 4 succeeds
-        mock_post.side_effect = [
-            make_response(200, {"order_id": "1"}),
-            make_response(200, {"order_id": "2"}),
-            make_response(400, {"error": "Insufficient margin"}),
-            make_response(200, {"order_id": "4"}),
-        ]
-        
-        result = executor._place_individual_legs(resolved_legs)
-        
+
+        # Every combo POST is rejected (e.g. no fill / order rejected)
+        mock_post.return_value = make_response(400, {"error": "Order could not be filled"})
+
+        result = executor.place_iron_condor(spot_price=682.0)
+
         assert result["success"] is False
-        assert result["partial_execution"] is True
-        assert result["filled_count"] == 3
-        assert result["failed_count"] == 1
+        assert result["aborted"] is True
+        assert result["method"] == "combo"
+        assert result["attempts"] == MAX_RETRIES
+        assert "aborted" in result["error"].lower()
+        # No individual-leg method should ever run — only combo POSTs were attempted
+        assert mock_post.call_count == MAX_RETRIES
+
+    def test_deprecated_individual_legs_not_in_live_path(self, mock_env):
+        """The old individual-leg method must not exist under its live name."""
+        from engine.broker.ibkr_executor import get_ibkr_executor
+        executor = get_ibkr_executor()
+        assert not hasattr(executor, "_place_individual_legs"), (
+            "Individual-leg fallback must be deprecated/renamed out of the live path"
+        )
