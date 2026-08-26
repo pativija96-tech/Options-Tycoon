@@ -316,6 +316,16 @@ function render(card){
   html+='<span class="regime-data">'+regimeData+'</span>';
   html+='</div>';
 
+  // Data-freshness badge — is this signal built on LIVE Kite data or DELAYED/EOD?
+  var dataSrc = (c.data_source||'unknown');
+  var isLive = (c.data_is_live===true) || dataSrc==='kite';
+  var fbBg = isLive ? 'rgba(34,197,94,.15)' : 'rgba(234,179,8,.15)';
+  var fbBorder = isLive ? 'var(--green)' : 'var(--yellow)';
+  var fbText = isLive
+      ? '🟢 LIVE data (Kite) — prices are real-time'
+      : '🟡 DELAYED data ('+esc(dataSrc)+') — likely previous close. RE-LOGIN to Zerodha for live prices before trading.';
+  html+='<div style="margin:8px 0;padding:8px 12px;border:1px solid '+fbBorder+';background:'+fbBg+';border-radius:6px;font-size:.72rem;font-weight:600;color:'+fbBorder+'">'+fbText+'</div>';
+
   html+='<div class="main-card">';
   html+='<div class="play-label">TODAY\'S PLAY</div>';
   html+='<div class="play-regime">'+esc(card.direction||'').toUpperCase()+' — '+(card.direction==='bullish'?'Bounce expected':card.direction==='bearish'?'Downside expected':'Range-bound expected')+'</div>';
@@ -813,8 +823,12 @@ function checkKiteStatus(){
   fetch('/api/live/auth-status').then(function(r){return r.json();}).then(function(d){
     var el=document.getElementById('kite-status');
     if(!el)return;
-    if(d.authenticated){
-      el.innerHTML='<span style="color:var(--green)">🟢 Zerodha Connected ('+( d.user||'')+')</span>';
+    if(d.token_live){
+      // Verified against Kite with a live call — genuinely connected.
+      el.innerHTML='<span style="color:var(--green)">🟢 Zerodha Connected & verified live ('+(d.user||'')+')</span>';
+    } else if(d.authenticated){
+      // Flag says connected but the live check FAILED — token expired or app restarted.
+      el.innerHTML='<span style="color:var(--yellow)">🟡 Session flagged but token NOT live (expired/restarted). Click Login to Zerodha to reconnect.</span>';
     } else {
       el.innerHTML='<span style="color:var(--muted)">🔴 Not connected — login to enable live prices</span>';
     }

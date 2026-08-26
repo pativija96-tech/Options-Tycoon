@@ -337,6 +337,8 @@ def generate_daily_signal(capital: float = None) -> dict:
         "conditions": {
             "nifty_price": nifty_price,
             "vix_level": vix_level,
+            "data_source": market_data.get("source") or "unknown",
+            "data_is_live": market_data.get("source") == "kite",
             "us_change_pct": 0,  # Not used in new engine
             "vix_change_pct": 0,
             "dxy_change_pct": 0,

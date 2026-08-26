@@ -76,8 +76,40 @@ def handle_callback(request_token: str) -> dict:
 
 
 def is_authenticated() -> bool:
-    """Check if we have a valid session."""
+    """Check if we have a session flag set (in-memory).
+
+    NOTE: This only reflects the in-memory flag — it does NOT prove the token
+    is still valid with Kite (the token expires daily ~6 AM IST, and Railway
+    restarts wipe this session). For a real check, use verify_token_live().
+    """
     return _session.get("authenticated", False)
+
+
+def verify_token_live() -> bool:
+    """
+    Make a lightweight live call to Kite to confirm the token actually works.
+    Returns True only if Kite accepts the token right now. On any failure
+    (expired token, restart, network), marks the session unauthenticated so
+    the app falls back honestly instead of trusting a dead flag.
+    """
+    if not _session.get("authenticated") or not _session.get("access_token"):
+        return False
+    try:
+        from kiteconnect import KiteConnect
+        config = _load_config()
+        kite = KiteConnect(api_key=config.get("api_key", ""))
+        kite.set_access_token(_session["access_token"])
+        profile = kite.profile()  # cheap authenticated call
+        if profile:
+            _session["user_name"] = profile.get("user_name", _session.get("user_name"))
+            return True
+        return False
+    except Exception as e:
+        # Token is dead/expired or lib missing — reset so we don't mislead.
+        logger.warning(f"Kite token verification failed — marking unauthenticated: {str(e)[:120]}")
+        _session["authenticated"] = False
+        _session["access_token"] = None
+        return False
 
 
 def get_access_token() -> str:
@@ -86,9 +118,15 @@ def get_access_token() -> str:
 
 
 def get_session_info() -> dict:
-    """Get non-sensitive session info for UI display."""
+    """Get non-sensitive session info for UI display.
+
+    Includes 'token_live' — the result of an actual live Kite check — so the
+    UI can show whether the connection is genuinely working, not just flagged.
+    """
+    live = verify_token_live()
     return {
         "authenticated": _session["authenticated"],
+        "token_live": live,
         "user": _session.get("user_name"),
         "login_time": _session.get("login_time"),
     }
