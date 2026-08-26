@@ -355,9 +355,9 @@ def generate_daily_signal(capital: float = None) -> dict:
             "total": 2,
             "strength": "MECHANICAL",
             "recommendation": "Validated strategy. Execute daily.",
-            "position_sizing": {"size": "half" if _TRADING_PHASE <= 2 else "full", "lots": 0.5 if _TRADING_PHASE <= 2 else 1, "label": f"Phase {_TRADING_PHASE}: {'half lot (32 qty)' if _TRADING_PHASE <= 2 else 'full lot (65 qty)'}", "conviction": "mechanical"},
+            "position_sizing": {"size": "full", "lots": 1, "label": f"Phase {_TRADING_PHASE}: 1 lot ({LOT_SIZE} qty)", "conviction": "mechanical"},
         },
-        "position_sizing": {"size": "half" if _TRADING_PHASE <= 2 else "full", "lots": 0.5 if _TRADING_PHASE <= 2 else 1, "label": f"Phase {_TRADING_PHASE}: {'half lot (32 qty)' if _TRADING_PHASE <= 2 else 'full lot (65 qty)'}", "conviction": "mechanical"},
+        "position_sizing": {"size": "full", "lots": 1, "label": f"Phase {_TRADING_PHASE}: 1 lot ({LOT_SIZE} qty)", "conviction": "mechanical"},
         "risk_check": {
             "max_loss": net_max_loss,
             "max_loss_pct": round(net_max_loss / capital * 100, 2),

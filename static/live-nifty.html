@@ -305,9 +305,15 @@ function render(card){
   else regime={word:'CALM',cls:'calm'};
 
   var html='';
+  // Show the ACTUAL VIX level + NIFTY spot the engine used (not the legacy
+  // change-% fields, which are hardcoded to 0 in the current engine).
+  var vixLevel = (c.vix_level!=null?c.vix_level:(c.vix!=null?c.vix:null));
+  var niftySpot = (c.nifty_price!=null?c.nifty_price:(c.nifty!=null?c.nifty:null));
+  var regimeData = 'INDIA VIX ' + (vixLevel!=null?Number(vixLevel).toFixed(1):'--')
+                 + ' | NIFTY ' + (niftySpot!=null?Number(niftySpot).toFixed(0):'--');
   html+='<div class="regime-bar '+regime.cls+'">';
   html+='<span class="regime-word">'+regime.word+'</span>';
-  html+='<span class="regime-data">US '+us.toFixed(1)+'% | VIX '+vix.toFixed(1)+'% | DXY '+dxy.toFixed(1)+'%</span>';
+  html+='<span class="regime-data">'+regimeData+'</span>';
   html+='</div>';
 
   html+='<div class="main-card">';
