@@ -356,6 +356,7 @@ QQQ Mode (IBKR activated — TRADING_MODE=qqq):
 | Aug 6, 2026 | NIFTY | Scalp (2 round-trips) | +₹16.25 | 25000CE +₹13, 24300PE +₹3.25 |
 | Aug 12, 2026 | NIFTY | IC ±250pt | TBD | Manual execution, successful placement |
 | Aug 24–25, 2026 | NIFTY | IC (23850/23750 PE + 24350/24450 CE, 65 qty) | +₹1,927.25 gross / ~₹1,450 net *(provisional)* | Entered Aug 24. Hit expiry-day ELM margin call (see Risk Register); added ₹54k to clear the shortfall (avoid penalty/square-off), NOT to hold to expiry. Exited Aug 25 (Tue) at market open, ~89% of max credit captured. Gross +₹1,927.25 (Positions tab); net ~₹1,450 after ~₹477 charges (shown as "Unrealised" due to Kite's overnight-carry bucketing). **Exact net pending tradebook upload (T+1, avail Aug 26).** Entry credit ~₹33.2/sh → close cost ~₹3.6/sh. |
+| Aug 26, 2026 | NIFTY | IC (24000/24100 PE + 24600/24700 CE, 65 qty) — acct MEA520 | OPEN | Entered ~9:22–9:32 IST, exp 01 Sep (Tue). Hedges: BUY 24000 PE @12.60, BUY 24700 CE @22.55; shorts: SELL 24100 PE @20.50, SELL 24600 CE @42.45. Net credit ~₹27.80/sh → ~₹1,807 max profit / ~₹4,693 max loss, **R:R ~0.38:1** (thin — low VIX ~11 + messy open; the 24700 CE hedge stuck at a low limit and had to be chased up). Manage to 50% target; **exit before expiry morning** (ELM). |
 
 ---
 
