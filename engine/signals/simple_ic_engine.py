@@ -241,6 +241,20 @@ def generate_daily_signal(capital: float = None) -> dict:
     # Target exit premium = remaining premium to buy back (credit - target profit)
     target_exit_premium_per_share = round(net_credit * (1 - profit_target_pct), 2)
     target_exit_total = round(target_exit_premium_per_share * LOT_SIZE, 2)
+
+    # Step 6c: Expiry-day ELM (Extreme Loss Margin) ESTIMATE.
+    # The exchange adds ELM on expiring short options; on 24 Aug 2026 the same
+    # 65-qty IC saw ~Rs.53,811 additional ELM on a ~Rs.67,000 normal margin
+    # (~0.80x). This is a GUIDE only — actual ELM is set by the exchange/broker
+    # on expiry day and can be higher if NIFTY sits near the short strikes.
+    try:
+        _cfg2 = _cfg  # reuse config loaded above
+    except NameError:
+        _cfg2 = {}
+    margin_per_lot = _cfg2.get("nifty", {}).get("margin_per_lot", 67000) if isinstance(_cfg2, dict) else 67000
+    ELM_FACTOR = 0.80  # observed 24 Aug 2026 (~53.8k / 67k)
+    elm_additional_est = round(margin_per_lot * ELM_FACTOR)
+    elm_total_requirement_est = round(margin_per_lot + elm_additional_est)
     
     # Step 6a: SAFETY CHECK — Negative reward (charges > credit)
     if net_max_profit <= 0:
@@ -327,6 +341,11 @@ def generate_daily_signal(capital: float = None) -> dict:
             "expiry_date": expiry_str,
             "width": WING_WIDTH,
             "charges": charges,
+            "elm_estimate": {
+                "additional_est": elm_additional_est,
+                "total_requirement_est": elm_total_requirement_est,
+                "note": "GUIDE ONLY. Expiry-day ELM (Extreme Loss Margin) added by the exchange on expiring short options. Based on 24 Aug 2026 (~Rs.53.8k extra on this 65-qty IC). Can be higher if NIFTY nears the short strikes. Exit before expiry morning to avoid it.",
+            },
         },
         "reasoning": (
             f"Mechanical ±{OFFSET_PTS}pt Iron Condor. "

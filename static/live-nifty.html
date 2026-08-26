@@ -420,6 +420,16 @@ function render(card){
   html+='</div>';
   var charges=t.charges||{};
   if(charges.total) html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: Rs.'+charges.total+' (Brokerage Rs.'+charges.brokerage+' + GST + STT + Exchange)</div>';
+
+  // Expiry-day ELM warning — potential margin spike if held into expiry morning
+  var elm=t.elm_estimate;
+  if(elm){
+    html+='<div style="margin:10px 0;padding:10px 12px;border:1px solid rgba(234,88,12,.5);background:rgba(234,88,12,.08);border-radius:6px">';
+    html+='<div style="font-size:.72rem;font-weight:700;color:#ea580c">⚠️ EXPIRY-DAY ELM (est): ~Rs.'+Number(elm.additional_est).toLocaleString('en-IN')+' EXTRA</div>';
+    html+='<div style="font-size:.68rem;color:var(--muted);margin-top:4px">Total margin could rise to ~Rs.'+Number(elm.total_requirement_est).toLocaleString('en-IN')+' if held into expiry morning. <b style="color:#ea580c">Exit before expiry to avoid it</b> (aligns with the 50% profit target). Guess based on 24 Aug — actual set by exchange, can be higher near short strikes.</div>';
+    html+='</div>';
+  }
+
   html+='<div style="font-size:.65rem;color:var(--yellow);text-align:center;margin-top:6px;opacity:.7">Premiums are Black-Scholes estimates. Actual prices will differ. Connect Zerodha for live prices.</div>';
 
   html+='<div class="why">'+esc(card.reasoning||'')+'</div>';
