@@ -1117,13 +1117,19 @@ async def upload_tradebook(request: Request):
             for group_key, orders in sorted(trades_by_group.items()):
                 # Trade date = earliest fill date in this group (the entry day)
                 trade_date = min(o["date"] for o in orders)
-                # Check if already imported (by entry date)
+                # Check if already imported (by entry date).
+                # If it exists AND is still 'open', a later re-upload may now contain
+                # the closing legs — so we UPDATE the stale record instead of skipping
+                # it. Only skip when the existing record is already resolved.
                 existing = conn.execute(
-                    "SELECT id FROM live_trades WHERE user_id = ? AND date = ? AND mode = 'live'",
+                    "SELECT id, status FROM live_trades WHERE user_id = ? AND date = ? AND mode = 'live'",
                     (int(user_id), trade_date)
                 ).fetchone()
+                existing_id = None
                 if existing:
-                    continue
+                    if existing["status"] in ("win", "loss"):
+                        continue  # already resolved — nothing to update
+                    existing_id = existing["id"]  # stale 'open' — update it below
                 
                 # Match round-trips: same symbol buy+sell = closed trade
                 # Track by symbol
@@ -1191,28 +1197,47 @@ async def upload_tradebook(request: Request):
                     status = "open"
                     pnl_value = None
                 
-                conn.execute(
-                    """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
-                       entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, pnl, mode, exit_reason)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?)""",
-                    (
-                        int(user_id),
-                        trade_date,
-                        "neutral",
-                        100,
-                        strategy,
-                        json.dumps(legs_detail),
-                        0,
-                        0,
-                        abs(total_realized_pnl) if total_realized_pnl > 0 else 0,
-                        0,
-                        0,
-                        100,
-                        status,
-                        pnl_value,
-                        f"Imported from Kite Tradebook ({len(orders)} fills, {num_symbols} symbols)",
+                exit_reason = f"Imported from Kite Tradebook ({len(orders)} fills, {num_symbols} symbols)"
+                if existing_id is not None:
+                    # Update the stale 'open' record with the now-resolved outcome.
+                    conn.execute(
+                        """UPDATE live_trades SET direction=?, confidence=?, strategy=?, legs=?,
+                           max_profit=?, status=?, pnl=?, exit_reason=? WHERE id=?""",
+                        (
+                            "neutral",
+                            100,
+                            strategy,
+                            json.dumps(legs_detail),
+                            abs(total_realized_pnl) if total_realized_pnl > 0 else 0,
+                            status,
+                            pnl_value,
+                            exit_reason + " [resolved on re-upload]",
+                            existing_id,
+                        )
                     )
-                )
+                else:
+                    conn.execute(
+                        """INSERT INTO live_trades (user_id, date, direction, confidence, strategy, legs,
+                           entry_cost, max_loss, max_profit, sl_value, projected_open, width, status, pnl, mode, exit_reason)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?)""",
+                        (
+                            int(user_id),
+                            trade_date,
+                            "neutral",
+                            100,
+                            strategy,
+                            json.dumps(legs_detail),
+                            0,
+                            0,
+                            abs(total_realized_pnl) if total_realized_pnl > 0 else 0,
+                            0,
+                            0,
+                            100,
+                            status,
+                            pnl_value,
+                            exit_reason,
+                        )
+                    )
                 imported_trades.append({
                     "date": trade_date,
                     "strategy": strategy,
