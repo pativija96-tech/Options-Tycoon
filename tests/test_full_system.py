@@ -621,8 +621,9 @@ class TestLiveRoutes:
         assert resp.status_code == 200
         assert resp.json()["market"] == "QQQ"
 
-    def test_live_execute_nifty_routes_to_kite(self):
+    def test_live_execute_nifty_routes_to_kite(self, monkeypatch):
         """POST /api/live/live-execute?mode=nifty routes to kite_executor."""
+        monkeypatch.setenv("LIVE_EXECUTE_ENABLED", "nifty")
         nifty_signal = {
             "action": "trade",
             "strategy_type": "iron_condor_250_100",
@@ -658,8 +659,9 @@ class TestLiveRoutes:
         call_args = mock_exec.call_args
         assert call_args[0][0]["action"] == "trade"
 
-    def test_live_execute_qqq_routes_to_ibkr(self):
+    def test_live_execute_qqq_routes_to_ibkr(self, monkeypatch):
         """POST /api/live/live-execute?mode=qqq routes to ibkr_executor."""
+        monkeypatch.setenv("LIVE_EXECUTE_ENABLED", "qqq")
         qqq_signal = {
             "action": "trade",
             "strategy_type": "iron_condor_qqq",

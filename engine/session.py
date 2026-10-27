@@ -9,6 +9,7 @@ import os
 import hmac
 import hashlib
 import json
+import secrets
 import time
 import logging
 from typing import Optional
@@ -30,6 +31,12 @@ FOUNDER_ALLOWED_EMAILS = [
 SESSION_COOKIE_NAME = "ot_session"
 SESSION_MAX_AGE = 7 * 24 * 60 * 60  # 7 days
 IS_PRODUCTION = bool(os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("PRODUCTION"))
+
+# Shared secret for in-process jobs (engine/scheduler.py) that call /api/live/*
+# over localhost. Random per process unless pinned via env (needed only if the
+# app ever runs with more than one worker process).
+INTERNAL_TOKEN_HEADER = "X-Internal-Token"
+INTERNAL_API_TOKEN = os.environ.get("INTERNAL_API_TOKEN") or secrets.token_urlsafe(32)
 
 
 def _sign(payload: str) -> str:
@@ -113,10 +120,13 @@ def require_founder(request: Request) -> dict:
     Auth methods (in priority order):
     1. Skip for kite-callback (Zerodha redirect has no session)
     2. HTTP-Only session cookie (primary, secure)
-    3. X-User-Id header (TEMPORARY — only from same-origin requests via Referer check)
+    3. X-Internal-Token header (in-process scheduler jobs only)
+
+    The old X-User-Id + Referer fallback was removed: both headers are
+    client-controlled, so anyone could send them and act as the founder.
     """
     # Exempt kite-callback from auth (Zerodha redirect)
-    if "/kite-callback" in str(request.url.path):
+    if request.url.path.endswith("/kite-callback"):
         return {"user_id": 0, "email": "kite-callback", "name": ""}
 
     # Try cookie first (preferred, secure)
@@ -126,33 +136,16 @@ def require_founder(request: Request) -> dict:
         if FOUNDER_ALLOWED_EMAILS and email in FOUNDER_ALLOWED_EMAILS:
             return session
 
-    # Temporary fallback: X-User-Id header — ONLY from same-origin requests
-    # This prevents external attackers from using it while allowing the frontend to work
-    referer = request.headers.get("referer", "")
-    origin = request.headers.get("origin", "")
-    is_same_origin = any(
-        domain in (referer + origin)
-        for domain in ["options-tycoon.com", "localhost", "127.0.0.1"]
-    )
-    
-    if is_same_origin:
-        user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
-        if user_id:
-            try:
-                from db.database import get_connection
-                conn = get_connection()
-                try:
-                    row = conn.execute("SELECT email FROM users WHERE id = ?", (int(user_id),)).fetchone()
-                    if row and row["email"] in FOUNDER_ALLOWED_EMAILS:
-                        return {"user_id": int(user_id), "email": row["email"], "name": ""}
-                finally:
-                    conn.close()
-            except Exception:
-                pass
+    # Scheduler jobs running inside this process
+    internal = request.headers.get(INTERNAL_TOKEN_HEADER, "")
+    if internal and hmac.compare_digest(internal, INTERNAL_API_TOKEN):
+        return {"user_id": 1, "email": "scheduler@internal", "name": "scheduler"}
 
-    # No valid auth
-    if not FOUNDER_ALLOWED_EMAILS:
+    # No valid auth. Dev convenience (no allowlist configured) never applies in production.
+    if not FOUNDER_ALLOWED_EMAILS and not IS_PRODUCTION:
         return {"user_id": 0, "email": "dev@localhost", "name": "dev"}
+    if not FOUNDER_ALLOWED_EMAILS:
+        logger.error("FOUNDER_ALLOWED_EMAILS is not set in production — /api/live is locked")
 
     raise HTTPException(status_code=403, detail="Access denied")
 

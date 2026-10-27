@@ -1619,6 +1619,14 @@ async def run_backup():
     return result
 
 
+def _live_execute_enabled(trading_mode: str) -> bool:
+    """True if LIVE_EXECUTE_ENABLED allows real orders for this mode (read per request)."""
+    import os
+    raw = os.environ.get("LIVE_EXECUTE_ENABLED", "").lower()
+    enabled = {m.strip() for m in raw.split(",") if m.strip()}
+    return "all" in enabled or trading_mode in enabled
+
+
 @router.post("/live-execute")
 async def live_execute(request: Request, mode: str = None):
     """
@@ -1672,6 +1680,16 @@ async def live_execute(request: Request, mode: str = None):
             "error": "SAFETY BLOCK: QQQ page tried to execute a NIFTY signal. Regenerate the QQQ signal first."
         })
     
+    # KILL SWITCH: real-money execution is OFF unless explicitly enabled per mode.
+    # LIVE_EXECUTE_ENABLED = "nifty", "qqq", "nifty,qqq" or "all". Unset = off.
+    if not _live_execute_enabled(trading_mode):
+        logger.warning(f"live-execute BLOCKED by kill switch: mode={trading_mode}")
+        return JSONResponse(status_code=403, content={
+            "success": False,
+            "error": f"Live execution is disabled for {trading_mode.upper()}. "
+                     f"Place orders manually, or set LIVE_EXECUTE_ENABLED to enable it.",
+        })
+
     # Execute based on mode
     if trading_mode == "qqq":
         from engine.broker.ibkr_executor import execute_qqq_sync
