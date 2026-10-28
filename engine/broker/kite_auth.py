@@ -31,11 +31,12 @@ _session = {
 
 def get_login_url() -> str:
     """Generate Kite OAuth login URL."""
+    from urllib.parse import quote
     config = _load_config()
     api_key = config.get("api_key", "")
     if not api_key or "YOUR_" in api_key:
         return "NOT_CONFIGURED"
-    return f"https://kite.zerodha.com/connect/login?api_key={api_key}&v=3"
+    return f"https://kite.zerodha.com/connect/login?api_key={quote(api_key, safe='')}&v=3"
 
 
 def handle_callback(request_token: str) -> dict:
@@ -146,17 +147,33 @@ def get_kite_client():
         return None
 
 
+def _clean_cred(value) -> str:
+    """
+    Strip whitespace and wrapping quotes from a pasted credential.
+    Railway/.env values pasted as `"abc123"` or with a trailing newline are
+    otherwise sent to Kite verbatim, which rejects them as "Invalid api_key".
+    """
+    value = str(value or "").strip()
+    while len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        value = value[1:-1].strip()
+    return value
+
+
 def _load_config() -> dict:
     """Load Kite credentials from env vars (Railway) or config file (local dev)."""
     import os
     # Prefer environment variables (production on Railway)
-    api_key = os.environ.get("KITE_API_KEY", "")
-    api_secret = os.environ.get("KITE_API_SECRET", "")
+    api_key = _clean_cred(os.environ.get("KITE_API_KEY"))
+    api_secret = _clean_cred(os.environ.get("KITE_API_SECRET"))
     if api_key and api_secret and "YOUR_" not in api_key:
         return {"api_key": api_key, "api_secret": api_secret}
-    
+
     # Fallback to config file (local development)
     if not CONFIG_PATH.exists():
         return {}
     with open(CONFIG_PATH) as f:
-        return json.load(f)
+        config = json.load(f)
+    for k in ("api_key", "api_secret"):
+        if k in config:
+            config[k] = _clean_cred(config[k])
+    return config
