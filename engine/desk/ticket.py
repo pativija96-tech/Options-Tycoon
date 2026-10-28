@@ -41,7 +41,7 @@ def _legs_from_signal(signal):
 
 
 def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quotes=None,
-                 margin_required=None, funds_available=None, kite_errors=None, kite_connected=False):
+                 margin_required=None, funds_available=None, kite_errors=None, kite_connected=False, risk=None):
     """
     signal:  dict from generate_daily_signal() (action "trade" or "skip").
     plan:    dict from engine.desk.plan (unset rules are None / []).
@@ -170,6 +170,19 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         add("margin", "Margin plus expiry buffer available", "pass" if need <= funds_available else "fail",
             f"{_inr(margin_required)} + {_inr(buffer)} buffer vs {_inr(funds_available)} available")
 
+    if not risk or not risk.get("configured"):
+        add("risk_budget", "Loss limits and losing streak", "unset", "No weekly / monthly loss limit or pause rule in your plan")
+    elif risk["breaches"]:
+        add("risk_budget", "Loss limits and losing streak", "fail", "; ".join(risk["breaches"]))
+    else:
+        parts = []
+        if risk.get("week_left") is not None:
+            parts.append(f"week {_inr(risk['week_left'])} left")
+        if risk.get("month_left") is not None:
+            parts.append(f"month {_inr(risk['month_left'])} left")
+        parts.append(f"losing streak {risk['losing_streak']}")
+        add("risk_budget", "Loss limits and losing streak", "pass", " · ".join(parts))
+
     if market["data_is_live"]:
         add("data_live", "Signal built on live Kite data", "pass", "NIFTY and VIX from Kite")
     else:
@@ -204,6 +217,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "credit_per_share": credit_ps, "credit": credit, "max_loss": max_loss, "reward_risk": rr,
             "charges_est": charges,
             "margin": {"required": margin_required, "buffer": buffer, "funds": funds_available},
+            "risk": risk,
             "checks": checks,
             "exit_plan": {"target": target, "loss_exit": loss_exit, "exit_by": exit_by,
                           "order": "Buy back both shorts first, then sell the hedges"}}

@@ -26,6 +26,9 @@ PLAN_FIELDS = {
     "loss_exit_rupees": ("number", "Exit when the open loss reaches (₹)"),
     "exit_days_before_expiry": ("number", "Exit this many trading days before expiry"),
     "expiry_margin_buffer": ("number", "Extra funds kept for expiry-day margin (₹)"),
+    "weekly_loss_limit": ("number", "Stop new trades after losing this much in a week (₹)"),
+    "monthly_loss_limit": ("number", "Stop new trades after losing this much in a month (₹)"),
+    "pause_after_losses": ("number", "Pause after this many losses in a row"),
     "events": ("events", "Event dates to avoid (RBI, Budget, elections…)"),
 }
 
@@ -97,8 +100,9 @@ def validate_plan(raw: dict) -> dict:
 
     if plan["profit_target_pct"] is not None and not (0 < plan["profit_target_pct"] <= 1):
         raise PlanError("profit_target_pct must be between 0 and 1")
-    if plan["exit_days_before_expiry"] is not None:
-        plan["exit_days_before_expiry"] = int(plan["exit_days_before_expiry"])
+    for key in ("exit_days_before_expiry", "pause_after_losses"):
+        if plan[key] is not None:
+            plan[key] = int(plan[key])
     if plan["vix_min"] is not None and plan["vix_max"] is not None and plan["vix_min"] > plan["vix_max"]:
         raise PlanError("vix_min cannot be above vix_max")
     return plan
