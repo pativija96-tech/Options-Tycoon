@@ -75,6 +75,47 @@ MIGRATIONS = [
             resolved_at TEXT
         )
     """),
+    # Migration 7: per-user Trading Plan (Phase 1 desk). Plain CREATE TABLE IF NOT EXISTS,
+    # same SQL on SQLite and PostgreSQL, no defaults that differ between them.
+    (7, "Add trading_plans table", """
+        CREATE TABLE IF NOT EXISTS trading_plans (
+            user_id INTEGER PRIMARY KEY,
+            plan_json TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """),
+    # Migration 8: desk journal — one row per iron condor, built only from real fills.
+    # New table (live_trades is left untouched). AUTOINCREMENT becomes SERIAL on PostgreSQL
+    # via the connection wrapper.
+    (8, "Add desk_trades table", """
+        CREATE TABLE IF NOT EXISTS desk_trades (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            market TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source TEXT,
+            opened_on TEXT NOT NULL,
+            closed_on TEXT,
+            expiry TEXT,
+            strikes TEXT NOT NULL,
+            lot INTEGER NOT NULL,
+            legs_json TEXT NOT NULL,
+            entry_credit REAL,
+            signal_credit REAL,
+            entry_spot REAL,
+            entry_vix REAL,
+            exit_plan_json TEXT,
+            pnl_gross REAL,
+            charges_est REAL,
+            pnl_net REAL,
+            planned_risk REAL,
+            exit_reason TEXT,
+            followed_plan TEXT,
+            note TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """),
 ]
 
 

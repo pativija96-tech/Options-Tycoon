@@ -1765,3 +1765,336 @@ async def get_phase_status():
         return {"phase": phase, "error": str(e)[:100]}
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRADING DESK (Phase 1): Trading Plan + one-click Trade Ticket
+# Read-only with respect to the broker: nothing here places or changes orders.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _desk_user_id(founder: dict) -> int:
+    """User id from the authenticated session (never from a browser-sent header)."""
+    try:
+        return int(founder.get("user_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+@router.get("/plan")
+async def get_trading_plan(founder: dict = Depends(require_founder)):
+    """The signed-in user's Trading Plan (unset rules are null) plus field descriptions."""
+    from engine.desk.plan import load_plan, PLAN_FIELDS, WEEKDAYS
+    return {
+        "plan": load_plan(_desk_user_id(founder)),
+        "fields": {k: {"type": t, "label": d} for k, (t, d) in PLAN_FIELDS.items()},
+        "weekdays": WEEKDAYS,
+    }
+
+
+@router.put("/plan")
+async def put_trading_plan(request: Request, founder: dict = Depends(require_founder)):
+    """Validate and save the signed-in user's Trading Plan."""
+    from engine.desk.plan import save_plan, PlanError
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Body must be JSON"})
+    try:
+        plan = save_plan(_desk_user_id(founder), body.get("plan", body) if isinstance(body, dict) else body)
+    except PlanError as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    return {"success": True, "plan": plan}
+
+
+@router.post("/trade-ticket")
+async def prepare_trade_ticket(request: Request, founder: dict = Depends(require_founder)):
+    """
+    One click: regenerate today's NIFTY signal, then build the Trade Ticket from it,
+    the user's plan and (when logged in) Kite's live quotes, margin and funds.
+    """
+    from engine.desk.plan import load_plan
+    from engine.desk.ticket import build_ticket
+    from engine.desk import kite_data
+
+    # 1. Fresh signal (same path as the Regenerate Signal button; writes today_signal_nifty.json)
+    gen = await generate_signal(request, mode="nifty")
+    if isinstance(gen, JSONResponse) or not (isinstance(gen, dict) and gen.get("success")):
+        detail = gen.body.decode()[:200] if isinstance(gen, JSONResponse) else str(gen)[:200]
+        return JSONResponse(status_code=502, content={"success": False, "error": f"Signal generation failed: {detail}"})
+    with open(OUTPUT_DIR / "today_signal_nifty.json") as f:
+        signal = json.load(f)
+
+    plan = load_plan(_desk_user_id(founder))
+    today = kite_data.ist_today()
+    lot = 65
+    try:
+        lot = int(((signal.get("trade") or {}).get("execution_sequence") or {}).get("phase_a_hedges_first", [{}])[0].get("qty") or 65)
+    except Exception:
+        pass
+
+    # 2. Kite data (optional; every failure is reported, never fatal)
+    errors, expiry, symbols, quotes, margin, funds = [], None, None, None, None, None
+    connected = False
+    try:
+        from engine.broker.kite_auth import is_authenticated, get_kite_client
+        kite = get_kite_client() if is_authenticated() else None
+    except Exception as e:
+        kite = None
+        errors.append(f"Kite unavailable: {str(e)[:120]}")
+    if kite and signal.get("action") == "trade":
+        connected = True
+        legs = [{"strike": l["strike"], "option": l["option"]} for l in signal["trade"]["legs"]]
+        expiry, symbols = kite_data.resolve_symbols(kite, legs, today, errors)
+        if symbols:
+            quotes = kite_data.fetch_quotes(kite, list(symbols.values()), errors)
+        funds = kite_data.available_funds(kite, errors)
+    elif not kite:
+        errors.append("Not logged in to Kite — prices are model estimates")
+
+    from engine.desk.trades import list_trades
+    from engine.desk.review import risk_budget
+    risk = risk_budget(list_trades(_desk_user_id(founder)), plan, today)
+    ticket = build_ticket(signal, plan, today, lot=lot, expiry=expiry, symbols=symbols, quotes=quotes,
+                          funds_available=funds, kite_errors=errors, kite_connected=connected, risk=risk)
+
+    # 3. Margin needs the final order prices, so it is checked after the ticket is priced
+    if kite and ticket.get("action") == "trade" and symbols:
+        margin = kite_data.basket_margin(kite, ticket["orders"], errors)
+        if margin is not None:
+            ticket = build_ticket(signal, plan, today, lot=lot, expiry=expiry, symbols=symbols, quotes=quotes,
+                                  margin_required=margin, funds_available=funds, kite_errors=errors,
+                                  kite_connected=connected, risk=risk)
+    return {"success": True, "ticket": ticket}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRADING DESK (Phases 2–4): honest journal, position monitor, exit, review
+# Still read-only toward the broker: positions are opened/closed from fills
+# you placed yourself in Kite (or prices you type in).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _kite_or_none():
+    try:
+        from engine.broker.kite_auth import is_authenticated, get_kite_client
+        return get_kite_client() if is_authenticated() else None
+    except Exception:
+        return None
+
+
+def _ticket_orders(ticket):
+    """Validate the entry orders a client sends back from a ticket."""
+    orders = (ticket or {}).get("orders") or []
+    if len(orders) != 4:
+        raise ValueError("Ticket must have 4 entry orders")
+    clean = []
+    for o in orders:
+        if o.get("side") not in ("BUY", "SELL") or o.get("option") not in ("CE", "PE"):
+            raise ValueError("Each order needs side BUY/SELL and option CE/PE")
+        clean.append({"symbol": str(o["symbol"]), "side": o["side"], "option": o["option"],
+                      "strike": int(o["strike"]), "qty": int(o["qty"])})
+    return clean
+
+
+def _open_trade_from_legs(user_id, legs, ticket, source):
+    from engine.desk.plan import load_plan
+    from engine.desk.trades import entry_credit_per_share, insert_trade
+    from engine.desk import kite_data
+    plan = load_plan(user_id)
+    credit_ps = entry_credit_per_share(legs)
+    lot = legs[0]["qty"]
+    wing = abs(next(l["strike"] for l in legs if l["side"] == "SELL" and l["option"] == "PE")
+               - next(l["strike"] for l in legs if l["side"] == "BUY" and l["option"] == "PE"))
+    max_loss = round((wing - credit_ps) * lot, 2)
+    ticket = ticket or {}
+    ep = ticket.get("exit_plan") or {}
+    market = ticket.get("market") or {}
+    trade = {
+        "status": "open", "opened_on": kite_data.ist_today().isoformat(), "expiry": ticket.get("expiry"),
+        "lot": lot, "legs": legs, "entry_credit": credit_ps,
+        "signal_credit": ticket.get("credit_per_share"),
+        "entry_spot": market.get("spot"), "entry_vix": market.get("vix"),
+        "exit_plan": {"profit_target_pct": plan.get("profit_target_pct"), "loss_exit": plan.get("loss_exit_rupees"),
+                      "exit_by": ep.get("exit_by")},
+        "planned_risk": plan.get("loss_exit_rupees") or max_loss,
+    }
+    return insert_trade(user_id, trade, source=source), trade
+
+
+@router.post("/desk/sync-entry")
+async def desk_sync_entry(request: Request, founder: dict = Depends(require_founder)):
+    """Open the journal position from today's COMPLETE Kite orders matching the ticket."""
+    from engine.desk.trades import aggregate_kite_orders, open_from_fills, get_open_trade
+    uid = _desk_user_id(founder)
+    body = await request.json()
+    try:
+        orders = _ticket_orders(body.get("ticket"))
+    except (ValueError, KeyError, TypeError) as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    if get_open_trade(uid):
+        return JSONResponse(status_code=409, content={"success": False, "error": "You already have an open position. Close it first."})
+    kite = _kite_or_none()
+    if not kite:
+        return JSONResponse(status_code=401, content={"success": False, "error": "Not logged in to Kite. Log in, or enter your fill prices by hand."})
+    try:
+        fills = aggregate_kite_orders(kite.orders())
+    except Exception as e:
+        return JSONResponse(status_code=502, content={"success": False, "error": f"Kite orders unavailable: {str(e)[:150]}"})
+    legs, problems = open_from_fills(orders, fills)
+    if problems:
+        return JSONResponse(status_code=409, content={"success": False, "error": "Not every leg is filled yet.", "problems": problems})
+    trade_id, trade = _open_trade_from_legs(uid, legs, body.get("ticket"), "kite_sync")
+    return {"success": True, "trade_id": trade_id, "entry_credit": trade["entry_credit"], "legs": legs}
+
+
+@router.post("/desk/manual-open")
+async def desk_manual_open(request: Request, founder: dict = Depends(require_founder)):
+    """Open the journal position from fill prices typed by the user (when Kite is unavailable)."""
+    from engine.desk.trades import get_open_trade
+    uid = _desk_user_id(founder)
+    body = await request.json()
+    try:
+        orders = _ticket_orders(body.get("ticket"))
+        prices = {k: float(v) for k, v in (body.get("prices") or {}).items()}
+        legs = [{**o, "entry_avg": round(prices[o["symbol"]], 2), "exit_avg": None} for o in orders]
+        if any(l["entry_avg"] <= 0 for l in legs):
+            raise ValueError("Every fill price must be above zero")
+    except KeyError:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Enter a fill price for all 4 legs"})
+    except (ValueError, TypeError) as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    if get_open_trade(uid):
+        return JSONResponse(status_code=409, content={"success": False, "error": "You already have an open position. Close it first."})
+    trade_id, trade = _open_trade_from_legs(uid, legs, body.get("ticket"), "manual")
+    return {"success": True, "trade_id": trade_id, "entry_credit": trade["entry_credit"], "legs": legs}
+
+
+@router.get("/desk/position")
+async def desk_position(founder: dict = Depends(require_founder)):
+    """The open position with live P&L, progress to target / loss exit and the exit ticket."""
+    from engine.desk.trades import get_open_trade
+    from engine.desk.monitor import monitor_position
+    from engine.desk.plan import load_plan
+    from engine.desk import kite_data
+    uid = _desk_user_id(founder)
+    trade = get_open_trade(uid)
+    if not trade:
+        return {"success": True, "position": None}
+    errors, quotes, spot = [], None, None
+    kite = _kite_or_none()
+    if kite:
+        q = kite_data.fetch_quotes(kite, [l["symbol"] for l in trade["legs"]], errors)
+        quotes = {s: v["ltp"] for s, v in q.items()} if q else None
+        try:
+            spot = float(kite.ltp(["NSE:NIFTY 50"])["NSE:NIFTY 50"]["last_price"])
+        except Exception as e:
+            errors.append(f"NIFTY spot unavailable: {str(e)[:120]}")
+    else:
+        errors.append("Not logged in to Kite — live P&L unavailable")
+    pos = monitor_position(trade, kite_data.ist_today(), quotes=quotes, spot=spot, plan=load_plan(uid))
+    pos["kite_notes"] = errors
+    pos["legs"] = trade["legs"]
+    return {"success": True, "position": pos}
+
+
+def _close_reason(body):
+    reason = (body or {}).get("exit_reason") or "manual"
+    return reason if reason in ("target", "loss_exit", "exit_day", "manual") else "manual"
+
+
+@router.post("/desk/sync-exit")
+async def desk_sync_exit(request: Request, founder: dict = Depends(require_founder)):
+    """Close the open position from today's COMPLETE closing orders in Kite; records real P&L."""
+    from engine.desk.trades import get_open_trade, aggregate_kite_orders, close_from_fills, close_trade
+    from engine.desk import kite_data
+    uid = _desk_user_id(founder)
+    body = await request.json()
+    trade = get_open_trade(uid)
+    if not trade:
+        return JSONResponse(status_code=404, content={"success": False, "error": "No open position"})
+    kite = _kite_or_none()
+    if not kite:
+        return JSONResponse(status_code=401, content={"success": False, "error": "Not logged in to Kite. Log in, or enter your exit prices by hand."})
+    try:
+        fills = aggregate_kite_orders(kite.orders())
+    except Exception as e:
+        return JSONResponse(status_code=502, content={"success": False, "error": f"Kite orders unavailable: {str(e)[:150]}"})
+    legs, problems = close_from_fills(trade["legs"], fills)
+    if problems:
+        return JSONResponse(status_code=409, content={"success": False, "error": "Not every leg is closed yet.", "problems": problems})
+    result = close_trade(uid, trade["id"], legs, kite_data.ist_today().isoformat(), _close_reason(body))
+    return {"success": True, "trade_id": trade["id"], **result}
+
+
+@router.post("/desk/manual-close")
+async def desk_manual_close(request: Request, founder: dict = Depends(require_founder)):
+    """Close the open position from exit prices typed by the user."""
+    from engine.desk.trades import get_open_trade, close_trade
+    from engine.desk import kite_data
+    uid = _desk_user_id(founder)
+    body = await request.json()
+    trade = get_open_trade(uid)
+    if not trade:
+        return JSONResponse(status_code=404, content={"success": False, "error": "No open position"})
+    try:
+        prices = {k: float(v) for k, v in (body.get("prices") or {}).items()}
+        legs = [{**l, "exit_avg": round(prices[l["symbol"]], 2)} for l in trade["legs"]]
+        if any(l["exit_avg"] < 0 for l in legs):
+            raise ValueError("Exit prices cannot be negative")
+    except KeyError:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Enter an exit price for all 4 legs"})
+    except (ValueError, TypeError) as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    result = close_trade(uid, trade["id"], legs, kite_data.ist_today().isoformat(), _close_reason(body))
+    return {"success": True, "trade_id": trade["id"], **result}
+
+
+@router.post("/desk/trades/{trade_id}/review")
+async def desk_review_trade(trade_id: int, request: Request, founder: dict = Depends(require_founder)):
+    """Tag a trade as followed-plan yes/no with an optional note."""
+    from engine.desk.trades import review_trade
+    body = await request.json()
+    try:
+        review_trade(_desk_user_id(founder), trade_id, body.get("followed_plan"), body.get("note"))
+    except ValueError as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    return {"success": True}
+
+
+@router.get("/desk/review")
+async def desk_review(founder: dict = Depends(require_founder)):
+    """Scorecard over closed desk trades plus this week's / month's risk budget."""
+    from engine.desk.trades import list_trades
+    from engine.desk.review import review_stats, risk_budget
+    from engine.desk.plan import load_plan
+    from engine.desk import kite_data
+    uid = _desk_user_id(founder)
+    trades = list_trades(uid)
+    return {"success": True, "stats": review_stats(trades),
+            "risk": risk_budget(trades, load_plan(uid), kite_data.ist_today())}
+
+
+@router.post("/desk/import-tradebook")
+async def desk_import_tradebook(request: Request, founder: dict = Depends(require_founder)):
+    """Import a Kite Console tradebook CSV: keeps only 4-leg NIFTY iron condors, real fills only."""
+    from engine.desk.trades import parse_tradebook, condors_from_tradebook, insert_trade
+    form = await request.form()
+    file = form.get("file")
+    if not file:
+        return JSONResponse(status_code=400, content={"success": False, "error": "No file uploaded"})
+    if not (file.filename or "").lower().endswith(".csv"):
+        return JSONResponse(status_code=400, content={"success": False, "error": "Upload the tradebook as CSV (Kite Console → Reports → Tradebook)"})
+    try:
+        fills = parse_tradebook((await file.read()).decode("utf-8-sig"))
+    except Exception as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": f"Could not read CSV: {str(e)[:150]}"})
+    trades, skipped = condors_from_tradebook(fills)
+    uid = _desk_user_id(founder)
+    imported, duplicates = [], 0
+    for t in trades:
+        tid = insert_trade(uid, t, source="tradebook")
+        if tid is None:
+            duplicates += 1
+        else:
+            imported.append({"id": tid, "opened_on": t["opened_on"], "status": t["status"],
+                             "entry_credit": t["entry_credit"], "pnl_net": t.get("pnl_net")})
+    return {"success": True, "fills": len(fills), "imported": imported, "duplicates": duplicates, "skipped": skipped}

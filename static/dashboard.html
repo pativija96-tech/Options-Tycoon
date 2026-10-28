@@ -156,6 +156,7 @@
             <a href="/static/dashboard.html" class="sidebar-link active"><span class="icon">📊</span> Dashboard</a>
             <a href="/static/live.html" class="sidebar-link" id="liveSignalsLink" style="display:none"><span class="icon">🎯</span> Live Signals (QQQ)</a>
             <a href="/static/live-nifty.html" class="sidebar-link" id="liveNiftyLink" style="display:none"><span class="icon">🇮🇳</span> Live Signals (NIFTY)</a>
+            <a href="/static/desk.html" class="sidebar-link" id="deskLink" style="display:none"><span class="icon">✦</span> Trading Desk (NIFTY)</a>
             <a href="/static/upload-free.html" class="sidebar-link"><span class="icon">📤</span> Upload CSV</a>
             <a href="/static/report.html?source=free" class="sidebar-link"><span class="icon">📄</span> Latest Report</a>
         </nav>
@@ -201,6 +202,7 @@ async function renderDashboard() {
         if (sessionData.is_founder) {
             document.getElementById('liveSignalsLink').style.display = '';
             document.getElementById('liveNiftyLink').style.display = '';
+            document.getElementById('deskLink').style.display = '';
         }
     } catch(e) {}
 

@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Options Tycoon — Trading Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070B14;--card:#0E1525;--row:#121B2E;--line:rgba(148,163,184,.14);--text:#E6EAF2;--muted:#94A3B8;--soft:#CBD5E1;
+--gold:#F5B544;--green:#34D399;--green-t:#6EE7B7;--red:#FB7185;--red-t:#FDA4AF;--blue:#60A5FA;--blue-t:#93C5FD;
+--font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:15px;line-height:1.5}
+button{font-family:inherit}
+a{color:#7DB4FF}a:hover{color:#B5D4FF}
+.wrap{max-width:1240px;margin:0 auto;padding:24px 20px 64px;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text)}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--gold);display:flex;align-items:center;justify-content:center}
+.brand b{font-weight:800;font-size:18px;letter-spacing:-.3px}.brand b span{color:var(--gold)}
+.brand small{display:block;font-size:12px;color:var(--muted)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;padding:5px;border-radius:14px;background:var(--card);border:1px solid var(--line)}
+.tab{min-height:40px;padding:0 18px;border-radius:10px;border:none;cursor:pointer;font-size:14px;font-weight:700;background:transparent;color:var(--soft)}
+.tab.on{background:var(--gold);color:var(--bg)}
+.tab:disabled{opacity:.45;cursor:not-allowed}
+.strip{display:flex;flex-wrap:wrap;gap:10px}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--card);color:var(--soft)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.ok{background:rgba(52,211,153,.10);border-color:rgba(52,211,153,.35);color:var(--green-t)}.pill.ok .dot{background:var(--green)}
+.pill.warn{background:rgba(245,181,68,.10);border-color:rgba(245,181,68,.35);color:#FCD38A}.pill.warn .dot{background:var(--gold)}
+.pill.bad{background:rgba(251,113,133,.10);border-color:rgba(251,113,133,.35);color:var(--red-t)}.pill.bad .dot{background:var(--red)}
+.pill.info{background:rgba(96,165,250,.10);border-color:rgba(96,165,250,.35);color:var(--blue-t)}
+.pill a{color:inherit;font-weight:800}
+.mono{font-family:var(--mono)}
+.eyebrow{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+h1{margin:4px 0 0;font-size:34px;font-weight:800;letter-spacing:-.8px}
+.card{border-radius:22px;background:var(--card);border:1px solid var(--line)}
+.hero{padding:48px 32px;display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center}
+.btn{min-height:50px;padding:0 24px;border-radius:14px;border:none;background:var(--gold);color:var(--bg);font-size:16px;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+.btn.big{min-height:54px;padding:0 34px;font-size:17px;box-shadow:0 10px 30px rgba(245,181,68,.25)}
+.btn.ghost{background:transparent;border:1px solid rgba(148,163,184,.3);color:var(--soft);font-weight:600}
+.btn:disabled{opacity:.5;cursor:wait}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;align-items:start}
+.ticket{overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.45)}
+.tk-head{padding:22px 24px;display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px dashed rgba(148,163,184,.25)}
+.stamp{padding:10px 16px;border-radius:12px;transform:rotate(-4deg);font-weight:900;font-size:16px;letter-spacing:1.5px;white-space:nowrap;border:2.5px solid}
+.stamp.go{color:var(--green);border-color:var(--green);background:rgba(52,211,153,.08)}
+.stamp.nogo{color:var(--red);border-color:var(--red);background:rgba(251,113,133,.08)}
+.stamp.none{color:var(--muted);border-color:var(--muted)}
+.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line)}
+.metrics>div{background:var(--card);padding:14px 16px}
+.metrics .k{font-size:12px;color:var(--muted)}.metrics .v{font-family:var(--mono);font-size:20px;font-weight:700}
+.sec{padding:20px 24px;display:flex;flex-direction:column;gap:10px}
+.sec+.sec{border-top:1px dashed rgba(148,163,184,.25)}
+.row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:14px;background:var(--row);border:1px solid rgba(148,163,184,.12)}
+.step{width:30px;height:30px;flex:none;border-radius:9px;background:rgba(245,181,68,.16);color:#FCD38A;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px}
+.side{width:46px;flex:none;font-size:13px;font-weight:800}
+.buy{color:var(--green)}.sell{color:var(--red)}
+.sym{flex:1;min-width:0;font-family:var(--mono);font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.sym small{color:var(--muted);font-weight:400}
+.copy{min-height:36px;min-width:72px;padding:0 12px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;background:transparent;border:1px solid rgba(148,163,184,.35);color:var(--text)}
+.copy.done{background:rgba(52,211,153,.18);border-color:rgba(52,211,153,.5);color:var(--green-t)}
+.note{font-size:12px;color:var(--muted)}
+.exitgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.check{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.10)}
+.ico{width:24px;height:24px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900}
+.ico.pass{background:rgba(52,211,153,.16);color:var(--green)}
+.ico.fail{background:rgba(251,113,133,.18);color:var(--red)}
+.ico.unset{background:rgba(148,163,184,.14);color:var(--muted)}
+.ico.unknown{background:rgba(245,181,68,.14);color:var(--gold)}
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
+.badge.live{background:rgba(52,211,153,.14);color:var(--green-t)}.badge.est{background:rgba(245,181,68,.14);color:#FCD38A}
+.notes{margin:0;padding-left:18px;color:var(--muted);font-size:13px}
+.err{padding:14px 18px;border-radius:14px;background:rgba(251,113,133,.1);border:1px solid rgba(251,113,133,.35);color:var(--red-t)}
+.form{padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;color:var(--soft);font-weight:600}
+.field input[type=number],.field input[type=text],.field input[type=date]{min-height:44px;padding:0 14px;border-radius:12px;border:1px solid rgba(148,163,184,.3);background:var(--row);color:var(--text);font-size:15px;font-family:var(--mono)}
+.days{display:flex;flex-wrap:wrap;gap:8px}
+.days label{display:flex;align-items:center;gap:6px;min-height:40px;padding:0 12px;border-radius:10px;border:1px solid rgba(148,163,184,.3);background:var(--row);cursor:pointer;font-weight:600}
+.events{grid-column:1/-1;display:flex;flex-direction:column;gap:8px}
+.evrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.evrow input[type=text]{flex:1;min-width:180px}
+.hide{display:none!important}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.kpi{border-radius:20px;background:var(--card);border:1px solid var(--line);padding:18px 20px}
+.kpi .k{font-size:13px;color:var(--muted)}.kpi .v{font-family:var(--mono);font-size:26px;font-weight:800;letter-spacing:-.5px}
+.bar{height:10px;border-radius:99px;background:#1A2438;overflow:hidden}.bar>div{height:100%;border-radius:99px;transition:width .3s ease}
+.range{position:relative;height:96px;margin:6px 8px 0}
+.range .track{position:absolute;left:0;right:0;top:40px;height:14px;border-radius:99px;background:rgba(251,113,133,.22)}
+.range .zone{position:absolute;top:40px;height:14px;background:rgba(52,211,153,.45)}
+.range .tick{position:absolute;top:32px;width:2px;height:30px}
+.range .lbl{position:absolute;top:66px;transform:translateX(-50%);text-align:center;font-size:12px;line-height:1.3;font-family:var(--mono);white-space:nowrap}
+.range .mk{position:absolute;top:-6px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}
+.range .mk b{padding:3px 9px;border-radius:8px;background:var(--gold);color:var(--bg);font-family:var(--mono);font-size:13px}
+.range .mk i{width:2px;height:30px;background:var(--gold)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+.tbl td{padding:10px;border-bottom:1px solid rgba(148,163,184,.08);font-family:var(--mono);vertical-align:middle}
+.tblwrap{overflow-x:auto}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;font-family:var(--font)}
+.tag.yes{background:rgba(52,211,153,.14);color:var(--green-t)}.tag.no{background:rgba(251,113,133,.14);color:var(--red-t)}
+.mini{min-height:32px;padding:0 10px;border-radius:8px;border:1px solid rgba(148,163,184,.3);background:transparent;color:var(--soft);font-size:12px;font-weight:700;cursor:pointer}
+.priceIn{width:110px;min-height:40px;padding:0 10px;border-radius:10px;border:1px solid rgba(148,163,184,.3);background:var(--bg);color:var(--text);font-family:var(--mono);font-size:14px}
+select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rgba(148,163,184,.3);background:var(--row);color:var(--text);font-size:14px}
+@media (max-width:640px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.exitgrid{grid-template-columns:1fr}h1{font-size:28px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/static/dashboard.html">
+      <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#070B14" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg></div>
+      <div><b>Options<span>Tycoon</span></b><small>NIFTY weekly iron condor desk</small></div>
+    </a>
+    <nav class="tabs" aria-label="Screens">
+      <button class="tab on" id="tabToday" onclick="showTab('today')">Today</button>
+      <button class="tab" id="tabPosition" onclick="showTab('position')">Position</button>
+      <button class="tab" id="tabReview" onclick="showTab('review')">Review</button>
+      <button class="tab" id="tabPlan" onclick="showTab('plan')">Trading Plan</button>
+    </nav>
+  </header>
+
+  <section class="strip" aria-label="Status">
+    <span class="pill" id="pillKite"><span class="dot"></span>Checking Kite…</span>
+    <span class="pill hide" id="pillData"></span>
+    <span class="pill info hide" id="pillMarket"></span>
+    <span class="pill" id="pillPlan">Plan: loading…</span>
+  </section>
+
+  <div id="pageError" class="err hide"></div>
+
+  <!-- TODAY -->
+  <section id="screenToday" style="display:flex;flex-direction:column;gap:20px">
+    <div>
+      <div class="eyebrow" id="todayDate"></div>
+      <h1>Today's trade</h1>
+    </div>
+    <div id="heroBox" class="card hero">
+      <div style="font-size:20px;font-weight:700" id="heroTitle">Build today's ticket</div>
+      <div style="color:var(--muted);max-width:560px" id="heroText">One click regenerates today's signal, checks it against your Trading Plan, prices the four legs from Kite when you're logged in, and sets your exit plan. Nothing is ever placed for you.</div>
+      <button class="btn big" id="prepareBtn" onclick="prepare()">Prepare today's trade</button>
+    </div>
+    <div id="ticketBox"></div>
+    <div id="fillBox"></div>
+  </section>
+
+  <!-- POSITION -->
+  <section id="screenPosition" class="hide" style="flex-direction:column;gap:20px">
+    <div style="display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px">
+      <div><div class="eyebrow" id="posEyebrow">Open position</div><h1>Position monitor</h1></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <span class="pill" id="posAlert">—</span>
+        <button class="btn ghost" style="min-height:40px" id="notifyBtn" onclick="enableAlerts()">Turn on alerts</button>
+      </div>
+    </div>
+    <div id="positionBox"><div class="card hero"><div class="note">Loading…</div></div></div>
+  </section>
+
+  <!-- REVIEW -->
+  <section id="screenReview" class="hide" style="flex-direction:column;gap:20px">
+    <div><div class="eyebrow">Your journal · real fills only</div><h1>Review</h1></div>
+    <div id="reviewBox"><div class="card hero"><div class="note">Loading…</div></div></div>
+    <div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:12px">
+      <div style="font-weight:700;font-size:17px">Import your Kite tradebook</div>
+      <div class="note" style="font-size:13px">Kite Console → Reports → Tradebook → F&amp;O → download CSV. Only 4-leg NIFTY iron condors are imported; scalps and other indices are listed as skipped. Re-uploading the same file adds nothing twice.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <input type="file" id="tbFile" accept=".csv" aria-label="Tradebook CSV" style="color:var(--soft)">
+        <button class="btn" style="min-height:44px" id="tbBtn" onclick="importTradebook()">Import</button>
+      </div>
+      <div id="tbResult" class="note"></div>
+    </div>
+  </section>
+
+  <!-- PLAN -->
+  <section id="screenPlan" class="hide" style="flex-direction:column;gap:20px">
+    <div>
+      <div class="eyebrow">Your rules · the ticket checks every trade against these</div>
+      <h1>Trading Plan</h1>
+    </div>
+    <div class="card">
+      <div class="form" id="planForm"></div>
+      <div style="padding:0 24px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+        <button class="btn" id="savePlanBtn" onclick="savePlan()">Save plan</button>
+        <span id="planMsg" class="note"></span>
+      </div>
+    </div>
+    <div class="note">Leave a rule empty to skip it; the ticket then shows it as "not set" instead of passing or failing it.</div>
+  </section>
+</div>
+
+<script>
+(function(){
+'use strict';
+var state={plan:null,fields:null,weekdays:[],ticket:null,copied:''};
+
+function esc(s){return(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+function inr(n){if(n==null||isNaN(n))return '—';var s=Math.round(Math.abs(n)).toLocaleString('en-IN');return(n<0?'−₹':'₹')+s;}
+function num(n,p){if(n==null||isNaN(n))return '—';return Number(n).toFixed(p==null?2:p);}
+function el(id){return document.getElementById(id);}
+function fmtDate(iso){if(!iso)return '—';var d=new Date(iso+'T00:00:00');return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});}
+
+function api(path,opts){
+  return fetch(path,opts||{}).then(function(r){
+    return r.json().catch(function(){return {};}).then(function(body){
+      if(r.status===403) throw new Error('Access denied (403). Sign in with your founder Google account, then reload.');
+      if(!r.ok){var err=new Error(body.error||body.detail||('Server returned '+r.status));err.status=r.status;err.body=body;throw err;}
+      return body;
+    });
+  });
+}
+function showError(msg){var e=el('pageError');if(!msg){e.classList.add('hide');return;}e.textContent=msg;e.classList.remove('hide');}
+
+var SCREENS=['today','position','review','plan'];
+window.showTab=function(t){
+  SCREENS.forEach(function(s){
+    var cap=s.charAt(0).toUpperCase()+s.slice(1);
+    el('tab'+cap).classList.toggle('on',s===t);
+    var sc=el('screen'+cap);sc.classList.remove('hide');sc.style.display=s===t?'flex':'none';
+  });
+  if(t==='position')loadPosition();
+  if(t==='review')loadReview();
+};
+
+// ---------- status strip ----------
+function loadKite(){
+  api('/api/live/auth-status').then(function(d){
+    var p=el('pillKite');
+    if(d.token_live){p.className='pill ok';p.innerHTML='<span class="dot"></span>Kite connected'+(d.user?' · '+esc(d.user):'');}
+    else if(d.authenticated){p.className='pill warn';p.innerHTML='<span class="dot"></span>Kite session expired · <a href="/api/live/kite-login">Reconnect</a>';}
+    else{p.className='pill bad';p.innerHTML='<span class="dot"></span>Kite not connected · <a href="/api/live/kite-login">Connect Kite</a>';}
+  }).catch(function(e){showError(e.message);el('pillKite').innerHTML='<span class="dot"></span>Kite status unavailable';});
+}
+function planPill(){
+  if(!state.plan||!state.fields)return;
+  var unset=0;Object.keys(state.fields).forEach(function(k){var v=state.plan[k];if(v==null||(Array.isArray(v)&&v.length===0))unset++;});
+  var p=el('pillPlan');
+  if(unset){p.className='pill warn';p.innerHTML='<span class="dot"></span>Plan: '+unset+' rule'+(unset>1?'s':'')+' not set · <a href="#" onclick="showTab(\'plan\');return false;">Set them</a>';}
+  else{p.className='pill ok';p.innerHTML='<span class="dot"></span>Plan: all rules set';}
+}
+function marketPills(t){
+  var m=t.market||{};
+  var d=el('pillData');d.classList.remove('hide');
+  if(m.data_is_live){d.className='pill ok';d.innerHTML='<span class="dot"></span>Data live (Kite)';}
+  else{d.className='pill warn';d.innerHTML='<span class="dot"></span>Delayed data ('+esc(m.data_source)+')';}
+  var mk=el('pillMarket');mk.classList.remove('hide');
+  mk.innerHTML='NIFTY <span class="mono">'+(m.spot?Math.round(m.spot).toLocaleString('en-IN'):'—')+'</span> · VIX <span class="mono">'+(m.vix!=null?num(m.vix,1):'—')+'</span>';
+}
+
+// ---------- today / ticket ----------
+window.prepare=function(){
+  var b=el('prepareBtn');b.disabled=true;b.textContent='Preparing… (fetching data, 15–30s)';showError('');
+  api('/api/live/trade-ticket',{method:'POST'}).then(function(d){
+    state.ticket=d.ticket;renderTicket();marketPills(d.ticket);
+    el('heroBox').classList.add('hide');
+  }).catch(function(e){showError(e.message);}).then(function(){b.disabled=false;b.textContent='Prepare today\'s trade';});
+};
+window.resetTicket=function(){state.ticket=null;el('ticketBox').innerHTML='';el('heroBox').classList.remove('hide');};
+window.copyOrder=function(i){
+  var o=state.ticket.orders[i];var text=o.side+' '+o.symbol+' '+o.qty+' LIMIT '+num(o.price);
+  function done(){state.copied=i;renderTicket();}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,done);}else{done();}
+};
+
+var ICON={pass:'✓',fail:'✕',unset:'–',unknown:'?'};
+
+function renderTicket(){
+  var t=state.ticket,box=el('ticketBox');if(!t){box.innerHTML='';return;}
+  if(t.action!=='trade'){
+    box.innerHTML='<div class="card hero"><div class="stamp none">NO TRADE</div><div style="font-size:18px;font-weight:700">'+esc(t.skip_reason)+'</div>'+
+      '<button class="btn ghost" onclick="prepare()">Check again</button></div>';return;
+  }
+  var go=t.verdict==='GO',live=t.pricing==='kite_live';
+  var stamp=go?'<div class="stamp go">GO</div>':'<div class="stamp nogo">NO-GO · '+t.failed.length+' rule'+(t.failed.length>1?'s':'')+'</div>';
+  var rr=t.reward_risk!=null?num(t.reward_risk)+' : 1':'—';
+  var h='<div class="grid2"><div class="card ticket">';
+  h+='<div class="tk-head"><div><div class="eyebrow" style="font-size:12px">Trade ticket · NIFTY '+esc(fmtDate(t.expiry))+' expiry'+(t.expiry_confirmed?'':' (expected)')+'</div>'+
+     '<div style="font-size:22px;font-weight:800;margin-top:2px">Iron condor '+t.strikes.short_put+' / '+t.strikes.short_call+' · '+t.lot+' qty</div>'+
+     '<div style="margin-top:6px"><span class="badge '+(live?'live':'est')+'">'+(live?'Live Kite prices':'Model estimates — not Kite prices')+'</span></div></div>'+stamp+'</div>';
+  h+='<div class="metrics">'+
+     '<div><div class="k">Credit</div><div class="v" style="color:var(--green)">'+inr(t.credit)+'</div></div>'+
+     '<div><div class="k">Max loss</div><div class="v" style="color:var(--red)">'+inr(t.max_loss)+'</div></div>'+
+     '<div><div class="k">Reward : risk</div><div class="v">'+rr+'</div></div>'+
+     '<div><div class="k">Margin (Kite)</div><div class="v">'+inr(t.margin.required)+'</div></div></div>';
+  h+='<div class="sec"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700">Entry orders · one at a time</div><div class="note">Protective legs first</div></div>';
+  t.orders.forEach(function(o,i){
+    var done=state.copied===i;
+    h+='<div class="row"><div class="step">'+o.step+'</div><div class="side '+(o.side==='BUY'?'buy':'sell')+'">'+o.side+'</div>'+
+       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' LIMIT</small></div>'+
+       '<div class="mono" style="font-weight:700">₹'+num(o.price)+'</div>'+
+       '<button class="copy'+(done?' done':'')+'" aria-label="Copy order '+o.step+'" onclick="copyOrder('+i+')">'+(done?'Copied':'Copy')+'</button></div>';
+  });
+  h+='<div class="note">Place each order in Kite and wait for COMPLETE before the next. Never use basket orders.'+(live?'':' Prices shown are estimates: check live prices in Kite before placing.')+'</div></div>';
+  var ep=t.exit_plan||{},tg=ep.target;
+  h+='<div class="sec"><div class="exitgrid">'+
+     '<div><div class="note">Profit target'+(tg?' '+Math.round(tg.pct*100)+'%':'')+'</div><div class="mono" style="font-weight:700;color:var(--green)">'+(tg?'+'+inr(tg.profit)+' · buy back ≤ '+inr(tg.buyback_total):'Not set')+'</div></div>'+
+     '<div><div class="note">Loss exit</div><div class="mono" style="font-weight:700;color:var(--red)">'+(ep.loss_exit!=null?'Open loss '+inr(-ep.loss_exit):'Not set')+'</div></div>'+
+     '<div><div class="note">Exit by</div><div class="mono" style="font-weight:700">'+(ep.exit_by?esc(fmtDate(ep.exit_by)):'Not set')+'</div></div></div>'+
+     '<div class="note">'+esc(ep.order||'')+'</div></div>';
+  h+='<div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px">'+
+     '<button class="btn" style="flex:1;min-width:220px" id="syncBtn" onclick="syncEntry()">I\'ve placed it · Sync my fills</button>'+
+     '<button class="btn ghost" onclick="prepare()">Refresh prices</button>'+
+     '<button class="btn ghost" onclick="resetTicket()">Skip today</button></div>';
+  h+='</div>';
+  // checklist
+  var passed=t.checks.filter(function(c){return c.status==='pass';}).length;
+  h+='<div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:4px">'+
+     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-weight:700;font-size:17px">Your plan · pre-trade checks</div><div class="note">'+passed+' of '+t.checks.length+' passed</div></div>';
+  t.checks.forEach(function(c){
+    h+='<div class="check"><div class="ico '+esc(c.status)+'" aria-label="'+esc(c.status)+'">'+ICON[c.status]+'</div><div style="flex:1;min-width:0"><div style="font-weight:600">'+esc(c.label)+'</div><div class="note" style="font-size:13px">'+esc(c.detail)+'</div></div></div>';
+  });
+  if(t.kite_notes&&t.kite_notes.length){
+    h+='<div style="margin-top:12px;font-weight:600;font-size:13px">Kite notes</div><ul class="notes">';
+    t.kite_notes.forEach(function(n){h+='<li>'+esc(n)+'</li>';});h+='</ul>';
+  }
+  h+='<div class="note" style="margin-top:10px">Checks read from your Trading Plan. The decision is always yours.</div></div></div>';
+  box.innerHTML=h;
+}
+
+// ---------- plan ----------
+function loadPlan(){
+  api('/api/live/plan').then(function(d){state.plan=d.plan;state.fields=d.fields;state.weekdays=d.weekdays;renderPlan();planPill();})
+  .catch(function(e){showError(e.message);});
+}
+function renderPlan(){
+  var f=state.fields,p=state.plan,h='';
+  Object.keys(f).forEach(function(k){
+    var t=f[k].type,label=esc(f[k].label);
+    if(t==='number'){
+      h+='<div class="field"><label for="pf_'+k+'">'+label+'</label><input type="number" step="any" min="0" id="pf_'+k+'" value="'+(p[k]==null?'':esc(p[k]))+'" placeholder="Not set"></div>';
+    }else if(t==='days'){
+      h+='<div class="field"><span style="font-size:13px;color:var(--soft);font-weight:600">'+label+'</span><div class="days">';
+      state.weekdays.forEach(function(d){h+='<label><input type="checkbox" class="pf_day" value="'+d+'"'+((p.entry_days||[]).indexOf(d)>=0?' checked':'')+'>'+d+'</label>';});
+      h+='</div></div>';
+    }else if(t==='events'){
+      h+='<div class="events"><span style="font-size:13px;color:var(--soft);font-weight:600">'+label+'</span><div id="evList"></div>'+
+         '<div><button class="btn ghost" style="min-height:40px" onclick="addEvent()">+ Add event</button></div></div>';
+    }
+  });
+  el('planForm').innerHTML=h;renderEvents();
+}
+function renderEvents(){
+  var list=el('evList');if(!list)return;var h='';
+  (state.plan.events||[]).forEach(function(e,i){
+    h+='<div class="evrow field"><input type="date" aria-label="Event date" value="'+esc(e.date)+'" onchange="setEvent('+i+',\'date\',this.value)">'+
+       '<input type="text" aria-label="Event name" value="'+esc(e.label)+'" placeholder="e.g. RBI policy" onchange="setEvent('+i+',\'label\',this.value)">'+
+       '<button class="btn ghost" style="min-height:44px" aria-label="Remove event" onclick="removeEvent('+i+')">Remove</button></div>';
+  });
+  list.innerHTML=h||'<div class="note">No events listed.</div>';
+}
+window.addEvent=function(){state.plan.events=(state.plan.events||[]).concat([{date:'',label:''}]);renderEvents();};
+window.removeEvent=function(i){state.plan.events.splice(i,1);renderEvents();};
+window.setEvent=function(i,k,v){state.plan.events[i][k]=v;};
+window.savePlan=function(){
+  var out={};
+  Object.keys(state.fields).forEach(function(k){
+    var t=state.fields[k].type;
+    if(t==='number'){var v=el('pf_'+k).value.trim();out[k]=v===''?null:Number(v);}
+  });
+  out.entry_days=[].slice.call(document.querySelectorAll('.pf_day:checked')).map(function(c){return c.value;});
+  out.events=(state.plan.events||[]).filter(function(e){return e.date;});
+  var b=el('savePlanBtn'),msg=el('planMsg');b.disabled=true;msg.textContent='Saving…';msg.style.color='';
+  api('/api/live/plan',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:out})})
+  .then(function(d){state.plan=d.plan;renderPlan();planPill();msg.textContent='Saved.';msg.style.color='var(--green-t)';})
+  .catch(function(e){msg.textContent=e.message;msg.style.color='var(--red-t)';})
+  .then(function(){b.disabled=false;});
+};
+
+// ---------- Phase 2: sync fills / manual entry ----------
+function problemsHtml(err){
+  var ps=(err.body&&err.body.problems)||[];
+  return '<div class="err"><div style="font-weight:700">'+esc(err.message)+'</div>'+(ps.length?'<ul class="notes" style="color:inherit">'+ps.map(function(p){return '<li>'+esc(p)+'</li>';}).join('')+'</ul>':'')+'</div>';
+}
+window.syncEntry=function(){
+  var b=el('syncBtn');if(b){b.disabled=true;b.textContent='Checking Kite orders…';}
+  api('/api/live/desk/sync-entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:state.ticket})})
+  .then(function(){el('fillBox').innerHTML='';showTab('position');})
+  .catch(function(e){
+    var h=problemsHtml(e)+'<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px">'+
+      (e.status===409&&!(e.body&&e.body.problems)?'':'<button class="btn ghost" onclick="syncEntry()">Try again</button>')+
+      '<button class="btn ghost" onclick="manualOpenForm()">Enter fill prices by hand</button></div>';
+    el('fillBox').innerHTML=h;
+  }).then(function(){if(b){b.disabled=false;b.textContent='I\'ve placed it · Sync my fills';}});
+};
+function priceForm(title,orders,field,submit){
+  var h='<div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700;font-size:17px">'+esc(title)+'</div>';
+  orders.forEach(function(o){
+    h+='<div class="row"><div class="side '+(o.side==='BUY'?'buy':'sell')+'">'+o.side+'</div><div class="sym">'+esc(o.symbol)+'</div>'+
+       '<label class="note" for="mp_'+esc(o.symbol)+'">Avg price</label><input class="priceIn" type="number" step="0.05" min="0" id="mp_'+esc(o.symbol)+'" data-sym="'+esc(o.symbol)+'" value="'+(o[field]!=null?num(o[field]):'')+'"></div>';
+  });
+  h+='<div id="mpMsg" class="note"></div><div><button class="btn" onclick="'+submit+'">Save</button></div></div>';
+  return h;
+}
+function readPrices(){var out={};[].slice.call(document.querySelectorAll('.priceIn')).forEach(function(i){if(i.value!=='')out[i.getAttribute('data-sym')]=Number(i.value);});return out;}
+window.manualOpenForm=function(){el('fillBox').innerHTML=priceForm('Enter your entry fill prices (from Kite → Orders)',state.ticket.orders,'price','manualOpen()');};
+window.manualOpen=function(){
+  api('/api/live/desk/manual-open',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:state.ticket,prices:readPrices()})})
+  .then(function(){el('fillBox').innerHTML='';showTab('position');})
+  .catch(function(e){el('mpMsg').innerHTML=problemsHtml(e);});
+};
+
+// ---------- Phase 3: position monitor + exit ----------
+var pos=null,lastStatus=null,refreshTimer=null;
+var REASON={target:'target',loss_exit:'loss_exit',exit_day:'exit_day'};
+window.enableAlerts=function(){
+  if(!('Notification' in window)){el('notifyBtn').textContent='Alerts not supported';return;}
+  Notification.requestPermission().then(function(p){el('notifyBtn').textContent=p==='granted'?'Alerts on':'Alerts blocked';});
+};
+function notify(p){
+  if(p.status===lastStatus)return;
+  var prev=lastStatus;lastStatus=p.status;
+  if(prev===null||!REASON[p.status])return;
+  if('Notification' in window&&Notification.permission==='granted'){try{new Notification('Options Tycoon',{body:p.message+(p.pnl!=null?' · P&L '+inr(p.pnl):'')});}catch(e){}}
+}
+function loadPosition(){
+  clearTimeout(refreshTimer);
+  api('/api/live/desk/position').then(function(d){pos=d.position;renderPosition();if(pos)notify(pos);})
+  .catch(function(e){el('positionBox').innerHTML='<div class="err">'+esc(e.message)+'</div>';})
+  .then(function(){if(el('screenPosition').style.display==='flex'&&pos)refreshTimer=setTimeout(loadPosition,30000);});
+}
+function payoffSvg(p){
+  var s=p.strikes,cps=p.entry_credit_per_share,lot=p.lot;if(!s.long_put||!s.long_call)return '';
+  var xl=s.long_put-150,xh=s.long_call+150,W=1000,H=280,X0=60,X1=990,Y0=16,Y1=250;
+  function exp(S){return(cps-Math.min(Math.max(s.short_put-S,0),s.wing)-Math.min(Math.max(S-s.short_call,0),s.wing))*lot;}
+  var pMax=cps*lot*1.25,pMin=-(s.wing-cps)*lot*1.1;
+  function px(S){return X0+(S-xl)/(xh-xl)*(X1-X0);}function py(v){return Y0+(pMax-v)/(pMax-pMin)*(Y1-Y0);}
+  var pts=[];for(var S=xl;S<=xh;S+=10)pts.push(px(S).toFixed(1)+','+py(exp(S)).toFixed(1));
+  var h='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Payoff at expiry" style="width:100%;height:auto;display:block">'+
+    '<line x1="'+X0+'" y1="'+py(0).toFixed(1)+'" x2="'+X1+'" y2="'+py(0).toFixed(1)+'" stroke="rgba(148,163,184,.35)" stroke-dasharray="4 6"></line>'+
+    '<text x="52" y="'+(py(0)+4).toFixed(1)+'" fill="#94A3B8" font-size="13" text-anchor="end" font-family="JetBrains Mono">0</text>'+
+    '<text x="52" y="'+(py(cps*lot)+4).toFixed(1)+'" fill="#34D399" font-size="13" text-anchor="end" font-family="JetBrains Mono">+'+Math.round(cps*lot).toLocaleString('en-IN')+'</text>'+
+    '<text x="52" y="'+(py(-(s.wing-cps)*lot)+4).toFixed(1)+'" fill="#FB7185" font-size="13" text-anchor="end" font-family="JetBrains Mono">−'+Math.round((s.wing-cps)*lot).toLocaleString('en-IN')+'</text>'+
+    '<polyline points="'+pts.join(' ')+'" fill="none" stroke="#60A5FA" stroke-width="3" stroke-linejoin="round"></polyline>';
+  [s.short_put-cps,s.short_call+cps].forEach(function(be){h+='<text x="'+px(be).toFixed(1)+'" y="274" fill="#94A3B8" font-size="12" text-anchor="middle" font-family="JetBrains Mono">BE '+Math.round(be).toLocaleString('en-IN')+'</text>';});
+  if(p.spot&&p.pnl!=null){h+='<line x1="'+px(p.spot).toFixed(1)+'" y1="16" x2="'+px(p.spot).toFixed(1)+'" y2="250" stroke="#F5B544" stroke-width="1.5"></line><circle cx="'+px(p.spot).toFixed(1)+'" cy="'+py(Math.max(pMin,Math.min(pMax,p.pnl))).toFixed(1)+'" r="7" fill="#F5B544" stroke="#070B14" stroke-width="3"></circle>';}
+  return h+'</svg>';
+}
+function rangeBar(p){
+  var s=p.strikes,lo=s.long_put-100,hi=s.long_call+100;function pc(x){return Math.max(0,Math.min(100,(x-lo)/(hi-lo)*100)).toFixed(2);}
+  var h='<div class="range"><div class="track"></div><div class="zone" style="left:'+pc(s.short_put)+'%;width:'+(pc(s.short_call)-pc(s.short_put)).toFixed(2)+'%"></div>';
+  [[s.long_put,'#FB7185','long put'],[s.short_put,'#E6EAF2','short put'],[s.short_call,'#E6EAF2','short call'],[s.long_call,'#FB7185','long call']].forEach(function(t){
+    h+='<div class="tick" style="left:'+pc(t[0])+'%;background:'+t[1]+'"></div><div class="lbl" style="left:'+pc(t[0])+'%">'+t[0].toLocaleString('en-IN')+'<br><span style="color:var(--muted)">'+t[2]+'</span></div>';
+  });
+  if(p.spot)h+='<div class="mk" style="left:'+pc(p.spot)+'%"><b>'+Math.round(p.spot).toLocaleString('en-IN')+'</b><i></i></div>';
+  return h+'</div>';
+}
+function renderPosition(){
+  var box=el('positionBox'),pill=el('posAlert');
+  if(!pos){pill.className='pill';pill.textContent='No open position';
+    box.innerHTML='<div class="card hero"><div style="font-size:18px;font-weight:700">No open position</div><div class="note">Prepare and place a trade on Today, then press Sync my fills.</div><button class="btn ghost" onclick="showTab(\'today\')">Go to Today</button></div>';return;}
+  var p=pos,cls={target:'ok',loss_exit:'bad',exit_day:'warn',hold:'',no_data:'warn'}[p.status]||'';
+  pill.className='pill '+cls;pill.innerHTML='<span class="dot"></span>'+esc(p.message);
+  el('posEyebrow').textContent='Opened '+fmtDate(p.opened_on)+(p.expiry?' · expiry '+fmtDate(p.expiry):'')+(p.days_to_exit_by!=null?' · '+p.days_to_exit_by+' day(s) to exit-by':'');
+  var pnlC=p.pnl==null?'var(--muted)':(p.pnl>=0?'var(--green)':'var(--red)');
+  var h='<div class="kpis">'+
+    '<div class="kpi"><div class="k">Live P&amp;L (before charges)</div><div class="v" style="font-size:36px;color:'+pnlC+'">'+(p.pnl==null?'—':(p.pnl>=0?'+':'')+inr(p.pnl))+'</div><div class="note">Credit '+inr(p.credit)+' · cost to close '+inr(p.close_cost)+'</div></div>'+
+    '<div class="kpi" style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between" class="note"><span>To profit target '+(p.target_profit?inr(p.target_profit):'(not set)')+'</span><b class="mono" style="color:var(--green)">'+(p.target_progress==null?'—':Math.round(p.target_progress)+'%')+'</b></div>'+
+      '<div class="bar"><div style="background:var(--green);width:'+(p.target_progress||0)+'%"></div></div>'+
+      '<div style="display:flex;justify-content:space-between" class="note"><span>To loss exit '+(p.loss_exit?inr(-p.loss_exit):'(not set)')+'</span><b class="mono" style="color:var(--red)">'+(p.loss_progress==null?'—':Math.round(p.loss_progress)+'%')+'</b></div>'+
+      '<div class="bar"><div style="background:var(--red);width:'+(p.loss_progress||0)+'%"></div></div></div>'+
+    '<div class="kpi"><div class="k">Distance to short strikes</div>'+
+      '<div style="display:flex;justify-content:space-between;margin-top:6px"><span>Short call '+(p.strikes.short_call||'—')+'</span><b class="mono">'+(p.distance_to_short_call==null?'—':Math.round(p.distance_to_short_call)+' pts')+'</b></div>'+
+      '<div style="display:flex;justify-content:space-between"><span>Short put '+(p.strikes.short_put||'—')+'</span><b class="mono">'+(p.distance_to_short_put==null?'—':Math.round(p.distance_to_short_put)+' pts')+'</b></div>'+
+      '<div class="note">Exit by '+(p.exit_by?esc(fmtDate(p.exit_by)):'not set')+'</div></div></div>';
+  h+='<div class="card" style="padding:22px 24px"><div style="font-weight:700;font-size:17px">Where NIFTY sits in your range</div>'+rangeBar(p)+(p.spot?'':'<div class="note" style="margin-top:24px">Log in to Kite to see NIFTY live.</div>')+'</div>';
+  h+='<div class="card" style="padding:22px 24px"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><div style="font-weight:700;font-size:17px">Payoff at expiry</div><div class="note">Blue: at expiry · gold dot: now</div></div>'+payoffSvg(p)+'</div>';
+  // exit ticket
+  h+='<div class="card ticket"><div class="tk-head"><div><div class="eyebrow" style="font-size:12px">Exit ticket</div><div style="font-size:20px;font-weight:800">Close all 4 legs · shorts first</div></div></div><div class="sec">';
+  p.exit_orders.forEach(function(o,i){
+    var done=state.copied==='x'+i;
+    h+='<div class="row"><div class="step" style="background:rgba(96,165,250,.18);color:var(--blue-t)">'+o.step+'</div><div class="side '+(o.side==='BUY'?'buy':'sell')+'">'+o.side+'</div>'+
+       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' LIMIT</small></div><div class="mono" style="font-weight:700">'+(o.price==null?'—':'₹'+num(o.price))+'</div>'+
+       '<button class="copy'+(done?' done':'')+'" aria-label="Copy exit order '+o.step+'" onclick="copyExit('+i+')">'+(done?'Copied':'Copy')+'</button></div>';
+  });
+  h+='<div class="note">'+esc(p.exit_rule)+'</div></div><div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px;align-items:center">'+
+     '<label class="note" for="exitReason">Reason</label><select class="sel" id="exitReason">'+
+     [['target','Profit target'],['loss_exit','Loss exit'],['exit_day','Exit-by day'],['manual','Other / judgement']].map(function(r){return '<option value="'+r[0]+'"'+(r[0]===(REASON[p.status]||'manual')?' selected':'')+'>'+r[1]+'</option>';}).join('')+'</select>'+
+     '<button class="btn" style="flex:1;min-width:220px" id="syncExitBtn" onclick="syncExit()">I\'ve closed it · Sync exit</button>'+
+     '<button class="btn ghost" onclick="manualCloseForm()">Enter exit prices by hand</button></div><div id="exitBox" style="padding:0 24px 24px"></div></div>';
+  if(p.kite_notes&&p.kite_notes.length)h+='<ul class="notes">'+p.kite_notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join('')+'</ul>';
+  box.innerHTML=h;
+}
+window.copyExit=function(i){var o=pos.exit_orders[i];var t=o.side+' '+o.symbol+' '+o.qty+' LIMIT'+(o.price!=null?' '+num(o.price):'');
+  function done(){state.copied='x'+i;renderPosition();}
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,done);}else{done();}};
+function afterClose(d){
+  clearTimeout(refreshTimer);lastStatus=null;
+  el('positionBox').innerHTML='<div class="card" style="padding:24px;display:flex;flex-direction:column;gap:14px;border-color:rgba(52,211,153,.35)">'+
+    '<div style="font-size:20px;font-weight:800">Trade closed · '+(d.pnl_net>=0?'+':'')+inr(d.pnl_net)+' net</div>'+
+    '<div class="note">Gross '+inr(d.pnl_gross)+' − estimated charges '+inr(d.charges_est)+'</div>'+
+    '<div style="font-weight:600">Did this trade follow your plan?</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:10px"><button class="btn" onclick="tagTrade('+d.trade_id+',\'yes\')">Yes, followed plan</button><button class="btn ghost" onclick="tagTrade('+d.trade_id+',\'no\')">No, I deviated</button></div>'+
+    '<div class="field"><label for="tagNote">Note (optional)</label><input type="text" id="tagNote" placeholder="e.g. exited early on RBI headline"></div></div>';
+  el('posAlert').className='pill';el('posAlert').textContent='Closed';
+}
+window.syncExit=function(){
+  var b=el('syncExitBtn');b.disabled=true;b.textContent='Checking Kite orders…';
+  api('/api/live/desk/sync-exit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({exit_reason:el('exitReason').value})})
+  .then(afterClose).catch(function(e){el('exitBox').innerHTML=problemsHtml(e);b.disabled=false;b.textContent='I\'ve closed it · Sync exit';});
+};
+window.manualCloseForm=function(){
+  var orders=pos.exit_orders.map(function(o){return {side:o.side,symbol:o.symbol,price:o.price};});
+  el('exitBox').innerHTML=priceForm('Enter your exit fill prices (from Kite → Orders)',orders,'price','manualClose()');
+};
+window.manualClose=function(){
+  api('/api/live/desk/manual-close',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prices:readPrices(),exit_reason:el('exitReason').value})})
+  .then(afterClose).catch(function(e){el('mpMsg').innerHTML=problemsHtml(e);});
+};
+window.tagTrade=function(id,flag,fromReview){
+  var noteEl=el('tagNote');
+  api('/api/live/desk/trades/'+id+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({followed_plan:flag,note:noteEl&&!fromReview?noteEl.value:null})})
+  .then(function(){showTab('review');}).catch(function(e){showError(e.message);});
+};
+
+// ---------- Phase 4: review ----------
+function loadReview(){
+  api('/api/live/desk/review').then(renderReview).catch(function(e){el('reviewBox').innerHTML='<div class="err">'+esc(e.message)+'</div>';});
+}
+function renderReview(d){
+  var s=d.stats,r=d.risk,box=el('reviewBox');
+  if(!s.trades){box.innerHTML='<div class="card hero"><div style="font-size:18px;font-weight:700">No closed trades yet</div><div class="note">Close a trade from Position, or import your Kite tradebook below.</div></div>';return;}
+  function sgn(n){return n==null?'—':(n>=0?'+':'')+inr(n);}
+  var h='<div class="kpis">'+
+    '<div class="kpi"><div class="k">Net P&amp;L ('+s.trades+' trade'+(s.trades>1?'s':'')+', after est. charges)</div><div class="v" style="color:'+(s.net>=0?'var(--green)':'var(--red)')+'">'+sgn(s.net)+'</div></div>'+
+    '<div class="kpi"><div class="k">Expectancy per trade</div><div class="v">'+sgn(s.expectancy)+(s.expectancy_r!=null?' · '+(s.expectancy_r>=0?'+':'')+num(s.expectancy_r)+'R':'')+'</div></div>'+
+    '<div class="kpi"><div class="k">Avg win vs avg loss · win rate</div><div class="v" style="font-size:20px">'+inr(s.avg_win)+' : '+inr(s.avg_loss)+' · '+num(s.win_rate,0)+'%</div></div>'+
+    '<div class="kpi"><div class="k">Max drawdown · worst week</div><div class="v" style="font-size:20px">'+inr(s.max_drawdown)+' · '+inr(s.worst_week)+'</div></div>'+
+    '<div class="kpi"><div class="k">Followed plan vs deviated</div><div class="v" style="font-size:20px">'+s.followed.trades+' ('+sgn(s.followed.net)+') · '+s.deviated.trades+' ('+sgn(s.deviated.net)+')</div><div class="note">'+s.unreviewed+' not reviewed yet</div></div>'+
+    '<div class="kpi"><div class="k">Risk budget</div><div class="v" style="font-size:18px">'+(r.configured?'Week '+(r.week_left!=null?inr(r.week_left)+' left':sgn(r.week_net))+' · month '+(r.month_left!=null?inr(r.month_left)+' left':sgn(r.month_net)):'Not set in your plan')+'</div><div class="note">Losing streak '+r.losing_streak+(r.breaches.length?' · '+esc(r.breaches.join('; ')):'')+'</div></div></div>';
+  // R bars + equity
+  var rows=s.rows.slice().reverse();
+  h+='<div class="grid2"><div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700;font-size:17px">Each trade in R (P&amp;L ÷ planned risk)</div>';
+  rows.forEach(function(t){
+    if(t.r==null)return;var w=Math.min(Math.abs(t.r),2)/2*50;
+    h+='<div style="display:flex;align-items:center;gap:12px"><div class="note" style="width:76px">'+esc(fmtDate(t.closed_on))+'</div><div style="flex:1;position:relative;height:24px;border-radius:8px;background:var(--row)"><div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(148,163,184,.4)"></div>'+
+       '<div style="position:absolute;top:4px;bottom:4px;border-radius:6px;'+(t.r>=0?'left:50%;background:var(--green)':'right:50%;background:var(--red)')+';width:'+w.toFixed(1)+'%"></div></div><div class="mono" style="width:64px;text-align:right;font-weight:700;color:'+(t.r>=0?'var(--green)':'var(--red)')+'">'+(t.r>=0?'+':'')+num(t.r)+'R</div></div>';
+  });
+  h+='</div><div class="card" style="padding:22px 24px"><div style="font-weight:700;font-size:17px">Equity curve</div>'+equitySvg(s.equity)+'</div></div>';
+  // table
+  h+='<div class="card" style="padding:22px 24px"><div style="font-weight:700;font-size:17px;margin-bottom:8px">Journal</div><div class="tblwrap"><table class="tbl"><thead><tr><th>Opened</th><th>Closed</th><th>Strikes</th><th>Credit</th><th>Net P&amp;L</th><th>R</th><th>Exit</th><th>Plan</th></tr></thead><tbody>';
+  s.rows.forEach(function(t){
+    var tag=t.followed_plan==='yes'?'<span class="tag yes">Followed</span>':t.followed_plan==='no'?'<span class="tag no">Deviated</span>':
+      '<button class="mini" onclick="tagTrade('+t.id+',\'yes\',true)">Followed</button> <button class="mini" onclick="tagTrade('+t.id+',\'no\',true)">Deviated</button>';
+    h+='<tr><td>'+esc(t.opened_on)+'</td><td>'+esc(t.closed_on||'')+'</td><td>'+esc(t.strikes)+'</td><td>'+inr(t.credit)+'</td><td style="color:'+(t.pnl_net>=0?'var(--green)':'var(--red)')+'">'+sgn(t.pnl_net)+'</td><td>'+(t.r==null?'—':num(t.r)+'R')+'</td><td>'+esc(t.exit_reason||t.source||'')+'</td><td>'+tag+(t.note?'<div class="note">'+esc(t.note)+'</div>':'')+'</td></tr>';
+  });
+  h+='</tbody></table></div><div class="note">Net P&amp;L uses real fills minus estimated charges. R uses your loss exit at entry, else the trade\'s max loss.</div></div>';
+  box.innerHTML=h;
+}
+function equitySvg(eq){
+  if(!eq.length)return '';
+  var vals=[0].concat(eq.map(function(e){return e.equity;})),mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals);if(mx===mn){mx+=1;}
+  var W=500,H=200,x0=30,x1=480,y0=14,y1=180;function X(i){return x0+i/(vals.length-1||1)*(x1-x0);}function Y(v){return y0+(mx-v)/(mx-mn)*(y1-y0);}
+  var pts=vals.map(function(v,i){return X(i).toFixed(1)+','+Y(v).toFixed(1);}).join(' ');
+  var h='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Equity curve" style="width:100%;height:auto;display:block"><line x1="'+x0+'" y1="'+Y(0).toFixed(1)+'" x2="'+x1+'" y2="'+Y(0).toFixed(1)+'" stroke="rgba(148,163,184,.3)" stroke-dasharray="4 6"></line>'+
+    '<polyline points="'+pts+'" fill="none" stroke="#34D399" stroke-width="3" stroke-linejoin="round"></polyline>';
+  vals.forEach(function(v,i){if(i)h+='<circle cx="'+X(i).toFixed(1)+'" cy="'+Y(v).toFixed(1)+'" r="4.5" fill="'+(v>=vals[i-1]?'#34D399':'#FB7185')+'"></circle>';});
+  return h+'</svg><div class="note">Ends at '+inr(vals[vals.length-1])+'</div>';
+}
+window.importTradebook=function(){
+  var f=el('tbFile').files[0],out=el('tbResult');if(!f){out.textContent='Choose the CSV first.';return;}
+  var fd=new FormData();fd.append('file',f);el('tbBtn').disabled=true;out.textContent='Importing…';
+  api('/api/live/desk/import-tradebook',{method:'POST',body:fd}).then(function(d){
+    var h='Read '+d.fills+' NIFTY option fills · imported '+d.imported.length+' iron condor(s)'+(d.duplicates?' · '+d.duplicates+' already in the journal':'')+'.';
+    if(d.skipped.length)h+='<ul class="notes">'+d.skipped.map(function(s){return '<li>Skipped '+esc(s.group)+': '+esc(s.reason)+'</li>';}).join('')+'</ul>';
+    out.innerHTML=h;loadReview();
+  }).catch(function(e){out.innerHTML='<span style="color:var(--red-t)">'+esc(e.message)+'</span>';}).then(function(){el('tbBtn').disabled=false;});
+};
+
+el('todayDate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',timeZone:'Asia/Kolkata'});
+loadKite();loadPlan();
+})();
+</script>
+</body>
+</html>
