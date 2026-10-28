@@ -78,6 +78,8 @@ class TestFills:
 
     def test_charges_estimate(self):
         assert T.estimate_charges(8) == pytest.approx(160 + 28.8 + 50)
+        from engine.signals.simple_ic_engine import _calculate_charges
+        assert T.estimate_charges(8) == _calculate_charges()["total"]   # same as the signal engine
 
 
 TRADEBOOK = """symbol,isin,trade_date,exchange,segment,series,trade_type,auction,quantity,price,trade_id,order_id,order_execution_time,expiry_date
@@ -108,6 +110,14 @@ class TestTradebook:
         # close cost 40 + 30 − 18 − 15 = 37 → (27.80 − 37) × 65 = −598
         assert t["pnl_gross"] == pytest.approx(-598.0)
         assert t["pnl_net"] == pytest.approx(-598.0 - T.estimate_charges(8))
+
+    def test_charges_count_orders_not_fills(self):
+        f = lambda sym, side, oid: {"symbol": sym, "side": side, "order_id": oid}
+        split = [f("A", "BUY", "1"), f("A", "BUY", "1"), f("B", "SELL", "2")]   # order 1 filled in two rows
+        assert T._order_count(split) == 2
+        no_ids = [f("A", "BUY", None), f("A", "BUY", None), f("B", "SELL", None)]
+        assert T._order_count(no_ids) == 2
+        assert T.parse_tradebook(TRADEBOOK)[0]["order_id"] == "1"
 
     def test_open_condor_from_tradebook(self):
         fills = [f for f in T.parse_tradebook(TRADEBOOK) if f["date"] == "2026-08-26"]
@@ -152,6 +162,10 @@ class TestMonitor:
         assert [(o["side"], o["strike"]) for o in m["exit_orders"]] == [
             ("BUY", 24100), ("BUY", 24600), ("SELL", 24000), ("SELL", 24700)]
         assert m["exit_orders"][0]["price"] == 8
+
+    def test_exit_orders_are_nrml(self):
+        m = monitor_position(open_trade(), date(2026, 8, 27), quotes=quotes(8, 15, 3, 5), spot=24400)
+        assert all(o["product"] == "NRML" for o in m["exit_orders"])
 
     def test_without_quotes(self):
         m = monitor_position(open_trade(), date(2026, 8, 27))

@@ -66,7 +66,7 @@ def monitor_position(trade, today: date, quotes=None, spot=None, plan=None):
     ordered = sorted(legs, key=lambda l: (0 if l["side"] == "SELL" else 1, l["option"] != "PE"))
     for i, l in enumerate(ordered, 1):
         exit_orders.append({"step": i, "side": "BUY" if l["side"] == "SELL" else "SELL", "symbol": l["symbol"],
-                            "strike": l["strike"], "option": l["option"], "qty": l["qty"],
+                            "strike": l["strike"], "option": l["option"], "qty": l["qty"], "product": "NRML",
                             "price": round(quotes[l["symbol"]], 2) if live else None})
 
     return {

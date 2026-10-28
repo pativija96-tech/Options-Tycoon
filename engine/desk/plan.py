@@ -3,7 +3,12 @@ Trading Plan — the user's own rules, stored per user, read by the Trade Ticket
 
 Every rule may be left unset (None / empty). An unset rule shows as "Not set in
 your plan" on the ticket instead of the app inventing a threshold for you.
-Defaults are only values that already existed in config/settings.json.
+Defaults are only rules the existing signal engine already applies:
+  profit_target_pct        — settings.json nifty.profit_target_pct (the engine's 50% exit)
+  exit_days_before_expiry  — 1, the engine's "exit before expiry morning" rule
+                             (simple_ic_engine.py exit_sequence.trigger_note)
+settings.json max_loss_per_trade is NOT a default: the engine only displays it;
+its real max-loss rule (25% of capital) is checked on the ticket itself.
 """
 
 import json
@@ -34,17 +39,17 @@ PLAN_FIELDS = {
 
 
 def default_plan() -> dict:
-    """A plan with only the values the repo already had; everything else unset."""
+    """A plan with only the signal engine's own exit rules; everything else unset."""
     plan = {k: None for k in PLAN_FIELDS}
     plan["entry_days"] = []
     plan["events"] = []
+    plan["exit_days_before_expiry"] = 1
     try:
         from pathlib import Path
         settings_path = Path(__file__).resolve().parent.parent.parent / "config" / "settings.json"
         with open(settings_path) as f:
             nifty = json.load(f).get("nifty", {})
         plan["profit_target_pct"] = nifty.get("profit_target_pct")
-        plan["max_loss_per_trade"] = nifty.get("max_loss_per_trade")
     except Exception:
         pass
     return plan

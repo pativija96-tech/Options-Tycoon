@@ -37,7 +37,9 @@ def make_signal(live=True, action="trade"):
                 {"action": "BUY", "option": "PE", "strike": 24000, "premium_est": 12.0},
             ],
             "charges": {"total": 239},
+            "elm_estimate": {"additional_est": 53600, "total_requirement_est": 120600},
         },
+        "risk_check": {"capital": 75000},
     }
 
 
@@ -145,7 +147,7 @@ class TestTicket:
         assert t["pricing"] == "estimate"
         assert t["credit_per_share"] == 30.0           # 22 + 40 − 12 − 20
         assert check(t, "prices_live")["status"] == "unknown"
-        assert check(t, "data_live")["status"] == "fail"
+        assert check(t, "data_live")["status"] == "unknown"   # a warning, not a NO-GO
         assert check(t, "margin")["status"] == "unknown"
         assert t["expiry"] == "2026-09-01" and t["expiry_confirmed"] is False
 
@@ -190,6 +192,62 @@ class TestTicket:
         quotes = {k: v for k, v in QUOTES.items() if not k.endswith("24700CE")}
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=quotes, expiry=date(2026, 9, 1))
         assert t["pricing"] == "estimate"
+
+    def test_profit_target_net_of_charges(self):
+        t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert t["exit_plan"]["target"]["profit_net"] == pytest.approx(903.5 - 239)
+
+    def test_orders_are_nrml_and_elm_shown(self):
+        t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert all(o["product"] == "NRML" for o in t["orders"])
+        assert t["elm_estimate"]["additional_est"] == 53600
+
+
+# ── Audit fixes: the desk must not be stricter than the signal engine ───────
+
+class TestMatchesSignalEngine:
+    def test_default_plan_has_only_engine_rules(self):
+        plan = default_plan()
+        assert plan["max_loss_per_trade"] is None       # settings value is display-only in the engine
+        assert plan["profit_target_pct"] == 0.5         # settings.json nifty.profit_target_pct
+        assert plan["exit_days_before_expiry"] == 1     # engine: exit before expiry morning
+
+    def test_default_plan_passes_the_real_aug_26_trade(self):
+        # Credit 27.80 → max loss 4,693: the engine accepted it (cap 25% of 75,000 = 18,750).
+        t = build_ticket(make_signal(), default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert t["max_loss"] == pytest.approx(4693.0)
+        assert t["verdict"] == "GO", t["failed"]
+        assert check(t, "risk_cap")["status"] == "pass"
+        assert check(t, "covers_charges")["status"] == "pass"
+        assert t["exit_plan"]["exit_by"] == "2026-08-31"
+
+    def test_delayed_data_alone_is_not_no_go(self):
+        t = build_ticket(make_signal(live=False), default_plan(), WED)
+        assert t["verdict"] == "GO", t["failed"]
+
+    def test_risk_cap_rechecked_on_live_prices(self):
+        sig = make_signal()
+        sig["risk_check"]["capital"] = 15000             # cap 3,750 < max loss 4,693
+        t = build_ticket(sig, default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert check(t, "risk_cap")["status"] == "fail" and t["verdict"] == "NO-GO"
+
+    def test_charges_rechecked_on_live_prices(self):
+        sig = make_signal()
+        sig["trade"]["charges"]["total"] = 2000          # more than the 1,807 credit
+        t = build_ticket(sig, default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert check(t, "covers_charges")["status"] == "fail" and t["verdict"] == "NO-GO"
+
+    def test_engine_checks_unknown_without_capital_or_charges(self):
+        sig = make_signal()
+        del sig["risk_check"]
+        del sig["trade"]["charges"]
+        t = build_ticket(sig, default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert check(t, "risk_cap")["status"] == "unknown"
+        assert check(t, "covers_charges")["status"] == "unknown"
+
+    def test_ticket_uses_engine_risk_cap_constant(self):
+        from engine.signals.simple_ic_engine import RISK_CAP_PCT
+        assert RISK_CAP_PCT == 0.25
 
     def test_subtract_trading_days_skips_weekends(self):
         assert subtract_trading_days(date(2026, 9, 1), 1) == date(2026, 8, 31)   # Tue → Mon

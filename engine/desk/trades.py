@@ -103,8 +103,8 @@ def gross_pnl(legs):
 def parse_tradebook(text):
     """
     Kite Console tradebook CSV rows → fills.
-    Columns used: symbol, trade_date, trade_type, quantity, price, expiry_date (the same
-    columns the existing /upload-tradebook importer reads).
+    Columns used: symbol, trade_date, trade_type, quantity, price, expiry_date, order_id
+    (the columns listed for the existing /upload-tradebook importer).
     """
     import csv, io
     reader = csv.DictReader(io.StringIO(text))
@@ -126,13 +126,25 @@ def parse_tradebook(text):
         if not side or qty <= 0 or not d:
             continue
         fills.append({"symbol": sym, "side": side, "qty": qty, "price": price, "date": d,
-                      "expiry": (row.get("expiry_date") or "").strip().split("T")[0].split(" ")[0] or None})
+                      "expiry": (row.get("expiry_date") or "").strip().split("T")[0].split(" ")[0] or None,
+                      "order_id": (row.get("order_id") or "").strip() or None})
     return fills
 
 
 def _strike_option(symbol):
     m = re.match(r"^NIFTY\w*?(\d{4,6})(CE|PE)$", symbol)
     return (int(m.group(1)), m.group(2)) if m else (None, None)
+
+
+def _order_count(fills):
+    """
+    Brokerage is per executed order, and one order can fill in several tradebook rows.
+    Count distinct order_ids when every row has one; otherwise one order per symbol
+    and side (8 for a full iron condor, the signal engine's estimate).
+    """
+    if fills and all(f.get("order_id") for f in fills):
+        return len({f["order_id"] for f in fills})
+    return len({(f["symbol"], f["side"]) for f in fills})
 
 
 def condors_from_tradebook(fills, lot_hint=None):
@@ -186,7 +198,7 @@ def condors_from_tradebook(fills, lot_hint=None):
         trade["entry_credit"] = entry_credit_per_share(trade["legs"])
         if closed:
             trade["pnl_gross"] = gross_pnl(trade["legs"])
-            trade["charges_est"] = estimate_charges(len(gf))
+            trade["charges_est"] = estimate_charges(_order_count(gf))
             trade["pnl_net"] = round(trade["pnl_gross"] - trade["charges_est"], 2)
         trades.append(trade)
     return trades, skipped
