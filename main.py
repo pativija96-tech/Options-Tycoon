@@ -156,11 +156,29 @@ app.include_router(live_router)
 
 
 # --- Static File Serving ---
+class RevalidatingStaticFiles(StaticFiles):
+    """
+    StaticFiles that makes browsers revalidate pages and scripts on every load.
+
+    Without a Cache-Control header, browsers guess how long to reuse their copy,
+    so users kept seeing old pages after a deploy. "no-cache" still allows the
+    cached copy, but only after a quick ETag/Last-Modified check (304 if unchanged).
+    """
+    REVALIDATE_SUFFIXES = (".html", ".js", ".css")
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        path = str(args[0] if args else kwargs.get("full_path", ""))
+        if path.lower().endswith(self.REVALIDATE_SUFFIXES):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # Ensure runtime directories exist (gitignored, but needed at runtime)
 Path("output").mkdir(exist_ok=True)
 Path("config").mkdir(exist_ok=True)
 app.mount("/output", StaticFiles(directory="output"), name="output")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", RevalidatingStaticFiles(directory="static"), name="static")
 
 
 # --- Root & Health ---
