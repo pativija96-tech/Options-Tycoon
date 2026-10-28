@@ -74,6 +74,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .filter-dot{width:8px;height:8px;border-radius:50%}
 .filter-dot.pass{background:var(--green)}
 .filter-dot.fail{background:var(--red)}
+.trade-numbers.stale{opacity:.45;filter:grayscale(.6)}
+.stale-stamp{margin:12px 0 4px;padding:8px 12px;border:2px dashed var(--yellow);border-radius:6px;color:var(--yellow);font-size:.72rem;font-weight:800;letter-spacing:.5px;text-align:center;text-transform:uppercase}
 </style>
 </head>
 <body>
@@ -113,7 +115,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
     <div style="font-size:.75rem;text-transform:uppercase;letter-spacing:1px;color:var(--red);margin-bottom:12px">🗑 DELETE OLD TRADES</div>
     <p style="font-size:.75rem;color:var(--muted);margin-bottom:12px">Deletes all trades BEFORE the cutoff date. Cannot be undone.</p>
     <label style="color:var(--muted);font-size:.7rem">Delete trades before (YYYY-MM-DD)</label>
-    <input type="date" id="cleanupCutoff" value="2026-08-05" style="width:100%;padding:8px;margin:6px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
+    <input type="date" id="cleanupCutoff"style="width:100%;padding:8px;margin:6px 0 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:var(--mono)">
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button onclick="doCleanup()" style="background:var(--red);color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Delete Old Trades</button>
       <button onclick="deleteOpenTrades()" style="background:rgba(234,179,8,.15);border:1px solid var(--yellow);color:var(--yellow);padding:10px 20px;border-radius:6px;font-weight:700;cursor:pointer;font-size:.85rem">Clear Stale OPEN Trades</button>
@@ -232,15 +234,16 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 'use strict';
 document.getElementById('timeDisplay').textContent=new Date().toLocaleString('en-US',{weekday:'short',hour:'2-digit',minute:'2-digit',timeZoneName:'short'});
 
-function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function esc(s){return(s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
-// Copy an order string to clipboard and flash the button
-function copyOrder(btn){
+// Copy an order string to clipboard and flash the button.
+// Exposed on window because it's called from inline onclick handlers.
+window.copyOrder=function(btn){
   var text=btn.getAttribute('data-order')||'';
   function done(ok){var o=btn.textContent;btn.textContent=ok?'✓ Copied':'Copy failed';setTimeout(function(){btn.textContent=o;},1200);}
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){done(true);},function(){done(false);});}
   else{try{var ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);done(true);}catch(e){done(false);}}
-}
+};
 
 // Render one copy-pasteable order line. label = e.g. "1" (entry) or "Exit 1".
 // color = 'green' (BUY) or 'red' (SELL). kind = 'entry' | 'exit' (badge color).
@@ -259,14 +262,21 @@ function orderLine(label,action,symbol,qty,color,kind){
   return h;
 }
 
-function getRegime(data){
-  if(!data)return{word:'LOADING',cls:'calm'};
-  var vix=data.vix?data.vix.change_pct:0;
-  var us=data.sp500?data.sp500.change_pct:0;
-  if(vix>10||us<-1.5)return{word:'FEAR',cls:'fear'};
-  if(vix<-5||us>1)return{word:'GREED',cls:'greed'};
-  if(vix>5||us<-0.5)return{word:'CAUTION',cls:'chaos'};
-  return{word:'CALM',cls:'calm'};
+// Regime from India VIX LEVEL (the engine's change-% fields are hardcoded to 0).
+var VIX_CALM_MAX=13, VIX_NORMAL_MAX=18, VIX_CAUTION_MAX=24;
+function getRegime(vixLevel){
+  if(vixLevel==null||isNaN(vixLevel))return{word:'VIX N/A',cls:'calm'};
+  if(vixLevel<VIX_CALM_MAX)return{word:'CALM',cls:'calm'};
+  if(vixLevel<VIX_NORMAL_MAX)return{word:'NORMAL',cls:'calm'};
+  if(vixLevel<VIX_CAUTION_MAX)return{word:'CAUTION',cls:'chaos'};
+  return{word:'FEAR',cls:'fear'};
+}
+
+// A real signal card has an action field; error bodies (403/500) don't.
+function isSignal(d){return !!(d&&typeof d==='object'&&(d.action==='trade'||d.action==='skip'));}
+
+function signalLoadError(msg){
+  document.getElementById('content').innerHTML='<div class="no-signal"><p style="font-size:1.1rem;font-weight:600">Couldn\'t load signal</p><p>'+esc(msg)+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
 }
 
 function render(card){
@@ -293,22 +303,13 @@ function render(card){
   var c=card.conditions||{};
   var qf=card.quality_filters||{};
   var ps=card.position_sizing||qf.position_sizing||{};
-  var data=(card.pattern_result||{}).conditions||c;
-  var regime=getRegime(card._global_data||{data:c});
-
-  var us=c.us_change_pct||0;
-  var vix=c.vix_change_pct||0;
-  var dxy=c.dxy_change_pct||0;
-  if(vix>10||us<-1.5) regime={word:'FEAR',cls:'fear'};
-  else if(vix<-5||us>1) regime={word:'GREED',cls:'greed'};
-  else if(vix>5||us<-0.5) regime={word:'CAUTION',cls:'chaos'};
-  else regime={word:'CALM',cls:'calm'};
 
   var html='';
   // Show the ACTUAL VIX level + NIFTY spot the engine used (not the legacy
   // change-% fields, which are hardcoded to 0 in the current engine).
   var vixLevel = (c.vix_level!=null?c.vix_level:(c.vix!=null?c.vix:null));
   var niftySpot = (c.nifty_price!=null?c.nifty_price:(c.nifty!=null?c.nifty:null));
+  var regime=getRegime(vixLevel!=null?Number(vixLevel):null);
   var regimeData = 'INDIA VIX ' + (vixLevel!=null?Number(vixLevel).toFixed(1):'--')
                  + ' | NIFTY ' + (niftySpot!=null?Number(niftySpot).toFixed(0):'--');
   html+='<div class="regime-bar '+regime.cls+'">';
@@ -329,9 +330,9 @@ function render(card){
   html+='<div class="main-card">';
   html+='<div class="play-label">TODAY\'S PLAY</div>';
   html+='<div class="play-regime">'+esc(card.direction||'').toUpperCase()+' — '+(card.direction==='bullish'?'Bounce expected':card.direction==='bearish'?'Downside expected':'Range-bound expected')+'</div>';
-  html+='<div class="play-strategy">'+(t.type||'').replace(/_/g,' ').toUpperCase()+'</div>';
+  html+='<div class="play-strategy">'+esc((t.type||'').replace(/_/g,' ').toUpperCase())+'</div>';
 
-  var conf=card.confidence||0;
+  var conf=Math.max(0,Math.min(100,Number(card.confidence)||0));
   var confCls=conf>=70?'high':conf>=55?'moderate':'low';
   var filtersP=qf.passed||0;
   html+='<div class="conviction-row">';
@@ -356,6 +357,11 @@ function render(card){
   var sizeCls=ps.size==='full'?'full':ps.size==='reduced'?'reduced':'minimum';
   if(sizeLabel) html+='<div class="size-badge '+sizeCls+'">'+esc(sizeLabel)+'</div>';
 
+  // Dim legs/sequences/metrics when the signal wasn't built on live Kite data,
+  // so nobody copies orders off previous-close numbers without noticing.
+  if(!isLive) html+='<div class="stale-stamp">ESTIMATE — previous close. Do not trade from these numbers.</div>';
+  html+='<div class="trade-numbers'+(isLive?'':' stale')+'">';
+
   var legs=t.legs||[];
   if(legs.length>0){
     var expiryDate=t.expiry_date||'';
@@ -370,7 +376,7 @@ function render(card){
     for(var i=0;i<legs.length;i++){
       var leg=legs[i];
       var aCls=leg.action==='BUY'?'buy':'sell';
-      html+='<div class="leg"><span class="action '+aCls+'">'+leg.action+'</span><span class="contract">NIFTY '+leg.strike+' '+leg.option+'</span><span class="price">Rs.'+leg.premium_est+'</span></div>';
+      html+='<div class="leg"><span class="action '+aCls+'">'+esc(leg.action)+'</span><span class="contract">NIFTY '+esc(leg.strike)+' '+esc(leg.option)+'</span><span class="price">Rs.'+esc(leg.premium_est)+'</span></div>';
     }
     html+='</div>';
 
@@ -414,12 +420,13 @@ function render(card){
   }
 
   html+='<div class="metrics">';
-  html+='<div class="metric"><div class="label">Risk (incl charges)</div><div class="value red">Rs.'+(t.net_max_loss||t.max_loss||0)+'</div></div>';
-  html+='<div class="metric"><div class="label">Reward (net)</div><div class="value green">Rs.'+(t.net_max_profit||t.max_profit||0)+'</div></div>';
-  html+='<div class="metric"><div class="label">R:R</div><div class="value">'+(t.risk_reward||0)+':1</div></div>';
+  html+='<div class="metric"><div class="label">Risk (incl charges)</div><div class="value red">Rs.'+esc(t.net_max_loss||t.max_loss||0)+'</div></div>';
+  html+='<div class="metric"><div class="label">Reward (net)</div><div class="value green">Rs.'+esc(t.net_max_profit||t.max_profit||0)+'</div></div>';
+  html+='<div class="metric"><div class="label">R:R</div><div class="value">'+esc(t.risk_reward||0)+':1</div></div>';
   html+='</div>';
   var charges=t.charges||{};
-  if(charges.total) html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: Rs.'+charges.total+' (Brokerage Rs.'+charges.brokerage+' + GST + STT + Exchange)</div>';
+  if(charges.total) html+='<div style="font-size:.7rem;color:var(--muted);text-align:center;margin-top:4px">Charges: Rs.'+esc(charges.total)+' (Brokerage Rs.'+esc(charges.brokerage)+' + GST + STT + Exchange)</div>';
+  html+='</div>';  // .trade-numbers
 
   // Expiry-day ELM warning — potential margin spike if held into expiry morning
   var elm=t.elm_estimate;
@@ -436,7 +443,8 @@ function render(card){
 
   html+='<div class="actions" style="grid-template-columns:1fr 2fr 1fr">';
   html+='<button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem">ZERODHA</button>';
-  html+='<button class="btn btn-execute" onclick="executeTrade()">EXECUTE</button>';
+  // Auto-execution is off: orders are placed manually in Kite using the Copy lines above.
+  html+='<button class="btn btn-execute" disabled title="Auto-execution is off. Copy the legs above and place them in Kite." style="font-size:.75rem">MANUAL ONLY — copy legs</button>';
   html+='<button class="btn btn-pass" onclick="passTrade()">PASS</button>';
   html+='</div>';
   html+='<div style="text-align:center;margin-top:10px"><button onclick="generateSignal()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Regenerate Signal</button> | <button onclick="runEOD()" style="background:none;border:none;color:var(--muted);font-size:.7rem;cursor:pointer;text-decoration:underline">Run EOD Report</button></div>';
@@ -450,7 +458,7 @@ function render(card){
       var s=stocks[j];
       html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">';
       html+='<span style="font-weight:600;font-size:.85rem">'+esc(s.name)+'</span>';
-      html+='<span style="font-size:.7rem;font-weight:700;color:'+(s.direction==='bullish'?'var(--green)':'var(--red)')+'">'+s.direction.toUpperCase()+' '+s.confidence+'%</span>';
+      html+='<span style="font-size:.7rem;font-weight:700;color:'+(s.direction==='bullish'?'var(--green)':'var(--red)')+'">'+esc(String(s.direction||'').toUpperCase())+' '+esc(s.confidence)+'%</span>';
       html+='</div>';
       if(s.catalyst&&s.catalyst.has_catalyst) html+='<div style="font-size:.68rem;color:var(--yellow);padding:2px 0">'+esc(s.catalyst.description)+'</div>';
     }
@@ -492,6 +500,12 @@ window.cleanupOldTrades=function(){
   if(panel){
     panel.style.display=panel.style.display==='none'?'block':'none';
   }
+  // Default cutoff: 30 days ago (only if the user hasn't picked one)
+  var cutoffEl=document.getElementById('cleanupCutoff');
+  if(cutoffEl&&!cutoffEl.value){
+    var d=new Date();d.setDate(d.getDate()-30);
+    cutoffEl.value=d.toISOString().split('T')[0];
+  }
   // hide other panels
   var others=['logFormPanel','resolveFormPanel','kiteFetchPanel','uploadPanel'];
   for(var i=0;i<others.length;i++){var el=document.getElementById(others[i]);if(el)el.style.display='none';}
@@ -499,8 +513,9 @@ window.cleanupOldTrades=function(){
 
 window.doCleanup=function(){
   var cutoffEl=document.getElementById('cleanupCutoff');
-  var cutoff=cutoffEl?cutoffEl.value:'2026-08-05';
+  var cutoff=cutoffEl?cutoffEl.value:'';
   if(!cutoff){alert('Enter a cutoff date');return;}
+  if(!confirm('Permanently delete ALL trades before '+cutoff+'?\n\nThis cannot be undone.'))return;
   var resultEl=document.getElementById('cleanupResult');
   if(resultEl)resultEl.innerHTML='<span style="color:var(--muted)">Deleting...</span>';
   fetch('/api/live/cleanup-old-trades?before='+cutoff,{method:'DELETE',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
@@ -510,12 +525,13 @@ window.doCleanup=function(){
       loadTrackRecord();
       reloadPositions();
     } else {
-      if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+(d.error||'Unknown')+'</span>';
+      if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+esc(d.error||'Unknown')+'</span>';
     }
-  }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+e+'</span>';});
+  }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+esc(e)+'</span>';});
 };
 
 window.deleteOpenTrades=function(){
+  if(!confirm('Delete ALL trades still marked OPEN?\n\nWIN/LOSS history is kept. This cannot be undone.'))return;
   var resultEl=document.getElementById('cleanupResult');
   if(resultEl)resultEl.innerHTML='<span style="color:var(--muted)">Clearing stale open trades...</span>';
   fetch('/api/live/delete-open-trades',{method:'DELETE',headers:{'X-User-Id':String(userId)}}).then(function(r){return r.json();}).then(function(d){
@@ -525,9 +541,9 @@ window.deleteOpenTrades=function(){
       loadTrackRecord();
       reloadPositions();
     } else {
-      if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+(d.error||'Unknown')+'</span>';
+      if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Error: '+esc(d.error||'Unknown')+'</span>';
     }
-  }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+e+'</span>';});
+  }).catch(function(e){if(resultEl)resultEl.innerHTML='<span style="color:var(--red)">Network error: '+esc(e)+'</span>';});
 };
 
 function reloadPositions(){
@@ -545,13 +561,13 @@ window.uploadTradebook=function(){
   document.getElementById('uploadResult').innerHTML='<p style="color:var(--muted)">Parsing tradebook...</p>';
   fetch('/api/live/upload-tradebook',{method:'POST',headers:{'X-User-Id':String(userId)},body:formData}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
-      var html='<div style="color:var(--green);font-weight:600;margin-bottom:8px">✅ '+d.message+'</div>';
+      var html='<div style="color:var(--green);font-weight:600;margin-bottom:8px">✅ '+esc(d.message)+'</div>';
       if(d.trades&&d.trades.length>0){
         html+='<div style="font-size:.75rem;color:var(--muted);margin-bottom:8px">Imported '+d.trades.length+' trade(s):</div>';
         for(var i=0;i<d.trades.length;i++){
           var t=d.trades[i];
           html+='<div style="font-size:.75rem;padding:4px 0;border-bottom:1px solid var(--border)">';
-          html+=t.date+' | '+t.strategy+' | Credit: ₹'+t.net_credit+' | Legs: '+t.leg_count;
+          html+=esc(t.date)+' | '+esc(t.strategy)+' | Credit: ₹'+esc(t.net_credit)+' | Legs: '+esc(t.leg_count);
           html+='</div>';
         }
       }
@@ -562,7 +578,7 @@ window.uploadTradebook=function(){
       document.getElementById('uploadResult').innerHTML='<p style="color:var(--red)">Error: '+esc(d.error)+'</p>';
     }
   }).catch(function(e){
-    document.getElementById('uploadResult').innerHTML='<p style="color:var(--red)">Network error: '+e+'</p>';
+    document.getElementById('uploadResult').innerHTML='<p style="color:var(--red)">Network error: '+esc(e)+'</p>';
   });
 };
 
@@ -587,8 +603,8 @@ window.fetchFromKite=function(){
     html+='<div style="margin-bottom:12px;padding:10px;background:rgba(255,255,255,.02);border-radius:6px">';
     html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>Strategy:</strong> '+esc(s.strategy).replace(/_/g,' ').toUpperCase()+'</div>';
     html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>Date:</strong> '+esc(s.date)+'</div>';
-    html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>NIFTY:</strong> '+(s.nifty_price||'--')+'</div>';
-    html+='<div style="font-size:.8rem;font-weight:700;color:var(--green)">Net Credit: ₹'+s.net_credit.toLocaleString()+'</div>';
+    html+='<div style="font-size:.8rem;margin-bottom:6px"><strong>NIFTY:</strong> '+esc(s.nifty_price||'--')+'</div>';
+    html+='<div style="font-size:.8rem;font-weight:700;color:var(--green)">Net Credit: ₹'+esc(Number(s.net_credit).toLocaleString())+'</div>';
     html+='</div>';
     
     // Legs table
@@ -597,9 +613,9 @@ window.fetchFromKite=function(){
       var leg=s.legs[i];
       var aCls=leg.action==='BUY'?'color:var(--green)':'color:var(--red)';
       html+='<div style="display:flex;justify-content:space-between;padding:4px 0;font-family:var(--mono);font-size:.8rem;border-bottom:1px solid var(--border)">';
-      html+='<span style="'+aCls+';font-weight:700;width:40px">'+leg.action+'</span>';
+      html+='<span style="'+aCls+';font-weight:700;width:40px">'+esc(leg.action)+'</span>';
       html+='<span>'+esc(leg.symbol)+'</span>';
-      html+='<span>₹'+leg.premium+' × '+leg.quantity+'</span>';
+      html+='<span>₹'+esc(leg.premium)+' × '+esc(leg.quantity)+'</span>';
       html+='</div>';
     }
     html+='</div>';
@@ -613,7 +629,7 @@ window.fetchFromKite=function(){
     // Store summary for import
     window._kiteSummary=s;
   }).catch(function(e){
-    document.getElementById('kiteFetchContent').innerHTML='<p style="color:var(--red)">Network error: '+e+'</p>';
+    document.getElementById('kiteFetchContent').innerHTML='<p style="color:var(--red)">Network error: '+esc(e)+'</p>';
   });
 };
 
@@ -687,6 +703,8 @@ window.submitResolve=function(){
 
   if(!tradeId){alert('Enter a trade ID');return;}
   if(isNaN(pnl)){alert('Enter the realized P&L');return;}
+  if(status==='win'&&pnl<0){alert('A WIN can\'t have a negative P&L. Check the result or the amount.');return;}
+  if(status==='loss'&&pnl>0){alert('A LOSS can\'t have a positive P&L. Check the result or the amount.');return;}
 
   fetch('/api/live/update-trade/'+tradeId,{method:'PUT',headers:{'Content-Type':'application/json','X-User-Id':String(userId)},body:JSON.stringify({pnl:pnl,status:status,nifty_close:niftyClose})}).then(function(r){return r.json();}).then(function(d){
     if(d.success){
@@ -754,9 +772,9 @@ function loadTradeHistory(){
       var creditDisplay=tr.max_profit?'₹'+tr.max_profit.toLocaleString():'--';
 
       html+='<tr style="border-bottom:1px solid var(--border)">';
-      html+='<td style="padding:8px 4px;font-family:var(--mono);color:var(--muted)">'+tr.id+'</td>';
+      html+='<td style="padding:8px 4px;font-family:var(--mono);color:var(--muted)">'+esc(tr.id)+'</td>';
       html+='<td style="padding:8px 4px">'+esc(tr.date)+'</td>';
-      html+='<td style="padding:8px 4px">'+(tr.strategy||'').replace(/_/g,' ')+'</td>';
+      html+='<td style="padding:8px 4px">'+esc((tr.strategy||'').replace(/_/g,' '))+'</td>';
       html+='<td style="padding:8px 4px;text-align:right;font-family:var(--mono)">'+creditDisplay+'</td>';
       html+='<td style="padding:8px 4px;text-align:right;font-family:var(--mono);color:'+pnlC+';font-weight:700">'+pnlDisplay+'</td>';
       html+='<td style="padding:8px 4px;text-align:center">'+statusBadge+'</td>';
@@ -790,10 +808,12 @@ function loadTrackRecord(){
   }).catch(function(){});
 }
 
+// Records an exit in the trade log only. Nothing is sent to Zerodha —
+// close the legs in Kite yourself first.
 window.exitTrade=function(tradeId,pnl){
-  if(!confirm('Exit trade #'+tradeId+' at estimated P&L Rs.'+pnl+'?'))return;
-  fetch('/api/live/exit-trade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trade_id:tradeId,pnl:pnl||0})}).then(function(r){return r.json();}).then(function(d){
-    if(d.success){alert('Trade #'+tradeId+' closed. P&L: Rs.'+d.pnl);location.reload();}
+  if(!confirm('Log trade #'+tradeId+' as exited at estimated P&L Rs.'+pnl+'?\n\nThis only updates the trade log. It does NOT close anything in Zerodha.'))return;
+  fetch('/api/live/exit-trade',{method:'POST',headers:{'Content-Type':'application/json','X-User-Id':String(userId)},body:JSON.stringify({trade_id:tradeId,pnl:pnl||0})}).then(function(r){return r.json();}).then(function(d){
+    if(d.success){alert('Trade #'+tradeId+' logged as exited. P&L: Rs.'+d.pnl);location.reload();}
     else alert('Error: '+(d.error||'Unknown'));
   });
 };
@@ -801,7 +821,7 @@ window.exitTrade=function(tradeId,pnl){
 window.trailSL=function(tradeId){
   var newSL=prompt('Enter new SL amount (Rs.0 = breakeven):','0');
   if(newSL===null)return;
-  fetch('/api/live/trail-sl',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({trade_id:tradeId,new_sl:parseFloat(newSL)||0})}).then(function(r){return r.json();}).then(function(d){
+  fetch('/api/live/trail-sl',{method:'POST',headers:{'Content-Type':'application/json','X-User-Id':String(userId)},body:JSON.stringify({trade_id:tradeId,new_sl:parseFloat(newSL)||0})}).then(function(r){return r.json();}).then(function(d){
     if(d.success){alert('SL updated for trade #'+tradeId);location.reload();}
     else alert('Error: '+(d.error||'Unknown'));
   });
@@ -818,10 +838,15 @@ window.runEOD=function(){
 window.generateSignal=function(){
   document.getElementById('content').innerHTML='<div class="no-signal"><p>Generating signal...</p><p style="font-size:.75rem;color:var(--muted)">Fetching global data + running pattern match (15-30s)</p></div>';
   fetch('/api/live/generate-signal?mode=nifty',{method:'POST'}).then(function(r){return r.json();}).then(function(d){
-    if(d.success) fetch('/api/live/signal?mode=nifty').then(function(r){return r.json();}).then(render);
-    else document.getElementById('content').innerHTML='<div class="no-signal"><p>Failed: '+(d.error||'Unknown')+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
+    if(d.success) fetch('/api/live/signal?mode=nifty').then(function(r){
+      if(!r.ok) throw new Error('Server returned '+r.status);
+      return r.json();
+    }).then(function(s){
+      if(isSignal(s)) render(s); else signalLoadError('Unexpected response from server');
+    }).catch(function(e){signalLoadError(e.message||String(e));});
+    else signalLoadError('Failed: '+(d.error||d.detail||'Unknown'));
   }).catch(function(e){
-    document.getElementById('content').innerHTML='<div class="no-signal"><p>Error: '+e+'</p><button class="generate-btn" onclick="generateSignal()">Retry</button></div>';
+    signalLoadError('Error: '+(e.message||String(e)));
   });
 };
 
@@ -876,12 +901,14 @@ var userId=user?user.user_id||user.id||'0':'0';
 // --- Load Signal ---
 fetch('/api/live/signal?mode=nifty').then(function(r){
   if(r.status===404) return null;
+  if(!r.ok) throw new Error(r.status===403?'Access denied (403) — log in as the founder account.':'Server returned '+r.status);
   return r.json();
 }).then(function(d){
-  if(d) render(d);
+  if(d&&isSignal(d)) render(d);
+  else if(d) signalLoadError('Unexpected response from server');
   else document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button><div style="margin-top:16px;display:flex;gap:10px;justify-content:center"><button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem;padding:8px 20px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);border-radius:6px;cursor:pointer">🔗 Login to Zerodha</button></div><div id="kite-status" style="text-align:center;margin-top:8px;font-size:.7rem;color:var(--muted)"></div></div>';checkKiteStatus();
-}).catch(function(){
-  document.getElementById('content').innerHTML='<div class="no-signal"><p>No signal yet</p><button class="generate-btn" onclick="generateSignal()">Generate Today\'s Signal</button><div style="margin-top:16px;display:flex;gap:10px;justify-content:center"><button class="btn btn-pass" onclick="loginKite()" style="font-size:.8rem;padding:8px 20px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.4);color:var(--blue);border-radius:6px;cursor:pointer">🔗 Login to Zerodha</button></div><div id="kite-status" style="text-align:center;margin-top:8px;font-size:.7rem;color:var(--muted)"></div></div>';checkKiteStatus();
+}).catch(function(e){
+  signalLoadError(e&&e.message?e.message:'Network error');
 });
 
 // --- Capital Display ---
@@ -929,18 +956,18 @@ fetch('/api/live/open-positions?user_id='+userId).then(function(r){return r.json
     var sugColor=p.suggestion_type==='exit'?'var(--green)':p.suggestion_type==='trail'?'var(--yellow)':p.suggestion_type==='exit_loss'?'var(--red)':'var(--muted)';
     html+='<div style="padding:10px;margin:6px 0;border-radius:8px;background:rgba(255,255,255,.02);border:1px solid var(--border)">';
     html+='<div style="display:flex;justify-content:space-between;align-items:center">';
-    html+='<span style="font-weight:600;font-size:.85rem">#'+p.id+' '+(p.strategy||'').replace(/_/g,' ').toUpperCase()+'</span>';
+    html+='<span style="font-weight:600;font-size:.85rem">#'+esc(p.id)+' '+esc((p.strategy||'').replace(/_/g,' ').toUpperCase())+'</span>';
     html+='<span style="font-family:var(--mono);font-weight:700;color:'+pnlColor+'">P&L: Rs.'+(p.current_pnl||'--')+'</span>';
     html+='</div>';
     html+='<div style="font-size:.72rem;color:'+sugColor+';margin:6px 0;font-weight:600">'+esc(p.suggestion)+'</div>';
     html+='<div style="display:flex;gap:6px;margin-top:6px">';
     if(p.suggestion_type==='exit'||p.suggestion_type==='exit_loss'){
-      html+='<button onclick="exitTrade('+p.id+','+p.current_pnl+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--green);background:rgba(16,185,129,.1);color:var(--green);cursor:pointer">Exit Now</button>';
+      html+='<button onclick="exitTrade('+p.id+','+p.current_pnl+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--green);background:rgba(16,185,129,.1);color:var(--green);cursor:pointer">Log Exit</button>';
     }
     if(p.suggestion_type==='trail'||p.current_pnl>0){
       html+='<button onclick="trailSL('+p.id+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--yellow);background:rgba(234,179,8,.1);color:var(--yellow);cursor:pointer">Trail SL</button>';
     }
-    html+='<button onclick="exitTrade('+p.id+','+p.current_pnl+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--muted);background:transparent;color:var(--muted);cursor:pointer">Close</button>';
+    html+='<button onclick="exitTrade('+p.id+','+p.current_pnl+')" style="font-size:.7rem;padding:4px 10px;border-radius:4px;border:1px solid var(--muted);background:transparent;color:var(--muted);cursor:pointer">Mark Closed</button>';
     html+='</div></div>';
   }
   html+='</div>';
