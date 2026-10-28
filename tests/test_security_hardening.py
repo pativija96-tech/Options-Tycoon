@@ -122,9 +122,12 @@ class TestRequireFounder:
         session = require_founder(self._request({INTERNAL_TOKEN_HEADER: INTERNAL_API_TOKEN}))
         assert session["email"] == "scheduler@internal"
 
-    def test_founder_cookie_accepted(self):
+    def test_founder_cookie_accepted(self, monkeypatch):
         import time
+        import engine.session as s
         from engine.session import require_founder, _sign, SESSION_COOKIE_NAME
+
+        monkeypatch.setattr(s, "FOUNDER_ALLOWED_EMAILS", ["test@test.com"])
 
         payload = json.dumps({"user_id": 1, "email": "test@test.com", "name": "T", "issued_at": int(time.time())})
         cookie = f"{payload}|{_sign(payload)}"
