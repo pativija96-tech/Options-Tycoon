@@ -49,6 +49,7 @@ jobs:
       - name: 🧪 Run Full Test Suite (69 tests — QQQ + NIFTY)
         run: |
           pytest tests/test_full_system.py tests/test_ibkr_executor.py tests/test_nifty_full_chain.py \
+            tests/test_security_hardening.py tests/test_desk.py tests/test_desk_journal.py \
             -v \
             --tb=short \
             --cov=engine \

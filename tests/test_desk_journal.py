@@ -280,3 +280,16 @@ class TestJournalEndpoints:
     def test_import_rejects_non_csv(self):
         files = {"file": ("tb.xlsx", io.BytesIO(b"x"), "application/octet-stream")}
         assert self.c.post("/api/live/desk/import-tradebook", files=files).status_code == 400
+
+
+class TestDeskPage:
+    """The desk page wires every desk endpoint and never sends a browser-chosen user id."""
+
+    def test_endpoints_and_no_user_header(self):
+        html = (PROJECT_ROOT / "static" / "desk.html").read_text(encoding="utf-8")
+        for path in ("/api/live/trade-ticket", "/api/live/plan", "/api/live/desk/sync-entry", "/api/live/desk/manual-open",
+                     "/api/live/desk/position", "/api/live/desk/sync-exit", "/api/live/desk/manual-close",
+                     "/api/live/desk/review", "/api/live/desk/import-tradebook", "/review'"):
+            assert path in html, path
+        assert "X-User-Id" not in html
+        assert "live-execute" not in html      # the desk never places orders
