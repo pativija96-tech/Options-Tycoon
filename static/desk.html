@@ -258,7 +258,7 @@ window.prepare=function(){
 };
 window.resetTicket=function(){state.ticket=null;el('ticketBox').innerHTML='';el('heroBox').classList.remove('hide');};
 window.copyOrder=function(i){
-  var o=state.ticket.orders[i];var text=o.side+' '+o.symbol+' '+o.qty+' LIMIT '+num(o.price);
+  var o=state.ticket.orders[i];var text=o.side+' '+o.symbol+' '+o.qty+' NRML LIMIT '+num(o.price);
   function done(){state.copied=i;renderTicket();}
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,done);}else{done();}
 };
@@ -287,17 +287,18 @@ function renderTicket(){
   t.orders.forEach(function(o,i){
     var done=state.copied===i;
     h+='<div class="row"><div class="step">'+o.step+'</div><div class="side '+(o.side==='BUY'?'buy':'sell')+'">'+o.side+'</div>'+
-       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' LIMIT</small></div>'+
+       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' NRML LIMIT</small></div>'+
        '<div class="mono" style="font-weight:700">₹'+num(o.price)+'</div>'+
        '<button class="copy'+(done?' done':'')+'" aria-label="Copy order '+o.step+'" onclick="copyOrder('+i+')">'+(done?'Copied':'Copy')+'</button></div>';
   });
   h+='<div class="note">Place each order in Kite and wait for COMPLETE before the next. Never use basket orders.'+(live?'':' Prices shown are estimates: check live prices in Kite before placing.')+'</div></div>';
   var ep=t.exit_plan||{},tg=ep.target;
   h+='<div class="sec"><div class="exitgrid">'+
-     '<div><div class="note">Profit target'+(tg?' '+Math.round(tg.pct*100)+'%':'')+'</div><div class="mono" style="font-weight:700;color:var(--green)">'+(tg?'+'+inr(tg.profit)+' · buy back ≤ '+inr(tg.buyback_total):'Not set')+'</div></div>'+
+     '<div><div class="note">Profit target'+(tg?' '+Math.round(tg.pct*100)+'%':'')+'</div><div class="mono" style="font-weight:700;color:var(--green)">'+(tg?'+'+inr(tg.profit)+' · buy back ≤ '+inr(tg.buyback_total):'Not set')+'</div>'+(tg&&tg.profit_net!=null?'<div class="note">≈ '+inr(tg.profit_net)+' after '+inr(t.charges_est)+' charges</div>':'')+'</div>'+
      '<div><div class="note">Loss exit</div><div class="mono" style="font-weight:700;color:var(--red)">'+(ep.loss_exit!=null?'Open loss '+inr(-ep.loss_exit):'Not set')+'</div></div>'+
      '<div><div class="note">Exit by</div><div class="mono" style="font-weight:700">'+(ep.exit_by?esc(fmtDate(ep.exit_by)):'Not set')+'</div></div></div>'+
-     '<div class="note">'+esc(ep.order||'')+'</div></div>';
+     '<div class="note">'+esc(ep.order||'')+'</div>'+
+     (t.elm_estimate?'<div class="note" style="color:var(--gold)">Expiry-day margin (ELM) estimate: about '+inr(t.elm_estimate.additional_est)+' extra, total about '+inr(t.elm_estimate.total_requirement_est)+' if held into expiry morning. Exit before expiry to avoid it. A guide only — the exchange sets the real amount.</div>':'')+'</div>';
   h+='<div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px">'+
      '<button class="btn" style="flex:1;min-width:220px" id="syncBtn" onclick="syncEntry()">I\'ve placed it · Sync my fills</button>'+
      '<button class="btn ghost" onclick="prepare()">Refresh prices</button>'+
@@ -455,7 +456,7 @@ function renderPosition(){
   var pnlC=p.pnl==null?'var(--muted)':(p.pnl>=0?'var(--green)':'var(--red)');
   var h='<div class="kpis">'+
     '<div class="kpi"><div class="k">Live P&amp;L (before charges)</div><div class="v" style="font-size:36px;color:'+pnlC+'">'+(p.pnl==null?'—':(p.pnl>=0?'+':'')+inr(p.pnl))+'</div><div class="note">Credit '+inr(p.credit)+' · cost to close '+inr(p.close_cost)+'</div></div>'+
-    '<div class="kpi" style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between" class="note"><span>To profit target '+(p.target_profit?inr(p.target_profit):'(not set)')+'</span><b class="mono" style="color:var(--green)">'+(p.target_progress==null?'—':Math.round(p.target_progress)+'%')+'</b></div>'+
+    '<div class="kpi" style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between" class="note"><span>To profit target '+(p.target_profit?inr(p.target_profit)+' before charges':'(not set)')+'</span><b class="mono" style="color:var(--green)">'+(p.target_progress==null?'—':Math.round(p.target_progress)+'%')+'</b></div>'+
       '<div class="bar"><div style="background:var(--green);width:'+(p.target_progress||0)+'%"></div></div>'+
       '<div style="display:flex;justify-content:space-between" class="note"><span>To loss exit '+(p.loss_exit?inr(-p.loss_exit):'(not set)')+'</span><b class="mono" style="color:var(--red)">'+(p.loss_progress==null?'—':Math.round(p.loss_progress)+'%')+'</b></div>'+
       '<div class="bar"><div style="background:var(--red);width:'+(p.loss_progress||0)+'%"></div></div></div>'+
@@ -470,7 +471,7 @@ function renderPosition(){
   p.exit_orders.forEach(function(o,i){
     var done=state.copied==='x'+i;
     h+='<div class="row"><div class="step" style="background:rgba(96,165,250,.18);color:var(--blue-t)">'+o.step+'</div><div class="side '+(o.side==='BUY'?'buy':'sell')+'">'+o.side+'</div>'+
-       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' LIMIT</small></div><div class="mono" style="font-weight:700">'+(o.price==null?'—':'₹'+num(o.price))+'</div>'+
+       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' NRML LIMIT</small></div><div class="mono" style="font-weight:700">'+(o.price==null?'—':'₹'+num(o.price))+'</div>'+
        '<button class="copy'+(done?' done':'')+'" aria-label="Copy exit order '+o.step+'" onclick="copyExit('+i+')">'+(done?'Copied':'Copy')+'</button></div>';
   });
   h+='<div class="note">'+esc(p.exit_rule)+'</div></div><div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px;align-items:center">'+
@@ -481,7 +482,7 @@ function renderPosition(){
   if(p.kite_notes&&p.kite_notes.length)h+='<ul class="notes">'+p.kite_notes.map(function(n){return '<li>'+esc(n)+'</li>';}).join('')+'</ul>';
   box.innerHTML=h;
 }
-window.copyExit=function(i){var o=pos.exit_orders[i];var t=o.side+' '+o.symbol+' '+o.qty+' LIMIT'+(o.price!=null?' '+num(o.price):'');
+window.copyExit=function(i){var o=pos.exit_orders[i];var t=o.side+' '+o.symbol+' '+o.qty+' NRML LIMIT'+(o.price!=null?' '+num(o.price):'');
   function done(){state.copied='x'+i;renderPosition();}
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,done);}else{done();}};
 function afterClose(d){

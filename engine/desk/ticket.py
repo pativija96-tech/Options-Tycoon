@@ -10,6 +10,8 @@ Statuses per check: "pass", "fail", "unset" (rule not in your plan),
 
 from datetime import date, timedelta
 
+from engine.signals.simple_ic_engine import RISK_CAP_PCT
+
 DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
@@ -104,19 +106,38 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     for i, (side, strike, opt, note) in enumerate(order_defs, 1):
         bid, ask = bidask(strike, opt)
         orders.append({"step": i, "side": side, "strike": strike, "option": opt, "symbol": symbol(strike, opt),
-                       "qty": lot, "price": round(price(strike, opt), 2), "bid": bid, "ask": ask, "note": note})
+                       "qty": lot, "product": "NRML", "price": round(price(strike, opt), 2), "bid": bid, "ask": ask,
+                       "note": note})
 
     credit_ps = round(price(sp, "PE") + price(sc, "CE") - price(lp, "PE") - price(lc, "CE"), 2)
     credit = round(credit_ps * lot, 2)
     max_loss = round((wing - credit_ps) * lot, 2)
     rr = round(credit / max_loss, 2) if max_loss > 0 else None
     charges = (trade.get("charges") or {}).get("total")
+    capital = (signal.get("risk_check") or {}).get("capital")
 
     # ---- checks -------------------------------------------------------------
     checks = []
 
     def add(key, label, status, detail):
         checks.append({"key": key, "label": label, "status": status, "detail": detail})
+
+    # The signal engine's own skip rules, re-checked here because live Kite prices
+    # can differ from the model estimates the engine checked them on.
+    if capital:
+        cap = round(capital * RISK_CAP_PCT, 2)
+        add("risk_cap", f"Max loss within {RISK_CAP_PCT:.0%} of capital (signal engine rule)",
+            "pass" if max_loss <= cap else "fail",
+            f"{_inr(max_loss)} vs {_inr(cap)} ({RISK_CAP_PCT:.0%} of {_inr(capital)})")
+    else:
+        add("risk_cap", f"Max loss within {RISK_CAP_PCT:.0%} of capital (signal engine rule)", "unknown",
+            "Capital not in the signal")
+    if charges is not None:
+        add("covers_charges", "Credit covers charges (signal engine rule)",
+            "pass" if credit - charges > 0 else "fail",
+            f"{_inr(credit)} credit vs {_inr(charges)} charges")
+    else:
+        add("covers_charges", "Credit covers charges (signal engine rule)", "unknown", "Charges not in the signal")
 
     days = plan.get("entry_days") or []
     if not days:
@@ -186,7 +207,9 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     if market["data_is_live"]:
         add("data_live", "Signal built on live Kite data", "pass", "NIFTY and VIX from Kite")
     else:
-        add("data_live", "Signal built on live Kite data", "fail", f"Delayed data ({market['data_source']}) — log in to Kite and prepare again")
+        # A warning, as on the live-nifty page — not a NO-GO.
+        add("data_live", "Signal built on live Kite data", "unknown",
+            f"Delayed data ({market['data_source']}) — log in to Kite and prepare again for live prices")
 
     if live:
         add("prices_live", "Leg prices from Kite", "pass", "Live last-traded prices")
@@ -202,7 +225,9 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     target = None
     if pt:
         target = {"pct": pt, "profit": round(credit * pt, 2), "buyback_total": round(credit * (1 - pt), 2),
-                  "buyback_per_share": round(credit_ps * (1 - pt), 2)}
+                  "buyback_per_share": round(credit_ps * (1 - pt), 2),
+                  # Charges are paid on all 8 orders, so the net is the gross profit minus all of them.
+                  "profit_net": round(credit * pt - charges, 2) if charges is not None else None}
     loss_exit = plan.get("loss_exit_rupees")
     n_before = plan.get("exit_days_before_expiry")
     exit_by = subtract_trading_days(expiry, int(n_before)).isoformat() if n_before is not None else None
@@ -217,6 +242,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "credit_per_share": credit_ps, "credit": credit, "max_loss": max_loss, "reward_risk": rr,
             "charges_est": charges,
             "margin": {"required": margin_required, "buffer": buffer, "funds": funds_available},
+            "elm_estimate": trade.get("elm_estimate"),
             "risk": risk,
             "checks": checks,
             "exit_plan": {"target": target, "loss_exit": loss_exit, "exit_by": exit_by,
