@@ -45,10 +45,11 @@ def _run_eod_job():
     try:
         import httpx
         import os
+        from engine.session import INTERNAL_TOKEN_HEADER, INTERNAL_API_TOKEN
         port = os.environ.get("PORT", "8000")
         resp = httpx.post(
             f"http://localhost:{port}/api/live/run-eod",
-            headers={"X-User-Id": "1"},
+            headers={"X-User-Id": "1", INTERNAL_TOKEN_HEADER: INTERNAL_API_TOKEN},
             timeout=60,
         )
         result = resp.json()
@@ -91,9 +92,10 @@ def _run_auto_trade():
     logger.info(f"Generating {_TRADING_MODE.upper()} signal (manual execution mode)...")
     try:
         # Generate signal only — NO execution
+        from engine.session import INTERNAL_TOKEN_HEADER, INTERNAL_API_TOKEN
         resp = httpx.post(
             f"http://localhost:{port}/api/live/generate-signal",
-            headers={"X-User-Id": "1"},
+            headers={"X-User-Id": "1", INTERNAL_TOKEN_HEADER: INTERNAL_API_TOKEN},
             timeout=120,
         )
         gen_result = resp.json()
