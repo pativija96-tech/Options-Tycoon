@@ -39,6 +39,12 @@ else:
     TRADE_MINUTE_UTC = 50
 
 
+def _scheduled_jobs_enabled() -> bool:
+    """True only if SCHEDULED_JOBS_ENABLED is "1"/"true"/"yes" (read on every loop)."""
+    import os
+    return os.environ.get("SCHEDULED_JOBS_ENABLED", "").strip().lower() in ("1", "true", "yes")
+
+
 def _run_eod_job():
     """Execute the EOD resolution logic."""
     logger.info("Scheduled EOD job triggered")
@@ -244,11 +250,16 @@ def _scheduler_loop():
             _send_ibkr_heartbeat()
             last_heartbeat = time.time()
         
+        # Scheduled jobs (auto EOD resolution + morning auto-signal) are OFF unless
+        # SCHEDULED_JOBS_ENABLED is set: EOD overwrote real P&L with a formula, and
+        # the 9:20 signal ran before the daily Kite login (stale yfinance data).
+        jobs_enabled = _scheduled_jobs_enabled()
+
         # --- EOD check ---
         is_eod_time = now.hour == EOD_HOUR_UTC and now.minute == EOD_MINUTE_UTC
         eod_not_run = last_eod_date != today
-        
-        if is_weekday and is_eod_time and eod_not_run:
+
+        if jobs_enabled and is_weekday and is_eod_time and eod_not_run:
             logger.info(f"EOD trigger at {now.isoformat()} UTC")
             _run_eod_job()
             last_eod_date = today
@@ -257,7 +268,7 @@ def _scheduler_loop():
         is_trade_time = now.hour == TRADE_HOUR_UTC and now.minute == TRADE_MINUTE_UTC
         trade_not_run = last_trade_date != today
         
-        if is_weekday and is_trade_time and trade_not_run:
+        if jobs_enabled and is_weekday and is_trade_time and trade_not_run:
             logger.info(f"Auto-trade trigger at {now.isoformat()} UTC ({_TRADING_MODE.upper()})")
             _run_auto_trade()
             last_trade_date = today

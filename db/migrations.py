@@ -75,6 +75,15 @@ MIGRATIONS = [
             resolved_at TEXT
         )
     """),
+    # Migration 7: per-user Trading Plan (Phase 1 desk). Plain CREATE TABLE IF NOT EXISTS,
+    # same SQL on SQLite and PostgreSQL, no defaults that differ between them.
+    (7, "Add trading_plans table", """
+        CREATE TABLE IF NOT EXISTS trading_plans (
+            user_id INTEGER PRIMARY KEY,
+            plan_json TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """),
 ]
 
 

@@ -1765,3 +1765,99 @@ async def get_phase_status():
         return {"phase": phase, "error": str(e)[:100]}
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TRADING DESK (Phase 1): Trading Plan + one-click Trade Ticket
+# Read-only with respect to the broker: nothing here places or changes orders.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _desk_user_id(founder: dict) -> int:
+    """User id from the authenticated session (never from a browser-sent header)."""
+    try:
+        return int(founder.get("user_id") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+@router.get("/plan")
+async def get_trading_plan(founder: dict = Depends(require_founder)):
+    """The signed-in user's Trading Plan (unset rules are null) plus field descriptions."""
+    from engine.desk.plan import load_plan, PLAN_FIELDS, WEEKDAYS
+    return {
+        "plan": load_plan(_desk_user_id(founder)),
+        "fields": {k: {"type": t, "label": d} for k, (t, d) in PLAN_FIELDS.items()},
+        "weekdays": WEEKDAYS,
+    }
+
+
+@router.put("/plan")
+async def put_trading_plan(request: Request, founder: dict = Depends(require_founder)):
+    """Validate and save the signed-in user's Trading Plan."""
+    from engine.desk.plan import save_plan, PlanError
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"success": False, "error": "Body must be JSON"})
+    try:
+        plan = save_plan(_desk_user_id(founder), body.get("plan", body) if isinstance(body, dict) else body)
+    except PlanError as e:
+        return JSONResponse(status_code=400, content={"success": False, "error": str(e)})
+    return {"success": True, "plan": plan}
+
+
+@router.post("/trade-ticket")
+async def prepare_trade_ticket(request: Request, founder: dict = Depends(require_founder)):
+    """
+    One click: regenerate today's NIFTY signal, then build the Trade Ticket from it,
+    the user's plan and (when logged in) Kite's live quotes, margin and funds.
+    """
+    from engine.desk.plan import load_plan
+    from engine.desk.ticket import build_ticket
+    from engine.desk import kite_data
+
+    # 1. Fresh signal (same path as the Regenerate Signal button; writes today_signal_nifty.json)
+    gen = await generate_signal(request, mode="nifty")
+    if isinstance(gen, JSONResponse) or not (isinstance(gen, dict) and gen.get("success")):
+        detail = gen.body.decode()[:200] if isinstance(gen, JSONResponse) else str(gen)[:200]
+        return JSONResponse(status_code=502, content={"success": False, "error": f"Signal generation failed: {detail}"})
+    with open(OUTPUT_DIR / "today_signal_nifty.json") as f:
+        signal = json.load(f)
+
+    plan = load_plan(_desk_user_id(founder))
+    today = kite_data.ist_today()
+    lot = 65
+    try:
+        lot = int(((signal.get("trade") or {}).get("execution_sequence") or {}).get("phase_a_hedges_first", [{}])[0].get("qty") or 65)
+    except Exception:
+        pass
+
+    # 2. Kite data (optional; every failure is reported, never fatal)
+    errors, expiry, symbols, quotes, margin, funds = [], None, None, None, None, None
+    connected = False
+    try:
+        from engine.broker.kite_auth import is_authenticated, get_kite_client
+        kite = get_kite_client() if is_authenticated() else None
+    except Exception as e:
+        kite = None
+        errors.append(f"Kite unavailable: {str(e)[:120]}")
+    if kite and signal.get("action") == "trade":
+        connected = True
+        legs = [{"strike": l["strike"], "option": l["option"]} for l in signal["trade"]["legs"]]
+        expiry, symbols = kite_data.resolve_symbols(kite, legs, today, errors)
+        if symbols:
+            quotes = kite_data.fetch_quotes(kite, list(symbols.values()), errors)
+        funds = kite_data.available_funds(kite, errors)
+    elif not kite:
+        errors.append("Not logged in to Kite — prices are model estimates")
+
+    ticket = build_ticket(signal, plan, today, lot=lot, expiry=expiry, symbols=symbols, quotes=quotes,
+                          funds_available=funds, kite_errors=errors, kite_connected=connected)
+
+    # 3. Margin needs the final order prices, so it is checked after the ticket is priced
+    if kite and ticket.get("action") == "trade" and symbols:
+        margin = kite_data.basket_margin(kite, ticket["orders"], errors)
+        if margin is not None:
+            ticket = build_ticket(signal, plan, today, lot=lot, expiry=expiry, symbols=symbols, quotes=quotes,
+                                  margin_required=margin, funds_available=funds, kite_errors=errors, kite_connected=connected)
+    return {"success": True, "ticket": ticket}
