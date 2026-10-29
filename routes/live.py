@@ -2073,6 +2073,54 @@ async def desk_review(founder: dict = Depends(require_founder)):
             "risk": risk_budget(trades, load_plan(uid), kite_data.ist_today())}
 
 
+@router.post("/desk/history/load")
+async def desk_history_load(founder: dict = Depends(require_founder)):
+    """
+    Load ~6 years of daily candles: NIFTY 50 and India VIX from Kite (Yahoo only as a
+    labelled fallback), world indices from Yahoo. Runs only when the founder presses the button.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from engine.desk.history import load_all
+    from engine.desk import kite_data
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as pool:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(pool, lambda: load_all(_kite_or_none(), kite_data.ist_today())), timeout=240)
+    return {"success": True, **result}
+
+
+@router.get("/desk/history/status")
+async def desk_history_status(founder: dict = Depends(require_founder)):
+    from engine.desk.history import history_status
+    return {"success": True, "status": history_status()}
+
+
+@router.get("/desk/range-odds")
+async def desk_range_odds(horizon: int = 5, weekday: str = None, founder: dict = Depends(require_founder)):
+    """How far NIFTY moved over `horizon` trading days from past mornings like today's."""
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from engine.desk.history import load_series
+    from engine.desk.range_odds import report, WEEKDAYS
+    from engine.desk import kite_data
+    if not 1 <= horizon <= 10:
+        return JSONResponse(status_code=400, content={"success": False, "error": "horizon must be 1–10 trading days"})
+    if weekday is not None and weekday not in WEEKDAYS:
+        return JSONResponse(status_code=400, content={"success": False, "error": f"weekday must be one of {', '.join(WEEKDAYS)}"})
+    try:
+        with open(CONFIG_DIR / "settings.json") as f:
+            min_matches = int(json.load(f).get("min_historical_matches", 20))
+    except Exception:
+        min_matches = 20
+    wd = WEEKDAYS.index(weekday) if weekday else None
+    loop = asyncio.get_event_loop()
+    with ThreadPoolExecutor() as pool:
+        rep = await loop.run_in_executor(
+            pool, lambda: report(load_series(), kite_data.ist_today(), horizon=horizon, weekday=wd, min_matches=min_matches))
+    return {"success": True, "report": rep}
+
+
 @router.post("/desk/import-tradebook")
 async def desk_import_tradebook(request: Request, founder: dict = Depends(require_founder)):
     """Import a Kite Console tradebook CSV: keeps only 4-leg NIFTY iron condors, real fills only."""

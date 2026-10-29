@@ -116,6 +116,21 @@ MIGRATIONS = [
             updated_at TEXT
         )
     """),
+    # Migration 9: daily candles for the morning range check (NIFTY / India VIX from
+    # Kite, world indices from Yahoo). One row per symbol per day; source says where
+    # each row came from.
+    (9, "Add market_history table", """
+        CREATE TABLE IF NOT EXISTS market_history (
+            symbol TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL NOT NULL,
+            source TEXT NOT NULL,
+            PRIMARY KEY (symbol, date)
+        )
+    """),
 ]
 
 
