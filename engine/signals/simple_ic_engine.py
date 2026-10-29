@@ -28,6 +28,7 @@ WING_WIDTH = 100       # Long strikes 100 pts beyond short strikes
 DAYS_TO_EXPIRY = 3     # Weekly expiry (Tuesday)
 VIX_MAX = 40           # Don't trade if VIX > 40 (too chaotic)
 RISK_CAP_PCT = 0.25    # Max 25% of capital per trade (appropriate for ₹15K doing 1-lot IC)
+ELM_FACTOR = 0.80      # expiry-day extra margin ÷ normal margin, observed 24 Aug 2026 (~53.8k / 67k)
 
 # Phase-aware lot size
 import os as _os
@@ -252,7 +253,6 @@ def generate_daily_signal(capital: float = None) -> dict:
     except NameError:
         _cfg2 = {}
     margin_per_lot = _cfg2.get("nifty", {}).get("margin_per_lot", 67000) if isinstance(_cfg2, dict) else 67000
-    ELM_FACTOR = 0.80  # observed 24 Aug 2026 (~53.8k / 67k)
     elm_additional_est = round(margin_per_lot * ELM_FACTOR)
     elm_total_requirement_est = round(margin_per_lot + elm_additional_est)
     

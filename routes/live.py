@@ -1791,6 +1791,14 @@ async def get_trading_plan(founder: dict = Depends(require_founder)):
     }
 
 
+@router.get("/plan/book-rules")
+async def get_book_rules(founder: dict = Depends(require_founder)):
+    """Book-rule values (with sources) the Plan page can fill in. Does not save anything."""
+    from engine.desk.book_rules import book_preset
+    from engine.desk import kite_data
+    return {"success": True, **book_preset(kite_data.ist_today())}
+
+
 @router.put("/plan")
 async def put_trading_plan(request: Request, founder: dict = Depends(require_founder)):
     """Validate and save the signed-in user's Trading Plan."""
