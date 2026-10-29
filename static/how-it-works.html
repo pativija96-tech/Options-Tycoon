@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Options Tycoon — How it works</title>
+<meta name="description" content="How the Options Tycoon NIFTY weekly iron condor desk works: the strategy, the daily workflow, the rules and where every number comes from.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070B14;--card:#0E1525;--row:#121B2E;--line:rgba(148,163,184,.14);--text:#E6EAF2;--muted:#94A3B8;--soft:#CBD5E1;
+--gold:#F5B544;--green:#34D399;--green-t:#6EE7B7;--red:#FB7185;--red-t:#FDA4AF;--blue:#60A5FA;
+--font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);font-size:16px;line-height:1.65}
+a{color:var(--gold)}
+.wrap{max-width:980px;margin:0 auto;padding:24px 16px 64px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:28px}
+.brand{display:flex;align-items:center;gap:12px;text-decoration:none;color:var(--text)}
+.logo{width:36px;height:36px;border-radius:10px;background:var(--gold);display:flex;align-items:center;justify-content:center}
+.brand b{font-weight:800;font-size:18px;letter-spacing:-.3px}.brand b span{color:var(--gold)}
+.brand small{display:block;font-size:12px;color:var(--muted)}
+.links{display:flex;gap:8px;flex-wrap:wrap}
+.links a{padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--soft);text-decoration:none;font-size:14px;font-weight:600}
+h1{font-size:36px;line-height:1.15;letter-spacing:-.8px;margin:0 0 10px}
+h2{font-size:22px;margin:0 0 10px;letter-spacing:-.3px}
+h3{font-size:16px;margin:18px 0 6px}
+p{margin:0 0 12px;color:var(--soft)}
+.lead{font-size:18px;color:var(--soft);max-width:760px}
+.card{border-radius:20px;background:var(--card);border:1px solid var(--line);padding:22px 24px;margin:18px 0}
+.warn{border-color:rgba(245,181,68,.35);background:linear-gradient(0deg,rgba(245,181,68,.06),rgba(245,181,68,.06)),var(--card)}
+.toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 8px}
+.toc a{font-size:13px;padding:6px 12px;border-radius:999px;background:var(--row);border:1px solid var(--line);color:var(--soft);text-decoration:none}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+.steps li{counter-increment:s;display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border-radius:14px;background:var(--row)}
+.steps li::before{content:counter(s);flex:none;width:28px;height:28px;border-radius:50%;background:var(--gold);color:var(--bg);font-weight:800;display:flex;align-items:center;justify-content:center;font-size:14px}
+.steps b{color:var(--text)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid rgba(148,163,184,.08);vertical-align:top;color:var(--soft)}
+td:first-child{color:var(--text);font-weight:600}
+.mono{font-family:var(--mono)}
+.g{color:var(--green-t)}.r{color:var(--red-t)}
+ul{margin:0 0 12px;padding-left:20px;color:var(--soft)}
+li{margin:4px 0}
+.small{font-size:13px;color:var(--muted)}
+@media (max-width:640px){h1{font-size:28px}.card{padding:18px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="/static/dashboard.html">
+      <div class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#070B14" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"></polyline><polyline points="15 7 21 7 21 13"></polyline></svg></div>
+      <div><b>Options<span>Tycoon</span></b><small>How it works</small></div>
+    </a>
+    <nav class="links" aria-label="Pages">
+      <a href="/static/dashboard.html">Dashboard</a>
+      <a href="/static/desk.html">Trading Desk</a>
+    </nav>
+  </header>
+
+  <h1>How Options Tycoon works</h1>
+  <p class="lead">A rules-first desk for one NIFTY weekly iron condor. It builds the trade, checks it against your written rules, tracks it live and keeps an honest journal. It never places an order. You do that yourself in Kite.</p>
+
+  <div class="card warn">
+    <b>Not financial advice.</b> This is software that reads market data and does arithmetic. It cannot see the future, and an iron condor can lose several weeks of profit in one week. SEBI found that 93% of individual F&amp;O traders lost money in FY22–FY24
+    (<a href="https://www.sebi.gov.in/media-and-notifications/press-releases/sep-2024/updated-sebi-study-reveals-93-of-individual-traders-incurred-losses-in-equity-fando-between-fy22-and-fy24-aggregate-losses-exceed-1-8-lakh-crores-over-three-years_86906.html" rel="noopener" target="_blank">SEBI, Sep 2024</a>).
+  </div>
+
+  <nav class="toc" aria-label="Contents">
+    <a href="#strategy">The strategy</a><a href="#day">Your day</a><a href="#range">Morning range check</a>
+    <a href="#plan">Trading Plan</a><a href="#data">Where data comes from</a><a href="#money">Win and loss, in rupees</a>
+    <a href="#safety">Safety</a><a href="#who">Who can use it</a><a href="#limits">Known limits</a>
+  </nav>
+
+  <section class="card" id="strategy">
+    <h2>1 · The strategy</h2>
+    <p>One mechanical iron condor on the NIFTY weekly expiry. There is no forecast and no direction call.</p>
+    <div class="tw"><table>
+      <tr><th>Part</th><th>Rule</th></tr>
+      <tr><td>Strikes</td><td>NIFTY rounded to the nearest 50. Sell the call 250 points above and the put 250 points below</td></tr>
+      <tr><td>Wings (protection)</td><td>Buy the call and the put 100 points beyond each short strike. This caps the loss</td></tr>
+      <tr><td>Size</td><td>1 lot = 65 quantity</td></tr>
+      <tr><td>Order sequence</td><td>Entry: put hedge, call hedge, short put, short call, one LIMIT order at a time (NRML). Exit: buy back both shorts first, then sell the hedges</td></tr>
+      <tr><td>Exit</td><td>At 50% of the credit, or 1 trading day before expiry (to avoid the expiry-day margin jump), or at your loss exit</td></tr>
+      <tr><td>Skips a day when</td><td>India VIX is above 40, fewer than 2 days remain to expiry, the max loss is above 25% of capital, or the credit doesn't cover the charges</td></tr>
+    </table></div>
+  </section>
+
+  <section class="card" id="day">
+    <h2>2 · Your day on the desk</h2>
+    <ol class="steps">
+      <li><div><b>Log in to Kite</b> from the desk. The login lasts until about 6 AM IST the next day and is lost whenever the server restarts, so log in each morning.</div></li>
+      <li><div><b>Today → Morning range check.</b> Load history, then Check range. It shows the overnight world closes, India VIX, and how far NIFTY moved in past weeks that started like today. See section 3.</div></li>
+      <li><div><b>Today → Prepare today's trade.</b> You get a ticket: GO or NO-GO against your plan, each check with its reason, the 4 orders with live Kite prices and Copy buttons, credit, max loss, reward : risk, margin and the exit plan.</div></li>
+      <li><div><b>Place the 4 orders in Kite yourself,</b> one at a time, waiting for COMPLETE. Then press <b>Sync my fills</b>. The desk reads your completed Kite orders and records the real prices. If Kite isn't available, type the prices in.</div></li>
+      <li><div><b>Position tab</b> while you hold: live P&amp;L, progress to the profit target and the loss exit, distance to your short strikes, a payoff chart, and the exit ticket. Optional browser alerts work while the tab is open.</div></li>
+      <li><div><b>Exit in Kite, then Sync exit.</b> The desk records the real P&amp;L and asks whether you followed your plan.</div></li>
+      <li><div><b>Review tab:</b> net P&amp;L after estimated charges, win rate, average win and loss, expectancy in ₹ and R, drawdown, worst week, followed versus deviated trades, and your loss budget for the week and month. You can import your Kite tradebook CSV to add past trades.</div></li>
+    </ol>
+  </section>
+
+  <section class="card" id="range">
+    <h2>3 · Morning range check</h2>
+    <p>Made for checking before India opens. It answers one question from history: <i>on past mornings like today, how far did NIFTY move before I would have exited?</i> It does not say up or down.</p>
+    <ul>
+      <li><b>"Like today"</b> means a similar India VIX level (low, mid or high third of history), a similar overnight S&amp;P 500 move and a similar NIFTY 5-day trend. If too few past weeks match, it drops conditions one at a time. It needs at least 20 matches.</li>
+      <li><b>The move</b> runs from the entry day's open through your holding period, using each day's high and low, converted to today's NIFTY level.</li>
+      <li><b>It shows</b> how often NIFTY stayed within ±150 to ±400 points, with a 95% range, next to <i>all</i> past weeks, plus the largest moves.</li>
+      <li><b>The honesty check</b> trains on 3 years, tests on the next 6 months, and rolls forward. It says plainly whether matching on today's conditions beat plain history. If it didn't, it says so.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="plan">
+    <h2>4 · Trading Plan: your rules</h2>
+    <p>The ticket checks every trade against these rules. A blank rule is skipped and never blocks a trade. <b>Fill with book rules</b> fills the values below for you to review. Nothing is saved until you press Save plan.</p>
+    <div class="tw"><table>
+      <tr><th>Rule</th><th>Book value</th><th>Source</th></tr>
+      <tr><td>Entry days</td><td class="mono">Tue</td><td>Your own practice (not a book rule)</td></tr>
+      <tr><td>Highest India VIX</td><td class="mono">40</td><td>The signal engine's own skip rule</td></tr>
+      <tr><td>Minimum credit</td><td class="mono">⅓ of wing width</td><td>tastylive iron condor studies (100 ÷ 3 × 65 = ₹2,167)</td></tr>
+      <tr><td>Minimum reward : risk</td><td class="mono">0.50</td><td>Same ⅓-width rule</td></tr>
+      <tr><td>Profit target</td><td class="mono">50%</td><td>tastylive (manage winners at 50%) and your settings</td></tr>
+      <tr><td>Exit before expiry</td><td class="mono">1 day</td><td>Signal engine: avoid the expiry-day margin jump</td></tr>
+      <tr><td>Loss exit</td><td class="mono">2% of capital</td><td>Elder, <i>The New Trading for a Living</i>: the 2% rule</td></tr>
+      <tr><td>Monthly loss limit</td><td class="mono">6% of capital</td><td>Elder: the 6% rule</td></tr>
+      <tr><td>Expiry margin buffer</td><td class="mono">margin × 0.8</td><td>The engine's estimate, from a real expiry on 24 Aug 2026</td></tr>
+      <tr><td>Lowest VIX, max loss, weekly limit, pause after losses</td><td class="mono">not filled</td><td>No reliable book number, so they're left for you to decide</td></tr>
+    </table></div>
+  </section>
+
+  <section class="card" id="data">
+    <h2>5 · Where the data comes from</h2>
+    <div class="tw"><table>
+      <tr><th>Data</th><th>Source</th><th>Note</th></tr>
+      <tr><td>Live option prices, margin, your orders and fills</td><td>Kite Connect</td><td>Needs a daily Kite login and the plan that includes market data</td></tr>
+      <tr><td>NIFTY 50 and India VIX history</td><td>Kite historical candles</td><td>Yahoo Finance only as a clearly labelled fallback</td></tr>
+      <tr><td>Overnight world markets</td><td>Yahoo Finance</td><td>S&amp;P 500, Nasdaq, US VIX, dollar index, US 10-yr yield, FTSE, DAX, Nikkei, Hang Seng</td></tr>
+      <tr><td>Prices when Kite isn't logged in</td><td>Model estimates (Black-Scholes)</td><td>The ticket says so, and the leg prices must be checked in Kite</td></tr>
+      <tr><td>Charges</td><td>Estimate</td><td>₹20 per order + 18% GST on brokerage + ₹50 ≈ ₹238.80 for a full trade (8 orders)</td></tr>
+    </table></div>
+  </section>
+
+  <section class="card" id="money">
+    <h2>6 · Win and loss, in rupees</h2>
+    <p>A real trade from 26 Aug 2026: credit ₹27.80 per share × 65.</p>
+    <div class="tw"><table>
+      <tr><th>Outcome</th><th>₹</th><th>% of ₹75,000 capital</th></tr>
+      <tr><td>Full credit (the most it can make)</td><td class="mono g">+1,807</td><td class="mono">2.4%</td></tr>
+      <tr><td>Exit at the 50% target, after charges</td><td class="mono g">+665</td><td class="mono">0.9%</td></tr>
+      <tr><td>Full loss, including charges</td><td class="mono r">−4,932</td><td class="mono">6.6%</td></tr>
+    </table></div>
+    <p class="small">One full loss wipes out about 7 target wins. Cutting losses early, with the loss exit, is what keeps the strategy viable.</p>
+  </section>
+
+  <section class="card" id="safety">
+    <h2>7 · Safety</h2>
+    <ul>
+      <li><b>No automatic orders.</b> The desk never places, changes or cancels an order. The older automatic-execution route stays off unless it is deliberately switched on in the server settings.</li>
+      <li><b>Founder-only.</b> The desk and its data open only for the founder's Google account. Anyone else gets "Access denied".</li>
+      <li><b>The Kite secret stays on the server.</b> The Kite API secret and your daily login token live only on the server and never reach the browser.</li>
+      <li><b>Every number shows its source,</b> and anything estimated is labelled as an estimate.</li>
+    </ul>
+  </section>
+
+  <section class="card" id="who">
+    <h2>8 · Who can use it</h2>
+    <p>Right now the desk is built for <b>one person</b>: the founder's own Kite account. The server holds a single Kite login, so a second person logging in would replace the first. Capital and margin also come from one settings file.</p>
+    <p>A friend can read this page and use the public analysis pages, or watch the desk on your screen. Letting friends use it with their own accounts needs a per-person Kite login, per-person settings and proper user accounts. That's planned work, not available yet.</p>
+  </section>
+
+  <section class="card" id="limits">
+    <h2>9 · Known limits (being worked on)</h2>
+    <ul>
+      <li>There's no backtest yet on real NSE option prices for this exact strategy (Phase 5). The win rate is not yet proven.</li>
+      <li>The ticket doesn't warn when a trade is already open. Only syncing a second trade is refused.</li>
+      <li>The ticket lives in the browser. Prepare and sync on the same device.</li>
+      <li>If India VIX can't be fetched, the signal engine uses 15.0 without saying so.</li>
+      <li>"Exit by" skips weekends but not NSE holidays.</li>
+      <li>Alerts work only while the Position tab is open.</li>
+    </ul>
+  </section>
+
+  <p class="small">Options Tycoon · built for disciplined, rules-first trading. History and estimates only: the future can do things the past never did.</p>
+</div>
+</body>
+</html>
