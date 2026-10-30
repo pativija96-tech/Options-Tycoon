@@ -62,6 +62,8 @@ h1{margin:4px 0 0;font-size:34px;font-weight:800;letter-spacing:-.8px}
 .copy{min-height:36px;min-width:72px;padding:0 12px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;background:transparent;border:1px solid rgba(148,163,184,.35);color:var(--text)}
 .copy.done{background:rgba(52,211,153,.18);border-color:rgba(52,211,153,.5);color:var(--green-t)}
 .note{font-size:12px;color:var(--muted)}
+.odds{width:100%;border-collapse:collapse;font-size:14px}.odds th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}.odds td{padding:8px 10px;border-bottom:1px solid var(--line);font-family:var(--mono)}.odds td:first-child{font-family:var(--font);font-weight:600}
+.tablewrap{overflow-x:auto}
 .exitgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .check{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.10)}
 .ico{width:24px;height:24px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900}
@@ -136,6 +138,19 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
     <div>
       <div class="eyebrow" id="todayDate"></div>
       <h1>Today's trade</h1>
+    </div>
+    <div id="rangeBox" class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+        <div><div style="font-size:18px;font-weight:700">Morning range check</div>
+        <div class="note" style="font-size:13px;max-width:620px">How far NIFTY moved in past weeks that started on mornings like today's: overnight world closes, India VIX and NIFTY's 5-day move. Counts from history only. It does not predict direction.</div></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label class="note">Entry day <select id="roDay" style="min-height:36px"></select></label>
+          <label class="note">Hold <select id="roHorizon" style="min-height:36px"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option></select> days</label>
+          <button class="btn" style="min-height:40px" id="roBtn" onclick="loadRange()">Check range</button>
+          <button class="btn ghost" style="min-height:40px" id="histBtn" onclick="loadHistory()">Load history</button>
+        </div>
+      </div>
+      <div id="rangeOut"><div class="note">Press <b>Load history</b> once (log in to Kite first for NIFTY and India VIX), then <b>Check range</b>. Reload history each morning for the latest closes.</div></div>
     </div>
     <div id="heroBox" class="card hero">
       <div style="font-size:20px;font-weight:700" id="heroTitle">Build today's ticket</div>
@@ -246,6 +261,85 @@ function marketPills(t){
   else{d.className='pill warn';d.innerHTML='<span class="dot"></span>Delayed data ('+esc(m.data_source)+')';}
   var mk=el('pillMarket');mk.classList.remove('hide');
   mk.innerHTML='NIFTY <span class="mono">'+(m.spot?Math.round(m.spot).toLocaleString('en-IN'):'—')+'</span> · VIX <span class="mono">'+(m.vix!=null?num(m.vix,1):'—')+'</span>';
+}
+
+// ---------- morning range check ----------
+var WORLD_LABEL={sp500:'S&P 500',nasdaq:'Nasdaq',vix:'US VIX',dxy:'US dollar index',us_10y:'US 10-yr yield',ftse:'FTSE 100',dax:'DAX',nikkei:'Nikkei 225',hang_seng:'Hang Seng'};
+var DIM_LABEL={vix_band:'India VIX level',us_bucket:'S&P 500 overnight move',trend_bucket:'NIFTY 5-day trend'};
+function pct(v){return v==null?'—':(v>0?'+':'')+num(v,2)+'%';}
+(function(){
+  var sel=el('roDay');if(!sel)return;var d=new Date().getDay();
+  ['Mon','Tue','Wed','Thu','Fri'].forEach(function(w,i){
+    var o=document.createElement('option');o.textContent=w;
+    if(i+1===d||((d===0||d===6)&&w==='Tue'))o.selected=true;
+    sel.appendChild(o);
+  });
+})();
+function historyTable(st){
+  var h='<div class="tablewrap"><table class="odds"><tr><th>Series</th><th>Days</th><th>From</th><th>To</th><th>Source</th></tr>';
+  (st||[]).forEach(function(r){h+='<tr><td>'+esc(r.label)+'</td><td>'+r.rows+'</td><td>'+esc(r.first||'—')+'</td><td>'+esc(r.last||'—')+'</td><td>'+esc((r.sources||[]).join(', ')||'—')+'</td></tr>';});
+  return h+'</table></div>';
+}
+window.loadHistory=function(){
+  var b=el('histBtn');b.disabled=true;b.textContent='Loading… (1–3 min)';showError('');
+  api('/api/live/desk/history/load',{method:'POST'}).then(function(d){
+    var h='<div class="note" style="font-size:13px">Saved '+Number(d.saved).toLocaleString('en-IN')+' daily rows · NIFTY / India VIX from <b>'+esc(d.india_source)+'</b></div>';
+    h+=historyTable(d.status);
+    if(d.errors&&d.errors.length){h+='<ul class="notes">';d.errors.forEach(function(e){h+='<li>'+esc(e)+'</li>';});h+='</ul>';}
+    el('rangeOut').innerHTML=h;
+  }).catch(function(e){showError(e.message);}).then(function(){b.disabled=false;b.textContent='Load history';});
+};
+window.loadRange=function(){
+  var b=el('roBtn');b.disabled=true;b.textContent='Checking…';showError('');
+  api('/api/live/desk/range-odds?horizon='+encodeURIComponent(el('roHorizon').value)+'&weekday='+encodeURIComponent(el('roDay').value))
+  .then(function(d){renderRange(d.report);})
+  .catch(function(e){showError(e.message);}).then(function(){b.disabled=false;b.textContent='Check range';});
+};
+function renderRange(r){
+  var out=el('rangeOut');
+  if(!r.ready){out.innerHTML='<div class="note" style="font-size:14px">'+esc(r.reason)+'</div>';return;}
+  var c=r.conditions,h='';
+  h+='<div style="font-weight:700">Overnight world closes <span class="note">(last close before India opened)</span></div>';
+  h+='<div class="tablewrap"><table class="odds"><tr><th>Market</th><th>Move</th><th>Close dated</th></tr>';
+  c.world.forEach(function(w){
+    var col=w.change_pct>0?'var(--green)':(w.change_pct<0?'var(--red)':'var(--soft)');
+    h+='<tr><td>'+esc(WORLD_LABEL[w.symbol]||w.symbol)+'</td><td style="color:'+col+'">'+pct(w.change_pct)+'</td><td>'+esc(w.date||'—')+'</td></tr>';
+  });
+  h+='</table></div>';
+  h+='<div class="note" style="font-size:13px">India VIX <b class="mono">'+(c.india_vix!=null?num(c.india_vix,2):'—')+'</b>'+(c.india_vix_date?' ('+esc(c.india_vix_date)+')':'')+
+     (c.vix_terciles?' · history thirds: below '+num(c.vix_terciles[0],1)+' is low, '+num(c.vix_terciles[1],1)+'+ is high':'')+
+     ' · NIFTY 5-day <b class="mono">'+pct(c.nifty_5d_pct)+'</b> · NIFTY '+Math.round(r.spot).toLocaleString('en-IN')+' ('+esc(r.spot_date)+')</div>';
+  var on=(r.matched_on||[]).map(function(k){return DIM_LABEL[k]+' = '+esc(c.buckets[k]);});
+  h+='<div style="font-weight:700;margin-top:4px">'+(r.matches?r.matches+' past '+esc(r.weekday)+'s matched ('+r.episodes+' separate spells)':'No close matches — all days only')+
+     ' <span class="note">out of '+r.all_windows+' since '+esc(r.history_from)+'</span></div>';
+  if(on.length)h+='<div class="note" style="font-size:13px">Matched on: '+on.join(' · ')+'</div>';
+  h+='<div class="tablewrap"><table class="odds"><tr><th>Stayed within</th><th>Like today</th><th>95% range</th><th>All '+esc(r.weekday)+'s</th><th>Difference</th><th>Ended inside</th></tr>';
+  r.rows.forEach(function(x){
+    var m=x.matched;
+    var lcol=x.lift>0?'var(--green)':(x.lift<0?'var(--red)':'var(--soft)');
+    h+='<tr><td>±'+x.width+' pts <span class="note">('+num(x.width_pct,2)+'%)</span></td>'+
+       '<td>'+(m?m.pct+'% <span class="note">'+m.stayed+'/'+m.n+'</span>':'—')+'</td>'+
+       '<td>'+(m?m.ci95[0]+'–'+m.ci95[1]+'%':'—')+'</td>'+
+       '<td>'+x.all.pct+'% <span class="note">'+x.all.stayed+'/'+x.all.n+'</span></td>'+
+       '<td style="color:'+lcol+'">'+(x.lift==null?'—':(x.lift>0?'+':'')+x.lift+' pts')+'</td>'+
+       '<td>'+(m?m.closed_inside+'/'+m.n:'—')+'</td></tr>';
+  });
+  h+='</table></div>';
+  h+='<div class="note" style="font-size:13px">"Stayed within" = never traded beyond ±width at any point (daily high/low). "Ended inside" = closed inside on the last day of the hold. "Difference" = like-today minus all days, in percentage points.</div>';
+  if(r.worst&&r.worst.length){
+    h+='<div style="font-weight:700">Largest moves among '+(r.matches?'the matches':'all days')+'</div>';
+    h+='<div class="tablewrap"><table class="odds"><tr><th>Week of</th><th>Direction</th><th>Move</th><th>At today&#39;s level</th></tr>';
+    r.worst.forEach(function(w){h+='<tr><td>'+esc(w.date)+'</td><td>'+esc(w.direction)+'</td><td>'+num(w.move_pct,2)+'%</td><td>'+Number(w.move_pts_today).toLocaleString('en-IN')+' pts</td></tr>';});
+    h+='</table></div>';
+  }
+  var wf=r.walk_forward;
+  if(wf){
+    h+='<div class="row" style="flex-direction:column;align-items:flex-start;gap:4px"><div style="font-weight:700">Honesty check · ±250 pts</div>'+
+       '<div class="note" style="font-size:13px">'+esc(wf.verdict)+'. Tested on '+wf.tested_weeks+' unseen weeks (train 3 years, test the next 6 months, roll forward). Error score: like-today '+wf.brier_matched+' vs all days '+wf.brier_all_days+' (lower is better).</div></div>';
+  }
+  (r.notes||[]).forEach(function(n){h+='<div class="note" style="color:var(--gold);font-size:13px">'+esc(n)+'</div>';});
+  h+='<div class="note">'+esc(r.method)+' History only — the future can do things these years never did.</div>';
+  out.innerHTML=h;
 }
 
 // ---------- today / ticket ----------
