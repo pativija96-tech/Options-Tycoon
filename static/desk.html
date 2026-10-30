@@ -198,6 +198,7 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
       <div class="form" id="planForm"></div>
       <div style="padding:0 24px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center">
         <button class="btn" id="savePlanBtn" onclick="savePlan()">Save plan</button>
+        <button class="btn ghost" id="bookBtn" onclick="fillBookRules()">Fill with book rules</button>
         <span id="planMsg" class="note"></span>
       </div>
     </div>
@@ -423,14 +424,14 @@ function renderPlan(){
   Object.keys(f).forEach(function(k){
     var t=f[k].type,label=esc(f[k].label);
     if(t==='number'){
-      h+='<div class="field"><label for="pf_'+k+'">'+label+'</label><input type="number" step="any" min="0" id="pf_'+k+'" value="'+(p[k]==null?'':esc(p[k]))+'" placeholder="Not set"></div>';
+      h+='<div class="field"><label for="pf_'+k+'">'+label+'</label><input type="number" step="any" min="0" id="pf_'+k+'" value="'+(p[k]==null?'':esc(p[k]))+'" placeholder="Not set"><div class="note src" id="src_'+k+'"></div></div>';
     }else if(t==='days'){
       h+='<div class="field"><span style="font-size:13px;color:var(--soft);font-weight:600">'+label+'</span><div class="days">';
       state.weekdays.forEach(function(d){h+='<label><input type="checkbox" class="pf_day" value="'+d+'"'+((p.entry_days||[]).indexOf(d)>=0?' checked':'')+'>'+d+'</label>';});
-      h+='</div></div>';
+      h+='</div><div class="note src" id="src_'+k+'"></div></div>';
     }else if(t==='events'){
       h+='<div class="events"><span style="font-size:13px;color:var(--soft);font-weight:600">'+label+'</span><div id="evList"></div>'+
-         '<div><button class="btn ghost" style="min-height:40px" onclick="addEvent()">+ Add event</button></div></div>';
+         '<div><button class="btn ghost" style="min-height:40px" onclick="addEvent()">+ Add event</button></div><div class="note src" id="src_'+k+'"></div></div>';
     }
   });
   el('planForm').innerHTML=h;renderEvents();
@@ -447,6 +448,30 @@ function renderEvents(){
 window.addEvent=function(){state.plan.events=(state.plan.events||[]).concat([{date:'',label:''}]);renderEvents();};
 window.removeEvent=function(i){state.plan.events.splice(i,1);renderEvents();};
 window.setEvent=function(i,k,v){state.plan.events[i][k]=v;};
+window.fillBookRules=function(){
+  var b=el('bookBtn'),msg=el('planMsg');b.disabled=true;msg.textContent='Loading book rules…';msg.style.color='';
+  api('/api/live/plan/book-rules').then(function(d){
+    var v=d.values||{};
+    Object.keys(v).forEach(function(k){
+      var f=state.fields[k];if(!f)return;
+      if(f.type==='number'){var i=el('pf_'+k);if(i)i.value=v[k]==null?'':v[k];}
+      else if(f.type==='days'){[].slice.call(document.querySelectorAll('.pf_day')).forEach(function(c){c.checked=v[k].indexOf(c.value)>=0;});}
+      else if(f.type==='events'){
+        var have={};(state.plan.events||[]).forEach(function(e){have[e.date+'|'+e.label]=1;});
+        state.plan.events=(state.plan.events||[]).concat(v[k].filter(function(e){return !have[e.date+'|'+e.label];}));
+        renderEvents();
+      }
+    });
+    Object.keys(state.fields).forEach(function(k){
+      var s=el('src_'+k);if(!s)return;
+      if(d.sources&&d.sources[k]){s.textContent='Source: '+d.sources[k];s.style.color='';}
+      else if(d.not_filled&&d.not_filled[k]){s.textContent='Not filled: '+d.not_filled[k];s.style.color='var(--gold)';}
+    });
+    var extra=(d.notes||[]).length?' · '+d.notes.join(' · '):'';
+    msg.textContent='Filled with book rules. Nothing is saved yet. Review each value, then press Save plan.'+extra;msg.style.color='var(--gold)';
+  }).catch(function(e){msg.textContent=e.message;msg.style.color='var(--red-t)';})
+  .then(function(){b.disabled=false;});
+};
 window.savePlan=function(){
   var out={};
   Object.keys(state.fields).forEach(function(k){

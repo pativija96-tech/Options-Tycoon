@@ -332,6 +332,11 @@ class TestDeskEndpoints:
         assert r.status_code == 200 and r.json()["plan"]["min_rr"] == 0.6
         assert self.c.get("/api/live/plan").json()["plan"]["entry_days"] == ["Wed"]
 
+    def test_book_rules_endpoint_fills_but_never_saves(self):
+        r = self.c.get("/api/live/plan/book-rules").json()
+        assert r["success"] and r["values"]["min_credit"] == 2167 and r["sources"]["min_credit"]
+        assert self.c.get("/api/live/plan").json()["plan"]["min_credit"] is None
+
     def test_plan_put_rejects_bad_values(self):
         r = self.c.put("/api/live/plan", json={"plan": {"min_rr": "abc"}})
         assert r.status_code == 400 and "number" in r.json()["error"]
@@ -374,3 +379,43 @@ class TestScheduledJobsSwitch:
         else:
             monkeypatch.setenv("SCHEDULED_JOBS_ENABLED", value)
         assert _scheduled_jobs_enabled() is expected
+
+
+# ── Book-rules preset (fills the Plan form, never saves) ────────────────────
+
+class TestBookRules:
+    def _preset(self):
+        from engine.desk.book_rules import book_preset
+        return book_preset(date(2026, 10, 30))
+
+    def test_values_follow_their_sources(self):
+        v = self._preset()["values"]
+        assert v["entry_days"] == ["Tue"]
+        assert v["vix_max"] == 40                       # simple_ic_engine VIX_MAX
+        assert v["min_credit"] == 2167                  # 100 / 3 × 65
+        assert v["min_rr"] == 0.5
+        assert v["loss_exit_rupees"] == 1500            # Elder 2% of 75,000
+        assert v["monthly_loss_limit"] == 4500          # Elder 6% of 75,000
+        assert v["expiry_margin_buffer"] == 53600       # 67,000 × ELM_FACTOR 0.80
+        assert v["profit_target_pct"] == 0.5 and v["exit_days_before_expiry"] == 1
+
+    def test_every_value_has_a_source_and_unsourced_fields_are_left_alone(self):
+        p = self._preset()
+        assert set(p["values"]) == set(p["sources"])
+        assert set(p["not_filled"]) == {"vix_min", "max_loss_per_trade", "weekly_loss_limit", "pause_after_losses"}
+        assert not set(p["not_filled"]) & set(p["values"])
+
+    def test_preset_is_a_valid_plan(self):
+        plan = validate_plan(self._preset()["values"])
+        assert plan["max_loss_per_trade"] is None and plan["min_credit"] == 2167
+
+    def test_events_are_upcoming_nifty_or_all_and_weekends_flagged(self):
+        p = self._preset()
+        dates = [e["date"] for e in p["values"]["events"]]
+        assert dates == sorted(dates) and all(d >= "2026-10-30" for d in dates)
+        assert "2026-11-05" not in dates                # FOMC is tagged QQQ in the calendar
+        assert any("2026-12-05" in n and "Saturday" in n for n in p["notes"])
+
+    def test_engine_elm_estimate_unchanged_by_shared_constant(self):
+        from engine.signals.simple_ic_engine import ELM_FACTOR
+        assert ELM_FACTOR == 0.80 and round(67000 * ELM_FACTOR) == 53600
