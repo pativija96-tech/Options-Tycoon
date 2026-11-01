@@ -216,6 +216,23 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     else:
         add("prices_live", "Leg prices from Kite", "unknown", "Model estimates — Kite quotes not available")
 
+    # Time to hold: the next session you could enter in must come before the exit-by day.
+    n_before = plan.get("exit_days_before_expiry")
+    exit_by_d = subtract_trading_days(expiry, int(n_before)) if n_before is not None else None
+    session = today
+    while session.weekday() >= 5:
+        session += timedelta(days=1)
+    if exit_by_d is None:
+        add("time_to_hold", "Time to hold before exit-by", "unset", "No exit-before-expiry rule in your plan")
+    elif exit_by_d <= session:
+        add("time_to_hold", "Time to hold before exit-by", "fail",
+            f"No time to hold: exit-by is {DAY_NAMES[exit_by_d.weekday()]} {exit_by_d.isoformat()}, the next session is "
+            f"{DAY_NAMES[session.weekday()]} {session.isoformat()}. This is the {expiry.isoformat()} contract — "
+            "prepare again on expiry day for next week's")
+    else:
+        add("time_to_hold", "Time to hold before exit-by", "pass",
+            f"Enter {DAY_NAMES[session.weekday()]} {session.isoformat()}, exit by {DAY_NAMES[exit_by_d.weekday()]} {exit_by_d.isoformat()}")
+
     fails = [c for c in checks if c["status"] == "fail"]
     unset = [c for c in checks if c["status"] == "unset"]
     verdict = "NO-GO" if fails else "GO"
@@ -229,8 +246,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
                   # Charges are paid on all 8 orders, so the net is the gross profit minus all of them.
                   "profit_net": round(credit * pt - charges, 2) if charges is not None else None}
     loss_exit = plan.get("loss_exit_rupees")
-    n_before = plan.get("exit_days_before_expiry")
-    exit_by = subtract_trading_days(expiry, int(n_before)).isoformat() if n_before is not None else None
+    exit_by = exit_by_d.isoformat() if exit_by_d else None
 
     return {**base,
             "action": "trade", "verdict": verdict,
