@@ -2082,10 +2082,11 @@ async def desk_review(founder: dict = Depends(require_founder)):
 
 
 @router.post("/desk/history/load")
-async def desk_history_load(founder: dict = Depends(require_founder)):
+async def desk_history_load(full: bool = False, founder: dict = Depends(require_founder)):
     """
-    Load ~6 years of daily candles: NIFTY 50 and India VIX from Kite (Yahoo only as a
-    labelled fallback), world indices from Yahoo. Runs only when the founder presses the button.
+    Top up daily candles from the last stored day (full ~6-year load for an empty series, or
+    with ?full=1): NIFTY 50 and India VIX from Kite (Yahoo only as a labelled fallback), world
+    indices from Yahoo. Runs only when the founder presses the button.
     """
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
@@ -2094,7 +2095,7 @@ async def desk_history_load(founder: dict = Depends(require_founder)):
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor() as pool:
         result = await asyncio.wait_for(
-            loop.run_in_executor(pool, lambda: load_all(_kite_or_none(), kite_data.ist_today())), timeout=240)
+            loop.run_in_executor(pool, lambda: load_all(_kite_or_none(), kite_data.ist_today(), full=full)), timeout=240)
     return {"success": True, **result}
 
 
