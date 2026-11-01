@@ -3,12 +3,16 @@ Trading Plan — the user's own rules, stored per user, read by the Trade Ticket
 
 Every rule may be left unset (None / empty). An unset rule shows as "Not set in
 your plan" on the ticket instead of the app inventing a threshold for you.
-Defaults are only rules the existing signal engine already applies:
+
+The default plan (until the user saves their own) is the "book rules" preset from
+engine/desk/book_rules.py — every value there names its source (Elder's 2%/6% rules,
+tastylive's ⅓-width credit and 50% target, the signal engine's VIX 40 / ELM / 1-day-early
+exit, Tuesday entry, the event calendar). Fields with no reliable book number stay unset.
+engine_plan() is the narrower set the signal engine itself applies:
   profit_target_pct        — settings.json nifty.profit_target_pct (the engine's 50% exit)
   exit_days_before_expiry  — 1, the engine's "exit before expiry morning" rule
-                             (simple_ic_engine.py exit_sequence.trigger_note)
-settings.json max_loss_per_trade is NOT a default: the engine only displays it;
-its real max-loss rule (25% of capital) is checked on the ticket itself.
+settings.json max_loss_per_trade is in neither: the engine only displays it; its real
+max-loss rule (25% of capital) is checked on the ticket itself.
 """
 
 import json
@@ -39,6 +43,18 @@ PLAN_FIELDS = {
 
 
 def default_plan() -> dict:
+    """The book-rules preset (each value sourced in book_rules.py); the engine's rules if it can't be built."""
+    plan = engine_plan()
+    try:
+        from engine.desk.book_rules import book_preset
+        from engine.desk.kite_data import ist_today
+        plan.update({k: v for k, v in book_preset(ist_today())["values"].items() if k in PLAN_FIELDS})
+    except Exception as e:
+        logger.warning(f"Book-rules default unavailable, using the engine's rules only: {e}")
+    return plan
+
+
+def engine_plan() -> dict:
     """A plan with only the signal engine's own exit rules; everything else unset."""
     plan = {k: None for k in PLAN_FIELDS}
     plan["entry_days"] = []
