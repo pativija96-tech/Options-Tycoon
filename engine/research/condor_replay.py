@@ -59,8 +59,9 @@ def replay(rows_or_days, *, offset=250, wing=100, lot=65, target_pct=0.5, loss_e
     trades, skipped = [], []
     busy_until = None
     for d0, expiry in _pick_entries(days, entry):
-        if busy_until and d0 <= busy_until:
-            continue                                   # one condor at a time, as on the desk
+        if busy_until and d0 < busy_until:
+            continue                                   # one condor at a time; re-entry on the exit day is allowed
+                                                       # (a hold-to-expiry trade closes at that day's close)
         chain = days[d0].get(expiry, {})
         spot = parity_spot(chain)
         if spot is None:
