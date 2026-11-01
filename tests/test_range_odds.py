@@ -125,9 +125,24 @@ class TestReport:
 
     def test_walk_forward_compares_against_plain_history(self):
         wf = R.report(synthetic(), date(2026, 10, 28), weekday=1)["walk_forward"]
-        assert set(wf) == {"tested_weeks", "brier_matched", "brier_all_days", "verdict"}
-        better = wf["brier_matched"] < wf["brier_all_days"]
-        assert ("did NOT" not in wf["verdict"]) == better
+        assert set(wf) == {"tested_weeks", "brier_matched", "brier_all_days", "skill_pct", "t_stat", "verdict"}
+        if abs(wf["t_stat"]) < 2:
+            assert wf["verdict"].startswith("About the same")
+        else:
+            assert ("better" in wf["verdict"]) == (wf["t_stat"] <= -2)
+
+    def test_random_data_is_not_called_an_edge(self):
+        # Synthetic random walks hold no real signal: the verdict must not claim one.
+        for seed in (1, 7, 42):
+            wf = R.report(synthetic(seed=seed), date(2026, 10, 28), weekday=1)["walk_forward"]
+            assert not wf["verdict"].startswith("Matching on today's conditions predicted better"), wf
+
+    def test_ended_inside_shown_for_all_days_too(self):
+        rep = R.report(synthetic(), date(2026, 10, 28), weekday=1)
+        for r in rep["rows"]:
+            assert 0 <= r["all"]["closed_inside"] <= r["all"]["n"]
+        ends = [r["all"]["closed_inside"] for r in rep["rows"]]
+        assert ends == sorted(ends)
 
 
 # ── Loaders ─────────────────────────────────────────────────────────────────
