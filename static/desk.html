@@ -314,8 +314,12 @@ function renderRange(r){
   var on=(r.matched_on||[]).map(function(k){return DIM_LABEL[k]+' = '+esc(c.buckets[k]);});
   h+='<div style="font-weight:700;margin-top:4px">'+(r.matches?r.matches+' past '+esc(r.weekday)+'s matched ('+r.episodes+' separate spells)':'No close matches — all days only')+
      ' <span class="note">out of '+r.all_windows+' since '+esc(r.history_from)+'</span></div>';
-  if(on.length)h+='<div class="note" style="font-size:13px">Matched on: '+on.join(' · ')+'</div>';
-  h+='<div class="tablewrap"><table class="odds"><tr><th>Stayed within</th><th>Like today</th><th>95% range</th><th>All '+esc(r.weekday)+'s</th><th>Difference</th><th>Ended inside</th></tr>';
+  if(on.length){
+    var dropped=['vix_band','us_bucket','trend_bucket'].filter(function(k){return (r.matched_on||[]).indexOf(k)<0&&c.buckets[k];});
+    h+='<div class="note" style="font-size:13px">Matched on: '+on.join(' · ')+
+       (dropped.length?' · <span style="color:var(--gold)">not used (too few past matches): '+dropped.map(function(k){return DIM_LABEL[k]+' = '+esc(c.buckets[k]);}).join(', ')+'</span>':'')+'</div>';
+  }
+  h+='<div class="tablewrap"><table class="odds"><tr><th>Stayed within</th><th>Like today</th><th>95% range</th><th>All '+esc(r.weekday)+'s</th><th>Difference</th><th>Ended inside · like today</th><th>Ended inside · all</th></tr>';
   r.rows.forEach(function(x){
     var m=x.matched;
     var lcol=x.lift>0?'var(--green)':(x.lift<0?'var(--red)':'var(--soft)');
@@ -324,7 +328,8 @@ function renderRange(r){
        '<td>'+(m?m.ci95[0]+'–'+m.ci95[1]+'%':'—')+'</td>'+
        '<td>'+x.all.pct+'% <span class="note">'+x.all.stayed+'/'+x.all.n+'</span></td>'+
        '<td style="color:'+lcol+'">'+(x.lift==null?'—':(x.lift>0?'+':'')+x.lift+' pts')+'</td>'+
-       '<td>'+(m?m.closed_inside+'/'+m.n:'—')+'</td></tr>';
+       '<td>'+(m?m.closed_inside+'/'+m.n+' <span class="note">'+Math.round(m.closed_inside/m.n*100)+'%</span>':'—')+'</td>'+
+       '<td>'+x.all.closed_inside+'/'+x.all.n+' <span class="note">'+Math.round(x.all.closed_inside/x.all.n*100)+'%</span></td></tr>';
   });
   h+='</table></div>';
   h+='<div class="note" style="font-size:13px">"Stayed within" = never traded beyond ±width at any point (daily high/low). "Ended inside" = closed inside on the last day of the hold. "Difference" = like-today minus all days, in percentage points.</div>';
@@ -337,7 +342,7 @@ function renderRange(r){
   var wf=r.walk_forward;
   if(wf){
     h+='<div class="row" style="flex-direction:column;align-items:flex-start;gap:4px"><div style="font-weight:700">Honesty check · ±250 pts</div>'+
-       '<div class="note" style="font-size:13px">'+esc(wf.verdict)+'. Tested on '+wf.tested_weeks+' unseen weeks (train 3 years, test the next 6 months, roll forward). Error score: like-today '+wf.brier_matched+' vs all days '+wf.brier_all_days+' (lower is better).</div></div>';
+       '<div class="note" style="font-size:13px">'+esc(wf.verdict)+'. Tested on '+wf.tested_weeks+' unseen weeks (train 3 years, test the next 6 months, roll forward). Error score: like-today '+wf.brier_matched+' vs all days '+wf.brier_all_days+' (lower is better). Only a gap of about two standard errors counts as better or worse.</div></div>';
   }
   (r.notes||[]).forEach(function(n){h+='<div class="note" style="color:var(--gold);font-size:13px">'+esc(n)+'</div>';});
   h+='<div class="note">'+esc(r.method)+' History only — the future can do things these years never did.</div>';

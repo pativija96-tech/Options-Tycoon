@@ -148,13 +148,15 @@ def walk_forward(samples, w_pct, min_matches, train_years=3, test_months=6):
     """
     Would today's kind of matching have predicted 'stayed inside' better than plain history?
     Train on 3 years, score the next 6 months, roll forward 6 months (as range_walk_forward.py).
-    Score = Brier (mean squared error of the probability; lower is better).
+    Score = Brier (mean squared error of the probability; lower is better). The verdict
+    says "about the same" unless the per-week difference is about two standard errors
+    from zero, so a tiny gap is not reported as an edge.
     """
     if not samples:
         return None
     start, end = _d(samples[0]["date"]), _d(samples[-1]["date"])
     train_d, test_d = timedelta(days=365 * train_years), timedelta(days=30 * test_months)
-    w0, se_m, se_b, n = start, 0.0, 0.0, 0
+    w0, se_m, se_b, n, diffs = start, 0.0, 0.0, 0, []
     while w0 + train_d + test_d <= end + timedelta(days=1):
         t_end, x_end = w0 + train_d, w0 + train_d + test_d
         train = [s for s in samples if w0 <= _d(s["date"]) < t_end]
@@ -170,14 +172,25 @@ def walk_forward(samples, w_pct, min_matches, train_years=3, test_months=6):
                 y = 1.0 if _touch_stay(s, w_pct) else 0.0
                 se_m += (p - y) ** 2
                 se_b += (p_base - y) ** 2
+                diffs.append((p - y) ** 2 - (p_base - y) ** 2)
                 n += 1
         w0 += test_d
     if not n:
         return None
     bm, bb = se_m / n, se_b / n
+    mean = sum(diffs) / n
+    sd = (sum((d - mean) ** 2 for d in diffs) / (n - 1)) ** 0.5 if n > 1 else 0.0
+    t = mean / (sd / n ** 0.5) if sd else 0.0
+    skill = (1 - bm / bb) * 100 if bb else 0.0
+    if t <= -2:
+        verdict = f"Matching on today's conditions predicted better than plain history ({skill:.1f}% lower error)"
+    elif t >= 2:
+        verdict = f"Matching on today's conditions predicted worse than plain history ({-skill:.1f}% higher error)"
+    else:
+        verdict = (f"About the same as plain history ({skill:+.1f}% difference, within noise) — "
+                   "today's conditions did not meaningfully change the odds")
     return {"tested_weeks": n, "brier_matched": round(bm, 4), "brier_all_days": round(bb, 4),
-            "verdict": ("Matching on today's conditions predicted better than plain history" if bm < bb
-                        else "Matching on today's conditions did NOT predict better than plain history")}
+            "skill_pct": round(skill, 1), "t_stat": round(t, 2), "verdict": verdict}
 
 
 def report(series, today: date, horizon: int = 5, weekday: int = None, min_matches: int = 20, widths=WIDTHS):
@@ -209,7 +222,8 @@ def report(series, today: date, horizon: int = 5, weekday: int = None, min_match
         w_pct = w / spot * 100
         kb, nb = _rate(samples, w_pct)
         row = {"width": w, "width_pct": round(w_pct, 2),
-               "all": {"stayed": kb, "n": nb, "pct": round(kb / nb * 100, 1)}}
+               "all": {"stayed": kb, "n": nb, "pct": round(kb / nb * 100, 1),
+                       "closed_inside": sum(1 for s in samples if abs(s["end_pct"]) <= w_pct)}}
         if matched:
             km, nm = _rate(matched, w_pct)
             lo, hi = _wilson_ci(km, nm)
