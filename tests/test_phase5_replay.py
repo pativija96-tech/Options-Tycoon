@@ -142,3 +142,14 @@ class TestFetchUrls:
         assert old[0].endswith("/DERIVATIVES/2022/SEP/fo01SEP2022bhav.csv.zip")
         new = F.urls(date(2026, 10, 27))
         assert new[0].endswith("/content/fo/BhavCopy_NSE_FO_0_0_0_20261027_F_0000.csv.zip")
+
+
+    def test_hold_to_expiry_reenters_on_the_expiry_day(self):
+        E2 = "2026-09-15"
+        d = days({E0: ENTRY, "2026-09-02": ENTRY, "2026-09-07": ENTRY, E1: (0.05, 0.05, 0.05, 0.05)})
+        d[E1][E2] = chain(*ENTRY)                       # 8 Sep is also the entry day for the 15 Sep contract
+        d["2026-09-09"] = {E2: chain(*ENTRY)}
+        d["2026-09-14"] = {E2: chain(*ENTRY)}
+        d["2026-09-15"] = {E2: chain(0.05, 0.05, 0.05, 0.05)}
+        r = replay(d, exit_days_before_expiry=0, target_pct=None)
+        assert [t["opened_on"] for t in r["trades"]] == [E0, E1]
