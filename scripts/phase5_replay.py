@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from engine.research.bhavcopy import build_days, read_compact  # noqa: E402
+from engine.research.bhavcopy import as_date, build_days, read_compact  # noqa: E402
 from engine.research.condor_replay import replay, summarize  # noqa: E402
 
 
@@ -29,9 +29,11 @@ def main():
     ap.add_argument("--entry", default="expiry_day")
     a = ap.parse_args()
 
+    # Only near expiries are ever traded (next week's contract), so keep expiries up to
+    # 21 days out — the full chain does not fit in memory on a small laptop.
     rows = []
     for p in sorted(Path(a.data).glob("nifty_*.csv")):
-        rows += read_compact(p)
+        rows += [r for r in read_compact(p) if (as_date(r["expiry"]) - as_date(r["date"])).days <= 21]
     if not rows:
         sys.exit(f"No data in {a.data} — run phase5_fetch_bhavcopy.py first.")
     days = build_days(rows)
