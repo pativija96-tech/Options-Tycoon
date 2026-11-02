@@ -16,7 +16,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from engine.desk.plan import validate_plan, PlanError, default_plan  # noqa: E402
+from engine.desk.plan import validate_plan, PlanError, default_plan, engine_plan  # noqa: E402
 from engine.desk.ticket import build_ticket, subtract_trading_days  # noqa: E402
 
 
@@ -69,8 +69,17 @@ def check(ticket, key):
 # ── Plan validation ─────────────────────────────────────────────────────────
 
 class TestPlanValidation:
-    def test_defaults_leave_user_rules_unset(self):
-        plan = default_plan()
+    def test_default_plan_is_the_book_rules(self):
+        from engine.desk.book_rules import book_preset
+        from engine.desk.kite_data import ist_today
+        plan, book = default_plan(), book_preset(ist_today())
+        for key, value in book["values"].items():
+            assert plan[key] == value, key
+        for key in book["not_filled"]:                     # no reliable book number → stays unset
+            assert plan[key] is None, key
+
+    def test_engine_plan_leaves_user_rules_unset(self):
+        plan = engine_plan()
         assert plan["entry_days"] == [] and plan["events"] == []
         for key in ("vix_min", "vix_max", "min_credit", "min_rr", "loss_exit_rupees"):
             assert plan[key] is None
@@ -110,8 +119,8 @@ class TestPlanStorage:
         save_plan(1, {"entry_days": ["Tue"], "min_rr": 0.7})   # upsert, not a second row
         save_plan(2, {"min_credit": 2000})
         assert load_plan(1)["entry_days"] == ["Tue"] and load_plan(1)["min_rr"] == 0.7
-        assert load_plan(2)["min_credit"] == 2000 and load_plan(2)["entry_days"] == []
-        assert load_plan(3)["min_rr"] is None                  # no row → defaults
+        assert load_plan(2)["min_credit"] == 2000 and load_plan(2)["entry_days"] == ["Tue"]   # rest = book default
+        assert load_plan(3)["min_rr"] == 0.5                   # no row → book-rules default
 
 
 # ── Ticket logic ────────────────────────────────────────────────────────────
@@ -152,7 +161,7 @@ class TestTicket:
         assert t["expiry"] == "2026-09-01" and t["expiry_confirmed"] is False
 
     def test_unset_rules_never_fail(self):
-        t = build_ticket(make_signal(), default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        t = build_ticket(make_signal(), engine_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
         for key in ("entry_day", "vix", "events", "min_credit", "min_rr"):
             assert check(t, key)["status"] == "unset"
         assert t["unset_count"] >= 5
@@ -206,15 +215,15 @@ class TestTicket:
 # ── Audit fixes: the desk must not be stricter than the signal engine ───────
 
 class TestMatchesSignalEngine:
-    def test_default_plan_has_only_engine_rules(self):
-        plan = default_plan()
+    def test_engine_plan_has_only_engine_rules(self):
+        plan = engine_plan()
         assert plan["max_loss_per_trade"] is None       # settings value is display-only in the engine
         assert plan["profit_target_pct"] == 0.5         # settings.json nifty.profit_target_pct
         assert plan["exit_days_before_expiry"] == 1     # engine: exit before expiry morning
 
-    def test_default_plan_passes_the_real_aug_26_trade(self):
+    def test_engine_plan_passes_the_real_aug_26_trade(self):
         # Credit 27.80 → max loss 4,693: the engine accepted it (cap 25% of 75,000 = 18,750).
-        t = build_ticket(make_signal(), default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        t = build_ticket(make_signal(), engine_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
         assert t["max_loss"] == pytest.approx(4693.0)
         assert t["verdict"] == "GO", t["failed"]
         assert check(t, "risk_cap")["status"] == "pass"
@@ -222,26 +231,26 @@ class TestMatchesSignalEngine:
         assert t["exit_plan"]["exit_by"] == "2026-08-31"
 
     def test_delayed_data_alone_is_not_no_go(self):
-        t = build_ticket(make_signal(live=False), default_plan(), WED)
+        t = build_ticket(make_signal(live=False), engine_plan(), WED)
         assert t["verdict"] == "GO", t["failed"]
 
     def test_risk_cap_rechecked_on_live_prices(self):
         sig = make_signal()
         sig["risk_check"]["capital"] = 15000             # cap 3,750 < max loss 4,693
-        t = build_ticket(sig, default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        t = build_ticket(sig, engine_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
         assert check(t, "risk_cap")["status"] == "fail" and t["verdict"] == "NO-GO"
 
     def test_charges_rechecked_on_live_prices(self):
         sig = make_signal()
         sig["trade"]["charges"]["total"] = 2000          # more than the 1,807 credit
-        t = build_ticket(sig, default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        t = build_ticket(sig, engine_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
         assert check(t, "covers_charges")["status"] == "fail" and t["verdict"] == "NO-GO"
 
     def test_engine_checks_unknown_without_capital_or_charges(self):
         sig = make_signal()
         del sig["risk_check"]
         del sig["trade"]["charges"]
-        t = build_ticket(sig, default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        t = build_ticket(sig, engine_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
         assert check(t, "risk_cap")["status"] == "unknown"
         assert check(t, "covers_charges")["status"] == "unknown"
 
@@ -327,7 +336,7 @@ class TestDeskEndpoints:
         self.out.mkdir()
 
     def test_plan_get_put_round_trip(self):
-        assert self.c.get("/api/live/plan").json()["plan"]["min_rr"] is None
+        assert self.c.get("/api/live/plan").json()["plan"]["min_rr"] == 0.5     # book-rules default
         r = self.c.put("/api/live/plan", json={"plan": {"min_rr": 0.6, "entry_days": ["Wed"]}})
         assert r.status_code == 200 and r.json()["plan"]["min_rr"] == 0.6
         assert self.c.get("/api/live/plan").json()["plan"]["entry_days"] == ["Wed"]
@@ -335,7 +344,13 @@ class TestDeskEndpoints:
     def test_book_rules_endpoint_fills_but_never_saves(self):
         r = self.c.get("/api/live/plan/book-rules").json()
         assert r["success"] and r["values"]["min_credit"] == 2167 and r["sources"]["min_credit"]
-        assert self.c.get("/api/live/plan").json()["plan"]["min_credit"] is None
+        assert self.c.get("/api/live/plan").json()["plan"]["min_credit"] == 2167   # the default, nothing saved
+        import db.database as dbm
+        conn = dbm.get_connection()
+        try:
+            assert conn.execute("SELECT COUNT(*) AS n FROM trading_plans").fetchone()["n"] == 0
+        finally:
+            conn.close()
 
     def test_plan_put_rejects_bad_values(self):
         r = self.c.put("/api/live/plan", json={"plan": {"min_rr": "abc"}})
@@ -440,3 +455,12 @@ class TestTimeToHold:
     def test_unset_without_exit_rule(self):
         t = build_ticket(make_signal(), full_plan(exit_days_before_expiry=None), WED, expiry=date(2026, 9, 1))
         assert check(t, "time_to_hold")["status"] == "unset" and t["exit_plan"]["exit_by"] is None
+
+
+class TestBookDefaultOnTicket:
+    def test_book_default_blocks_the_low_credit_aug_26_trade(self):
+        # ₹1,807 credit is below the ⅓-width ₹2,167 minimum, and Wednesday is not the Tuesday entry day.
+        t = build_ticket(make_signal(), default_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
+        assert t["verdict"] == "NO-GO"
+        assert check(t, "min_credit")["status"] == "fail" and check(t, "entry_day")["status"] == "fail"
+        assert check(t, "max_loss")["status"] == "unset"
