@@ -419,3 +419,24 @@ class TestBookRules:
     def test_engine_elm_estimate_unchanged_by_shared_constant(self):
         from engine.signals.simple_ic_engine import ELM_FACTOR
         assert ELM_FACTOR == 0.80 and round(67000 * ELM_FACTOR) == 53600
+
+
+# ── Time to hold (a ticket for a contract you can't hold is NO-GO) ──────────
+
+class TestTimeToHold:
+    def test_weekend_ticket_for_this_weeks_expiry_is_no_go(self):
+        # Prepared Sunday 1 Nov for the Tue 3 Nov expiry: exit-by Mon 2 Nov = the next session.
+        t = build_ticket(make_signal(), full_plan(), date(2026, 11, 1), expiry=date(2026, 11, 3))
+        c = check(t, "time_to_hold")
+        assert t["exit_plan"]["exit_by"] == "2026-11-02"
+        assert c["status"] == "fail" and "No time to hold" in c["detail"] and t["verdict"] == "NO-GO"
+
+    def test_expiry_day_ticket_for_next_week_passes(self):
+        # Prepared Tue 3 Nov (expiry day) for the Mon 9 Nov contract: exit by Fri 6 Nov.
+        t = build_ticket(make_signal(), full_plan(entry_days=["Tue"]), date(2026, 11, 3), expiry=date(2026, 11, 9))
+        c = check(t, "time_to_hold")
+        assert c["status"] == "pass" and "2026-11-06" in c["detail"]
+
+    def test_unset_without_exit_rule(self):
+        t = build_ticket(make_signal(), full_plan(exit_days_before_expiry=None), WED, expiry=date(2026, 9, 1))
+        assert check(t, "time_to_hold")["status"] == "unset" and t["exit_plan"]["exit_by"] is None

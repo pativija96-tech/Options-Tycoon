@@ -64,6 +64,8 @@ h1{margin:4px 0 0;font-size:34px;font-weight:800;letter-spacing:-.8px}
 .note{font-size:12px;color:var(--muted)}
 .odds{width:100%;border-collapse:collapse;font-size:14px}.odds th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}.odds td{padding:8px 10px;border-bottom:1px solid var(--line);font-family:var(--mono)}.odds td:first-child{font-family:var(--font);font-weight:600}
 .tablewrap{overflow-x:auto}
+.steps3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.st{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:16px;background:var(--card);border:1px solid var(--line)}.st .n{flex:none;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;background:var(--row);color:var(--soft);border:1px solid var(--line)}.st.next{border-color:rgba(245,181,68,.55)}.st.next .n{background:var(--gold);color:var(--bg);border-color:var(--gold)}.st.done .n{background:rgba(52,211,153,.18);color:var(--green-t);border-color:rgba(52,211,153,.5)}.st b{display:block;font-size:14px}.st .note{font-size:12px}
+@media (max-width:760px){.steps3{grid-template-columns:1fr}}
 .exitgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .check{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(148,163,184,.10)}
 .ico{width:24px;height:24px;flex:none;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900}
@@ -140,6 +142,11 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
       <div class="eyebrow" id="todayDate"></div>
       <h1>Today's trade</h1>
     </div>
+    <div class="steps3" id="stepGuide" aria-label="Morning steps">
+      <div class="st" id="st1"><div class="n">1</div><div><b>Load history</b><div class="note" id="st1n">Log in to Kite first, then load. Once each morning.</div></div></div>
+      <div class="st" id="st2"><div class="n">2</div><div><b>Check range</b><div class="note" id="st2n">How far NIFTY moved in weeks like this one.</div></div></div>
+      <div class="st" id="st3"><div class="n">3</div><div><b>Prepare today's trade</b><div class="note" id="st3n">Ticket, checks and orders. You place them in Kite.</div></div></div>
+    </div>
     <div id="rangeBox" class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:14px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
         <div><div style="font-size:18px;font-weight:700">Morning range check</div>
@@ -147,16 +154,16 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <label class="note">Entry day <select id="roDay" style="min-height:36px"></select></label>
           <label class="note">Hold <select id="roHorizon" style="min-height:36px"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option></select> days</label>
-          <button class="btn" style="min-height:40px" id="roBtn" onclick="loadRange()">Check range</button>
-          <button class="btn ghost" style="min-height:40px" id="histBtn" onclick="loadHistory()">Load history</button>
+          <button class="btn" style="min-height:40px" id="roBtn" onclick="loadRange()" disabled>Step 2 · Check range</button>
+          <button class="btn ghost" style="min-height:40px" id="histBtn" onclick="loadHistory()">Step 1 · Load history</button>
         </div>
       </div>
-      <div id="rangeOut"><div class="note">Press <b>Load history</b> once (log in to Kite first for NIFTY and India VIX), then <b>Check range</b>. Reload history each morning for the latest closes.</div></div>
+      <div id="rangeOut"><div class="note">Step 1: log in to Kite, then press <b>Load history</b>. Step 2: <b>Check range</b>. Reload history each morning for the latest closes.</div></div>
     </div>
     <div id="heroBox" class="card hero">
       <div style="font-size:20px;font-weight:700" id="heroTitle">Build today's ticket</div>
       <div style="color:var(--muted);max-width:560px" id="heroText">One click regenerates today's signal, checks it against your Trading Plan, prices the four legs from Kite when you're logged in, and sets your exit plan. Nothing is ever placed for you.</div>
-      <button class="btn big" id="prepareBtn" onclick="prepare()">Prepare today's trade</button>
+      <button class="btn big" id="prepareBtn" onclick="prepare()">Step 3 · Prepare today's trade</button>
     </div>
     <div id="ticketBox"></div>
     <div id="fillBox"></div>
@@ -265,6 +272,29 @@ function marketPills(t){
   mk.innerHTML='NIFTY <span class="mono">'+(m.spot?Math.round(m.spot).toLocaleString('en-IN'):'—')+'</span> · VIX <span class="mono">'+(m.vix!=null?num(m.vix,1):'—')+'</span>';
 }
 
+// ---------- morning steps ----------
+var steps={1:false,2:false,3:false},busy=false;
+var BUTTONS={1:['histBtn','Step 1 · Load history'],2:['roBtn','Step 2 · Check range'],3:['prepareBtn','Step 3 · Prepare today\'s trade']};
+function renderSteps(){
+  var next=!steps[1]?1:(!steps[2]?2:(!steps[3]?3:0));
+  [1,2,3].forEach(function(i){var b=el('st'+i);if(!b)return;b.className='st'+(steps[i]?' done':'')+(next===i?' next':'');b.querySelector('.n').textContent=steps[i]?'✓':i;});
+  [1,2,3].forEach(function(i){var b=el(BUTTONS[i][0]);if(!b)return;b.disabled=busy||(i===2&&!steps[1]);});
+  var r=el('roBtn');if(r)r.title=steps[1]?'':'Load history first (Step 1)';
+}
+function runStep(i,label,work){
+  if(busy)return;busy=true;var b=el(BUTTONS[i][0]);b.textContent=label;renderSteps();showError('');
+  return work().then(function(ok){if(ok!==false){steps[i]=true;}})
+  .catch(function(e){showError(e.message);})
+  .then(function(){busy=false;b.textContent=BUTTONS[i][1];renderSteps();});
+}
+function loadHistoryStatus(){
+  api('/api/live/desk/history/status').then(function(d){
+    var n=(d.status||[]).filter(function(x){return x.symbol==='nifty';})[0];
+    if(n&&n.rows>=300){steps[1]=true;el('st1n').textContent='Loaded to '+n.last+' ('+(n.sources||[]).join(', ')+'). Load again for the latest closes.';}
+    renderSteps();
+  }).catch(function(){renderSteps();});
+}
+
 // ---------- morning range check ----------
 var WORLD_LABEL={sp500:'S&P 500',nasdaq:'Nasdaq',vix:'US VIX',dxy:'US dollar index',us_10y:'US 10-yr yield',ftse:'FTSE 100',dax:'DAX',nikkei:'Nikkei 225',hang_seng:'Hang Seng'};
 var DIM_LABEL={vix_band:'India VIX level',us_bucket:'S&P 500 overnight move',trend_bucket:'NIFTY 5-day trend'};
@@ -283,19 +313,21 @@ function historyTable(st){
   return h+'</table></div>';
 }
 window.loadHistory=function(){
-  var b=el('histBtn');b.disabled=true;b.textContent='Loading… (1–3 min)';showError('');
-  api('/api/live/desk/history/load',{method:'POST'}).then(function(d){
+  runStep(1,'Loading… (1–3 min)',function(){return api('/api/live/desk/history/load',{method:'POST'}).then(function(d){
     var h='<div class="note" style="font-size:13px">Saved '+Number(d.saved).toLocaleString('en-IN')+' daily rows · NIFTY / India VIX from <b>'+esc(d.india_source)+'</b></div>';
     h+=historyTable(d.status);
     if(d.errors&&d.errors.length){h+='<ul class="notes">';d.errors.forEach(function(e){h+='<li>'+esc(e)+'</li>';});h+='</ul>';}
     el('rangeOut').innerHTML=h;
-  }).catch(function(e){showError(e.message);}).then(function(){b.disabled=false;b.textContent='Load history';});
+    var n=(d.status||[]).filter(function(x){return x.symbol==='nifty';})[0];
+    if(!n||n.rows<300){showError('History did not load enough NIFTY days — see the notes below.');return false;}
+    el('st1n').textContent='Loaded to '+n.last+' ('+(n.sources||[]).join(', ')+').';
+  });});
 };
 window.loadRange=function(){
-  var b=el('roBtn');b.disabled=true;b.textContent='Checking…';showError('');
-  api('/api/live/desk/range-odds?horizon='+encodeURIComponent(el('roHorizon').value)+'&weekday='+encodeURIComponent(el('roDay').value))
-  .then(function(d){renderRange(d.report);})
-  .catch(function(e){showError(e.message);}).then(function(){b.disabled=false;b.textContent='Check range';});
+  runStep(2,'Checking…',function(){
+    return api('/api/live/desk/range-odds?horizon='+encodeURIComponent(el('roHorizon').value)+'&weekday='+encodeURIComponent(el('roDay').value))
+    .then(function(d){renderRange(d.report);if(!d.report.ready)return false;el('st2n').textContent='Checked: '+d.report.matches+' similar weeks.';});
+  });
 };
 function renderRange(r){
   var out=el('rangeOut');
@@ -351,11 +383,13 @@ function renderRange(r){
 
 // ---------- today / ticket ----------
 window.prepare=function(){
-  var b=el('prepareBtn');b.disabled=true;b.textContent='Preparing… (fetching data, 15–30s)';showError('');
-  api('/api/live/trade-ticket',{method:'POST'}).then(function(d){
-    state.ticket=d.ticket;renderTicket();marketPills(d.ticket);
-    el('heroBox').classList.add('hide');
-  }).catch(function(e){showError(e.message);}).then(function(){b.disabled=false;b.textContent='Prepare today\'s trade';});
+  runStep(3,'Preparing… (fetching data, 15–30s)',function(){
+    return api('/api/live/trade-ticket',{method:'POST'}).then(function(d){
+      state.ticket=d.ticket;renderTicket();marketPills(d.ticket);
+      el('heroBox').classList.add('hide');
+      el('st3n').textContent='Ticket ready: '+(d.ticket.verdict||'')+'. Check it against Kite before placing.';
+    });
+  });
 };
 window.resetTicket=function(){state.ticket=null;el('ticketBox').innerHTML='';el('heroBox').classList.remove('hide');};
 window.copyOrder=function(i){
@@ -694,7 +728,7 @@ window.importTradebook=function(){
 };
 
 el('todayDate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',timeZone:'Asia/Kolkata'});
-loadKite();loadPlan();
+loadKite();loadPlan();loadHistoryStatus();
 })();
 </script>
 </body>
