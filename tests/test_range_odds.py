@@ -224,6 +224,46 @@ class TestStorage:
         assert status["nifty"]["sources"] == ["yahoo"] and status["sp500"]["rows"] == 1
 
 
+class TestTopUp:
+    def _store(self, symbol, n, last, source):
+        end = date.fromisoformat(last)
+        days = [d for d in weekdays(end - timedelta(days=n * 2), end)][-n:]
+        H.save_rows([{"symbol": symbol, "date": d.isoformat(), "open": 1, "high": 1, "low": 1, "close": 1, "source": source}
+                     for d in days])
+
+    def test_plan_tops_up_stored_series_and_fully_loads_the_rest(self, db):
+        self._store("nifty", 400, "2026-10-27", "kite")
+        self._store("sp500", 50, "2026-10-27", "yahoo")                    # too short → full
+        starts, modes = H.plan_starts(date(2026, 10, 28), 6, full=False)
+        assert modes["nifty"] == "top-up" and starts["nifty"] == date(2026, 10, 22)
+        assert modes["sp500"] == "full" and modes["dax"] == "full"
+        assert starts["dax"] == date(2026, 10, 28) - timedelta(days=365 * 6)
+        _, modes = H.plan_starts(date(2026, 10, 28), 6, full=True)
+        assert set(modes.values()) == {"full"}
+
+    def test_load_all_fetches_only_from_the_top_up_start(self, db):
+        import pandas as pd
+        self._store("nifty", 400, "2026-10-27", "kite")
+        self._store("india_vix", 400, "2026-10-27", "kite")
+        kite = MagicMock()
+        kite.instruments.return_value = [{"tradingsymbol": "NIFTY 50", "instrument_token": 256},
+                                         {"tradingsymbol": "INDIA VIX", "instrument_token": 264}]
+        kite.historical_data.return_value = [{"date": date(2026, 10, 28), "open": 2, "high": 2, "low": 2, "close": 2}]
+        yahoo_starts = {}
+
+        def dl(ticker, start, **kw):
+            yahoo_starts[ticker] = start
+            return pd.DataFrame({"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0]}, index=pd.to_datetime(["2026-10-28"]))
+
+        out = H.load_all(kite, date(2026, 10, 28), downloader=dl)
+        assert {c.args[1] for c in kite.historical_data.call_args_list} == {date(2026, 10, 22)}
+        assert kite.historical_data.call_count == 2                       # one small request per series
+        assert "^NSEI" not in yahoo_starts                               # no fallback needed
+        assert yahoo_starts["^GSPC"] == (date(2026, 10, 28) - timedelta(days=365 * 6)).isoformat()   # empty → full
+        assert out["mode"] == "mixed" and out["modes"]["nifty"] == "top-up"
+        assert out["saved"] == 2 + len(H.WORLD)
+
+
 class TestEndpoints:
     @pytest.fixture(autouse=True)
     def client(self, db, monkeypatch):
@@ -257,12 +297,14 @@ class TestEndpoints:
         import routes.live as live
         seen = {}
 
-        def fake_load_all(kite, today):
-            seen["kite"], seen["today"] = kite, today
+        def fake_load_all(kite, today, full=False):
+            seen["kite"], seen["today"], seen["full"] = kite, today, full
             return {"saved": 0, "india_source": "kite", "errors": [], "status": []}
 
         monkeypatch.setattr(H, "load_all", fake_load_all)
         sentinel = object()
         monkeypatch.setattr(live, "_kite_or_none", lambda: sentinel)
         r = self.c.post("/api/live/desk/history/load").json()
-        assert r["success"] and seen == {"kite": sentinel, "today": date(2026, 10, 28)}
+        assert r["success"] and seen == {"kite": sentinel, "today": date(2026, 10, 28), "full": False}
+        self.c.post("/api/live/desk/history/load?full=1")
+        assert seen["full"] is True

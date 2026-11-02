@@ -30,6 +30,8 @@ WORLD_NAMES = {"sp500": "S&P 500", "nasdaq": "Nasdaq", "vix": "US VIX", "dxy": "
                "hang_seng": "Hang Seng"}
 
 KITE_CHUNK_DAYS = 365   # well inside Kite's per-request window for day candles
+TOPUP_OVERLAP_DAYS = 5  # re-fetch a few days already stored, to pick up late corrections or a missed day
+MIN_ROWS_FOR_TOPUP = 300  # below this a series is (re)loaded in full — the same minimum the range report needs
 
 
 def _day(v):
@@ -66,12 +68,12 @@ def kite_index_tokens(kite, errors):
     return tokens
 
 
-def load_kite(kite, today: date, years: int, errors):
-    """Daily candles for NIFTY 50 and India VIX from Kite, fetched a year at a time."""
+def load_kite(kite, today: date, years: int, errors, starts=None):
+    """Daily candles for NIFTY 50 and India VIX from Kite, a year per request. `starts` = {name: first day to fetch}."""
     rows = []
-    start = today - timedelta(days=365 * years)
+    full_start = today - timedelta(days=365 * years)
     for name, token in kite_index_tokens(kite, errors).items():
-        frm = start
+        frm = (starts or {}).get(name, full_start)
         while frm <= today:
             to = min(frm + timedelta(days=KITE_CHUNK_DAYS - 1), today)
             try:
@@ -87,8 +89,9 @@ def load_kite(kite, today: date, years: int, errors):
     return rows
 
 
-def load_yahoo(tickers: dict, today: date, years: int, errors, downloader=None):
-    """Daily candles from Yahoo for {name: ticker}. `downloader` is yfinance.download (tests pass a fake)."""
+def load_yahoo(tickers: dict, today: date, years: int, errors, downloader=None, starts=None):
+    """Daily candles from Yahoo for {name: ticker}. `downloader` is yfinance.download (tests pass a fake);
+    `starts` = {name: first day to fetch}."""
     if downloader is None:
         try:
             import yfinance as yf
@@ -96,9 +99,10 @@ def load_yahoo(tickers: dict, today: date, years: int, errors, downloader=None):
         except ImportError:
             errors.append("yfinance not installed")
             return []
-    start = today - timedelta(days=365 * years)
+    full_start = today - timedelta(days=365 * years)
     rows = []
     for name, ticker in tickers.items():
+        start = (starts or {}).get(name, full_start)
         try:
             df = downloader(ticker, start=start.isoformat(), end=(today + timedelta(days=1)).isoformat(),
                             interval="1d", progress=False, auto_adjust=False, timeout=20)
@@ -125,22 +129,43 @@ def load_yahoo(tickers: dict, today: date, years: int, errors, downloader=None):
     return rows
 
 
-def load_all(kite, today: date, years: int = 6, downloader=None):
-    """Load India (Kite, else Yahoo fallback) and world (Yahoo) history and store it."""
+def plan_starts(today: date, years: int, full: bool):
+    """
+    First day to fetch per series. A series with enough stored history is topped up from
+    its last stored day minus a few days of overlap; an empty or short one is loaded in full.
+    """
+    stored = {s["symbol"]: s for s in history_status()}
+    full_start = today - timedelta(days=365 * years)
+    starts, modes = {}, {}
+    for name in list(INDIA) + list(WORLD):
+        s = stored.get(name) or {}
+        if full or (s.get("rows") or 0) < MIN_ROWS_FOR_TOPUP or not s.get("last"):
+            starts[name], modes[name] = full_start, "full"
+        else:
+            starts[name] = max(full_start, date.fromisoformat(s["last"]) - timedelta(days=TOPUP_OVERLAP_DAYS))
+            modes[name] = "top-up"
+    return starts, modes
+
+
+def load_all(kite, today: date, years: int = 6, downloader=None, full: bool = False):
+    """Load India (Kite, else Yahoo fallback) and world (Yahoo) history and store it — topping up by default."""
     errors, rows = [], []
+    starts, modes = plan_starts(today, years, full)
     india_source = "kite"
     if kite is not None:
-        rows += load_kite(kite, today, years, errors)
+        rows += load_kite(kite, today, years, errors, starts)
     got = {r["symbol"] for r in rows}
     missing = {k: v for k, v in INDIA_YAHOO.items() if k not in got}
     if missing:
         india_source = "yahoo (fallback)" if kite is None or not got else "kite + yahoo (fallback)"
         if kite is None:
             errors.append("Kite not connected — NIFTY / India VIX loaded from Yahoo as a fallback")
-        rows += load_yahoo(missing, today, years, errors, downloader)
-    rows += load_yahoo(WORLD, today, years, errors, downloader)
+        rows += load_yahoo(missing, today, years, errors, downloader, starts)
+    rows += load_yahoo(WORLD, today, years, errors, downloader, starts)
     saved = save_rows(rows)
-    return {"saved": saved, "india_source": india_source, "errors": errors, "status": history_status()}
+    mode = "full" if all(m == "full" for m in modes.values()) else ("top-up" if all(m == "top-up" for m in modes.values()) else "mixed")
+    return {"saved": saved, "india_source": india_source, "errors": errors, "mode": mode, "modes": modes,
+            "status": history_status()}
 
 
 # ── Storage ─────────────────────────────────────────────────────────────────
