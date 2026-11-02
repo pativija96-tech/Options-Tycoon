@@ -55,3 +55,6 @@ data/historical/*_NS_5yr.csv
 venv/
 .venv/
 env/
+
+# --- Phase 5 NSE option data (downloaded on demand, large) ---
+data/nse_fo/
