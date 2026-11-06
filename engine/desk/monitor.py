@@ -79,7 +79,7 @@ def monitor_position(trade, today: date, quotes=None, spot=None, plan=None):
         "distance_to_short_call": round(sc - spot, 1) if (spot and sc) else None,
         "distance_to_short_put": round(spot - sp, 1) if (spot and sp) else None,
         "exit_by": exit_by, "days_to_exit_by": days_to_exit,
-        "status": status, "message": message,
+        "status": status, "message": message, "pricing": "bid_ask" if live else None,
         "exit_orders": exit_orders,
         "exit_rule": "Buy back both shorts first (wait for COMPLETE), then sell the hedges. Fresh opposite orders, exact quantity.",
     }

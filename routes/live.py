@@ -1991,7 +1991,19 @@ async def desk_position(founder: dict = Depends(require_founder)):
     kite = _kite_or_none()
     if kite:
         q = kite_data.fetch_quotes(kite, [l["symbol"] for l in trade["legs"]], errors)
-        quotes = {s: v["ltp"] for s, v in q.items()} if q else None
+        quotes = None
+        if q:
+            # Cost to close, not last traded price: shorts at the ask, hedges at the bid.
+            from engine.desk.leg_prices import close_price, has_depth, leg_quality
+            quotes = {l["symbol"]: close_price(l["side"], q[l["symbol"]]) for l in trade["legs"] if l["symbol"] in q}
+            for l in trade["legs"]:
+                if l["symbol"] not in q:
+                    continue
+                ql, today_ist = q[l["symbol"]], kite_data.ist_today()
+                if not has_depth(l["side"], ql, closing=True):
+                    errors.append(f"No bid/ask for {l['symbol']}: using its last traded price")
+                if leg_quality(ql, today_ist)["previous_session"]:
+                    errors.append(f"{l['symbol']} has not traded yet this session: its live P&L may be off")
         try:
             spot = float(kite.ltp(["NSE:NIFTY 50"])["NSE:NIFTY 50"]["last_price"])
         except Exception as e:

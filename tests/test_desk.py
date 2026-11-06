@@ -45,10 +45,11 @@ def make_signal(live=True, action="trade"):
 
 SYMBOLS = {(24000, "PE"): "NIFTY2690124000PE", (24100, "PE"): "NIFTY2690124100PE",
            (24600, "CE"): "NIFTY2690124600CE", (24700, "CE"): "NIFTY2690124700CE"}
-QUOTES = {"NIFTY2690124000PE": {"ltp": 12.60, "bid": 12.5, "ask": 12.7},
-          "NIFTY2690124700CE": {"ltp": 22.55, "bid": 22.4, "ask": 22.6},
-          "NIFTY2690124100PE": {"ltp": 20.50, "bid": 20.4, "ask": 20.6},
-          "NIFTY2690124600CE": {"ltp": 42.45, "bid": 42.3, "ask": 42.6}}
+_TRADED = {"last_trade_time": "2026-08-26 09:25:00", "quote_time": "2026-08-26 09:25:30"}
+QUOTES = {"NIFTY2690124000PE": {"ltp": 12.60, "bid": 12.5, "ask": 12.7, **_TRADED},
+          "NIFTY2690124700CE": {"ltp": 22.55, "bid": 22.4, "ask": 22.6, **_TRADED},
+          "NIFTY2690124100PE": {"ltp": 20.50, "bid": 20.4, "ask": 20.6, **_TRADED},
+          "NIFTY2690124600CE": {"ltp": 42.45, "bid": 42.3, "ask": 42.6, **_TRADED}}
 WED = date(2026, 8, 26)
 
 
@@ -130,11 +131,12 @@ class TestTicket:
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES,
                          expiry=date(2026, 9, 1), kite_connected=True)
         assert t["pricing"] == "kite_live"
-        # 20.50 + 42.45 − 12.60 − 22.55 = 27.80 per share (the real Aug 26 credit)
-        assert t["credit_per_share"] == 27.80
-        assert t["credit"] == pytest.approx(1807.0)
-        assert t["max_loss"] == pytest.approx(4693.0)
-        assert t["reward_risk"] == pytest.approx(0.39, abs=0.01)
+        # Sells at bid, buys at ask: 20.40 + 42.30 − 12.70 − 22.60 = 27.40 per share
+        # (at last traded prices these legs gave 27.80, the real Aug 26 credit)
+        assert t["credit_per_share"] == 27.40
+        assert t["credit"] == pytest.approx(1781.0)
+        assert t["max_loss"] == pytest.approx(4719.0)
+        assert t["reward_risk"] == pytest.approx(0.38)
         assert [(o["side"], o["strike"], o["option"]) for o in t["orders"]] == [
             ("BUY", 24000, "PE"), ("BUY", 24700, "CE"), ("SELL", 24100, "PE"), ("SELL", 24600, "CE")]
         assert t["orders"][0]["symbol"] == "NIFTY2690124000PE"
@@ -187,9 +189,9 @@ class TestTicket:
     def test_exit_plan_from_plan_values(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
         ep = t["exit_plan"]
-        assert ep["target"]["profit"] == pytest.approx(903.5)
-        assert ep["target"]["buyback_total"] == pytest.approx(903.5)
-        assert ep["target"]["buyback_per_share"] == pytest.approx(13.9)
+        assert ep["target"]["profit"] == pytest.approx(890.5)
+        assert ep["target"]["buyback_total"] == pytest.approx(890.5)
+        assert ep["target"]["buyback_per_share"] == pytest.approx(13.7)
         assert ep["loss_exit"] == 1500
         assert ep["exit_by"] == "2026-08-31"            # Tue 1 Sep minus 1 trading day = Mon
 
@@ -204,7 +206,7 @@ class TestTicket:
 
     def test_profit_target_net_of_charges(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
-        assert t["exit_plan"]["target"]["profit_net"] == pytest.approx(903.5 - 239)
+        assert t["exit_plan"]["target"]["profit_net"] == pytest.approx(890.5 - 239)
 
     def test_orders_are_nrml_and_elm_shown(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
@@ -222,9 +224,9 @@ class TestMatchesSignalEngine:
         assert plan["exit_days_before_expiry"] == 1     # engine: exit before expiry morning
 
     def test_engine_plan_passes_the_real_aug_26_trade(self):
-        # Credit 27.80 → max loss 4,693: the engine accepted it (cap 25% of 75,000 = 18,750).
+        # Credit 27.40 at bid/ask → max loss 4,719: the engine accepted it (cap 25% of 75,000 = 18,750).
         t = build_ticket(make_signal(), engine_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
-        assert t["max_loss"] == pytest.approx(4693.0)
+        assert t["max_loss"] == pytest.approx(4719.0)
         assert t["verdict"] == "GO", t["failed"]
         assert check(t, "risk_cap")["status"] == "pass"
         assert check(t, "covers_charges")["status"] == "pass"
@@ -306,8 +308,19 @@ class TestKiteData:
     def test_quotes_parse_ltp_and_depth(self):
         from engine.desk.kite_data import fetch_quotes
         kite = MagicMock()
-        kite.quote.return_value = {"NFO:A": {"last_price": 20.5, "depth": {"buy": [{"price": 20.4}], "sell": [{"price": 20.6}]}}}
-        assert fetch_quotes(kite, ["A"], []) == {"A": {"ltp": 20.5, "bid": 20.4, "ask": 20.6}}
+        kite.quote.return_value = {"NFO:A": {"last_price": 20.5, "last_trade_time": "2026-11-03 10:00:00",
+                                             "timestamp": "2026-11-03 10:00:05",
+                                             "depth": {"buy": [{"price": 20.4}], "sell": [{"price": 20.6}]}}}
+        assert fetch_quotes(kite, ["A"], []) == {"A": {"ltp": 20.5, "bid": 20.4, "ask": 20.6,
+                                                       "last_trade_time": "2026-11-03 10:00:00",
+                                                       "quote_time": "2026-11-03 10:00:05"}}
+
+    def test_empty_depth_levels_are_no_bid_or_ask(self):
+        from engine.desk.kite_data import fetch_quotes
+        kite = MagicMock()
+        kite.quote.return_value = {"NFO:A": {"last_price": 20.5, "depth": {"buy": [{"price": 0}], "sell": [{"price": 0}]}}}
+        q = fetch_quotes(kite, ["A"], [])["A"]
+        assert q["bid"] is None and q["ask"] is None
 
 
 # ── Endpoints ───────────────────────────────────────────────────────────────
@@ -464,3 +477,107 @@ class TestBookDefaultOnTicket:
         assert t["verdict"] == "NO-GO"
         assert check(t, "min_credit")["status"] == "fail" and check(t, "entry_day")["status"] == "fail"
         assert check(t, "max_loss")["status"] == "unset"
+
+
+# ── Leg prices (action item 1): the two real tickets from 3 Nov 2026 ─────────
+
+NOV3 = date(2026, 11, 3)
+NOV_SYMBOLS = {(23250, "PE"): "P23250", (23350, "PE"): "P23350", (23850, "CE"): "C23850", (23950, "CE"): "C23950"}
+
+
+def nov_signal():
+    return {"action": "trade",
+            "conditions": {"nifty_price": 23600.0, "vix_level": 15.0, "data_source": "kite", "data_is_live": True},
+            "trade": {"width": 100, "charges": {"total": 239},
+                      "legs": [{"action": "SELL", "option": "CE", "strike": 23850, "premium_est": 50.0},
+                               {"action": "BUY", "option": "CE", "strike": 23950, "premium_est": 30.0},
+                               {"action": "SELL", "option": "PE", "strike": 23350, "premium_est": 90.0},
+                               {"action": "BUY", "option": "PE", "strike": 23250, "premium_est": 60.0}]},
+            "risk_check": {"capital": 75000}}
+
+
+def nov_quotes(p23350, p23250, c23850, c23950, traded="2026-11-03 09:40:00", now="2026-11-03 09:40:30", half_spread=0.5):
+    def q(p):
+        return {"ltp": p, "bid": p - half_spread, "ask": p + half_spread, "last_trade_time": traded, "quote_time": now}
+    return {"P23350": q(p23350), "P23250": q(p23250), "C23850": q(c23850), "C23950": q(c23950)}
+
+
+TICKET_1 = (187.30, 144.85, 31.90, 22.20)        # all four equal the 2 Nov NSE closes
+TICKET_2 = (102.50, 77.25, 67.15, 45.30)         # all four inside the 3 Nov NSE day ranges
+
+
+def nov_ticket(quotes):
+    return build_ticket(nov_signal(), engine_plan(), NOV3, expiry=date(2026, 11, 9), symbols=NOV_SYMBOLS, quotes=quotes,
+                        kite_connected=True)
+
+
+class TestLegPrices:
+    def test_ticket_1_prices_that_dont_fit_nifty_fail(self):
+        t = nov_ticket(nov_quotes(*TICKET_1))
+        c = check(t, "legs_consistent")
+        assert c["status"] == "fail" and "Prices unreliable" in c["detail"] and "volatility ratio" in c["detail"]
+        assert t["prices_unreliable"] is True and t["verdict"] == "NO-GO"
+
+    def test_ticket_2_fits_nifty_and_passes(self):
+        t = nov_ticket(nov_quotes(*TICKET_2))
+        assert check(t, "legs_consistent")["status"] == "pass" and t["prices_unreliable"] is False
+        assert 0.9 <= t["vol_ratio"] <= 1.8
+
+    def test_previous_close_is_caught_by_last_trade_time_even_for_small_moves(self):
+        t = nov_ticket(nov_quotes(*TICKET_2, traded="2026-11-02 15:29:59"))
+        c = check(t, "legs_consistent")
+        assert c["status"] == "fail" and "no trade yet this session" in c["detail"]
+        assert all(o["previous_session"] and o["stale"] for o in t["orders"])
+        assert check(t, "leg_quality")["status"] == "unknown"       # never reported as fresh
+
+    def test_never_traded_counts_as_no_trade_this_session(self):
+        t = nov_ticket(nov_quotes(*TICKET_2, traded=None))
+        assert check(t, "legs_consistent")["status"] == "fail"
+
+    def test_sells_at_bid_buys_at_ask(self):
+        t = nov_ticket(nov_quotes(*TICKET_2))
+        by = {o["strike"]: o for o in t["orders"]}
+        assert by[23350]["price"] == 102.0 and by[23850]["price"] == 66.65      # sells at bid
+        assert by[23250]["price"] == 77.75 and by[23950]["price"] == 45.80      # buys at ask
+        assert t["credit_per_share"] == pytest.approx(45.1)
+        assert t["max_loss"] == pytest.approx((100 - 45.1) * 65)
+        assert t["exit_plan"]["target"]["profit"] == pytest.approx(45.1 * 65 * 0.5)
+
+    def test_missing_depth_fails_and_uses_last_price(self):
+        q = nov_quotes(*TICKET_2)
+        q["P23350"]["bid"] = None
+        t = nov_ticket(q)
+        c = check(t, "legs_consistent")
+        assert c["status"] == "fail" and "no bid/ask for P23350" in c["detail"]
+        assert next(o for o in t["orders"] if o["strike"] == 23350)["price"] == 102.50
+
+    def test_wide_spread_and_stale_leg_warn_without_failing(self):
+        q = nov_quotes(*TICKET_2)
+        q["C23950"].update(bid=42.0, ask=48.0)                                  # 13% spread
+        q["P23250"]["last_trade_time"] = "2026-11-03 09:35:00"                  # 5.5 min before the quote
+        t = nov_ticket(q)
+        c = check(t, "leg_quality")
+        assert c["status"] == "unknown" and "C23950" in c["detail"] and "P23250" in c["detail"]
+        assert check(t, "legs_consistent")["status"] == "pass"
+
+    def test_quality_shown_per_leg(self):
+        o = nov_ticket(nov_quotes(*TICKET_2))["orders"][0]
+        assert o["last_trade_age"] == 30 and o["stale"] is False and o["wide"] is False
+        assert o["spread"] == 1.0 and o["bid"] and o["ask"] and o["ltp"]
+
+    def test_real_kiteconnect_datetimes_are_understood(self):
+        from datetime import datetime
+        from engine.desk.leg_prices import leg_quality
+        q = {"bid": 10, "ask": 10.2, "last_trade_time": datetime(2026, 11, 3, 9, 40), "quote_time": datetime(2026, 11, 3, 9, 43)}
+        r = leg_quality(q, NOV3)
+        assert r["last_trade_age"] == 180 and r["stale"] is True and r["previous_session"] is False
+
+    def test_estimates_without_kite_skip_the_check(self):
+        t = build_ticket(nov_signal(), engine_plan(), NOV3)
+        assert check(t, "legs_consistent")["status"] == "unknown" and t["prices_unreliable"] is False
+
+    def test_close_prices_are_the_cost_to_get_out(self):
+        from engine.desk.leg_prices import close_price
+        q = {"ltp": 10, "bid": 9.5, "ask": 10.5}
+        assert close_price("SELL", q) == 10.5 and close_price("BUY", q) == 9.5
+        assert close_price("SELL", {"ltp": 10}) == 10

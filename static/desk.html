@@ -394,6 +394,13 @@ window.prepare=function(){
   });
 };
 window.resetTicket=function(){state.ticket=null;el('ticketBox').innerHTML='';el('heroBox').classList.remove('hide');};
+function legQuote(o){
+  if(o.has_depth===undefined)return '';
+  var age=o.previous_session?'<span style="color:var(--red)">no trade this session</span>':
+    (o.last_trade_age==null?'last trade time unknown':'<span'+(o.stale?' style="color:var(--gold)"':'')+'>last trade '+(o.last_trade_age<120?o.last_trade_age+'s':Math.round(o.last_trade_age/60)+' min')+' ago</span>');
+  var sp=o.spread_pct==null?'no spread':'<span'+(o.wide?' style="color:var(--gold)"':'')+'>spread ₹'+num(o.spread)+' ('+num(o.spread_pct,1)+'%)</span>';
+  return '<div class="note" style="font-family:var(--font);font-weight:400">bid '+(o.bid?num(o.bid):'—')+' · ask '+(o.ask?num(o.ask):'—')+' · '+sp+' · '+age+'</div>';
+}
 window.copyOrder=function(i){
   var o=state.ticket.orders[i];var text=o.side+' '+o.symbol+' '+o.qty+' NRML LIMIT '+num(o.price);
   function done(){state.copied=i;renderTicket();}
@@ -414,21 +421,25 @@ function renderTicket(){
   var h='<div class="grid2"><div class="card ticket">';
   h+='<div class="tk-head"><div><div class="eyebrow" style="font-size:12px">Trade ticket · NIFTY '+esc(fmtDate(t.expiry))+' expiry'+(t.expiry_confirmed?'':' (expected)')+'</div>'+
      '<div style="font-size:22px;font-weight:800;margin-top:2px">Iron condor '+t.strikes.short_put+' / '+t.strikes.short_call+' · '+t.lot+' qty</div>'+
-     '<div style="margin-top:6px"><span class="badge '+(live?'live':'est')+'">'+(live?'Live Kite prices':'Model estimates — not Kite prices')+'</span></div></div>'+stamp+'</div>';
+     '<div style="margin-top:6px"><span class="badge '+(live?'live':'est')+'">'+(live?'Live Kite bid / ask':'Model estimates — not Kite prices')+'</span></div></div>'+stamp+'</div>';
   h+='<div class="metrics">'+
      '<div><div class="k">Credit</div><div class="v" style="color:var(--green)">'+inr(t.credit)+'</div></div>'+
      '<div><div class="k">Max loss</div><div class="v" style="color:var(--red)">'+inr(t.max_loss)+'</div></div>'+
      '<div><div class="k">Reward : risk</div><div class="v">'+rr+'</div></div>'+
      '<div><div class="k">Margin (Kite)</div><div class="v">'+inr(t.margin.required)+'</div></div></div>';
+  if(t.prices_unreliable){
+    var bad=(t.checks||[]).filter(function(c){return c.key==='legs_consistent';})[0];
+    h+='<div class="err" style="margin:12px 20px 0"><div style="font-weight:800">Prices unreliable — rebuild</div><div style="font-size:13px">'+esc(bad?bad.detail.replace('Prices unreliable — rebuild: ',''):'')+'</div></div>';
+  }
   h+='<div class="sec"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700">Entry orders · one at a time</div><div class="note">Protective legs first</div></div>';
   t.orders.forEach(function(o,i){
     var done=state.copied===i;
     h+='<div class="row"><div class="step">'+o.step+'</div><div class="side '+(o.side==='BUY'?'buy':'sell')+'">'+o.side+'</div>'+
-       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' NRML LIMIT</small></div>'+
+       '<div class="sym">'+esc(o.symbol)+' <small>× '+o.qty+' NRML LIMIT</small>'+legQuote(o)+'</div>'+
        '<div class="mono" style="font-weight:700">₹'+num(o.price)+'</div>'+
        '<button class="copy'+(done?' done':'')+'" aria-label="Copy order '+o.step+'" onclick="copyOrder('+i+')">'+(done?'Copied':'Copy')+'</button></div>';
   });
-  h+='<div class="note">Place each order in Kite and wait for COMPLETE before the next. Never use basket orders.'+(live?'':' Prices shown are estimates: check live prices in Kite before placing.')+'</div></div>';
+  h+='<div class="note">Place each order in Kite and wait for COMPLETE before the next. Never use basket orders.'+(live?' Sells show the best bid and buys the best ask. Prices move, so check Kite before placing.':' Prices shown are estimates: check live prices in Kite before placing.')+'</div></div>';
   var ep=t.exit_plan||{},tg=ep.target;
   h+='<div class="sec"><div class="exitgrid">'+
      '<div><div class="note">Profit target'+(tg?' '+Math.round(tg.pct*100)+'%':'')+'</div><div class="mono" style="font-weight:700;color:var(--green)">'+(tg?'+'+inr(tg.profit)+' · buy back ≤ '+inr(tg.buyback_total):'Not set')+'</div>'+(tg&&tg.profit_net!=null?'<div class="note">≈ '+inr(tg.profit_net)+' after '+inr(t.charges_est)+' charges</div>':'')+'</div>'+
