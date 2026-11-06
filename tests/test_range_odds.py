@@ -103,6 +103,12 @@ class TestReport:
         assert rep["walk_forward"]["tested_weeks"] > 0
         assert rep["episodes"] <= rep["matches"]
 
+    def test_sample_count_warns_below_the_minimum(self):
+        rep = R.report(synthetic(), date(2026, 10, 28), weekday=1, warn_below=10000)
+        assert rep["few_matches"] is True and rep["warn_below"] == 10000 and rep["matches"] > 0
+        assert R.report(synthetic(), date(2026, 10, 28), weekday=1, warn_below=1)["few_matches"] is False
+        assert R.report(synthetic(), date(2026, 10, 28), weekday=1)["few_matches"] is False     # empty rule: no warning
+
     def test_widths_scale_to_todays_level(self):
         rep = R.report(synthetic(), date(2026, 10, 28), weekday=1)
         row = next(r for r in rep["rows"] if r["width"] == 250)

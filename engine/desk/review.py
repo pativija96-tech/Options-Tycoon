@@ -110,3 +110,40 @@ def risk_budget(trades, plan, today: date):
             "week_left": round(wl + week_net, 2) if wl is not None else None,
             "month_left": round(ml + month_net, 2) if ml is not None else None,
             "configured": any(v is not None for v in (wl, ml, pause)), "breaches": breaches}
+
+
+def breakeven(trades, plan):
+    """
+    Win rate needed to break even: loss ÷ (win + loss), both after charges.
+
+    plan_based uses the plan's own target and loss exit on your average credit (the plan's minimum
+    credit before you have trades). actual_based uses the average win and loss you really had: a
+    loss exit can fill past its level, so the plan figure alone can understate the bar.
+    """
+    from engine.desk.trades import estimate_charges
+    charges = estimate_charges(8)
+    closed = _closed(trades)
+    pt, loss_exit = plan.get("profit_target_pct"), plan.get("loss_exit_rupees")
+    if closed:
+        credit = sum((t.get("entry_credit") or 0) * t["lot"] for t in closed) / len(closed)
+        source = f"your {len(closed)} closed trade{'s' if len(closed) != 1 else ''}"
+    else:
+        credit, source = plan.get("min_credit"), "your plan's minimum credit"
+    out = {"credit_used": round(credit, 2) if credit else None, "credit_source": source, "charges": charges,
+           "target_win": None, "loss": None, "plan_based": None, "actual_based": None, "actual_win_rate": None,
+           "trades": len(closed)}
+    if credit and pt:
+        win = credit * pt - charges
+        out["target_win"] = round(win, 2)
+        if loss_exit is not None:          # no loss exit in the plan: no plan-based bar to show
+            out["loss"] = round(loss_exit + charges, 2)
+            if win > 0:
+                out["plan_based"] = round(out["loss"] / (win + out["loss"]) * 100, 1)
+    if closed:
+        pnls = [t["pnl_net"] for t in closed]
+        wins, losses = [p for p in pnls if p > 0], [-p for p in pnls if p <= 0]
+        out["actual_win_rate"] = round(len(wins) / len(pnls) * 100, 1)
+        if wins and losses:
+            avg_w, avg_l = sum(wins) / len(wins), sum(losses) / len(losses)
+            out["actual_based"] = round(avg_l / (avg_w + avg_l) * 100, 1)
+    return out

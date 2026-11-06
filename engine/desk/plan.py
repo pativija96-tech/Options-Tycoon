@@ -35,10 +35,13 @@ PLAN_FIELDS = {
     "loss_exit_rupees": ("number", "Exit when the open loss reaches (₹)"),
     "exit_days_before_expiry": ("number", "Exit this many trading days before expiry"),
     "expiry_margin_buffer": ("number", "Extra funds kept for expiry-day margin (₹)"),
+    "margin_cushion_pct": ("number", "Cushion above Kite's entry margin (%)"),
+    "topup_reserve": ("number", "Top-up reserve: money in the bank, ready to add to Zerodha (₹)"),
     "weekly_loss_limit": ("number", "Stop new trades after losing this much in a week (₹)"),
     "monthly_loss_limit": ("number", "Stop new trades after losing this much in a month (₹)"),
     "pause_after_losses": ("number", "Pause after this many losses in a row"),
-    "events": ("events", "Event dates to avoid (RBI, Budget, elections…)"),
+    "min_range_matches": ("number", "Warn when the range check has fewer similar weeks than this"),
+    "events": ("events", "Your own extra event dates (RBI, Fed and US data are already on the desk's calendar)"),
 }
 
 
@@ -121,7 +124,7 @@ def validate_plan(raw: dict) -> dict:
 
     if plan["profit_target_pct"] is not None and not (0 < plan["profit_target_pct"] <= 1):
         raise PlanError("profit_target_pct must be between 0 and 1")
-    for key in ("exit_days_before_expiry", "pause_after_losses"):
+    for key in ("exit_days_before_expiry", "pause_after_losses", "min_range_matches"):
         if plan[key] is not None:
             plan[key] = int(plan[key])
     if plan["vix_min"] is not None and plan["vix_max"] is not None and plan["vix_min"] > plan["vix_max"]:

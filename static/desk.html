@@ -73,6 +73,7 @@ h1{margin:4px 0 0;font-size:34px;font-weight:800;letter-spacing:-.8px}
 .ico.fail{background:rgba(251,113,133,.18);color:var(--red)}
 .ico.unset{background:rgba(148,163,184,.14);color:var(--muted)}
 .ico.unknown{background:rgba(245,181,68,.14);color:var(--gold)}
+.ico.warn{background:rgba(245,181,68,.22);color:var(--gold)}
 .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
 .badge.live{background:rgba(52,211,153,.14);color:var(--green-t)}.badge.est{background:rgba(245,181,68,.14);color:#FCD38A}
 .notes{margin:0;padding-left:18px;color:var(--muted);font-size:13px}
@@ -166,6 +167,7 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
       <div style="color:var(--muted);max-width:560px" id="heroText">One click regenerates today's signal, checks it against your Trading Plan, prices the four legs from Kite when you're logged in, and sets your exit plan. Nothing is ever placed for you.</div>
       <button class="btn big" id="prepareBtn" onclick="prepare()">Step 3 · Prepare today's trade</button>
     </div>
+    <div id="skipBox"></div>
     <div id="ticketBox"></div>
     <div id="fillBox"></div>
   </section>
@@ -186,6 +188,8 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
   <section id="screenReview" class="hide" style="flex-direction:column;gap:20px">
     <div><div class="eyebrow">Your journal · real fills only</div><h1>Review</h1></div>
     <div id="reviewBox"><div class="card hero"><div class="note">Loading…</div></div></div>
+    <div id="beBox"></div>
+    <div id="skipsBox"></div>
     <div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:12px">
       <div style="font-weight:700;font-size:17px">Import your Kite tradebook</div>
       <div class="note" style="font-size:13px">Kite Console → Reports → Tradebook → F&amp;O → download CSV. Only 4-leg NIFTY iron condors are imported; scalps and other indices are listed as skipped. Re-uploading the same file adds nothing twice.</div>
@@ -328,7 +332,7 @@ window.loadHistory=function(full){
 window.loadRange=function(){
   runStep(2,'Checking…',function(){
     return api('/api/live/desk/range-odds?horizon='+encodeURIComponent(el('roHorizon').value)+'&weekday='+encodeURIComponent(el('roDay').value))
-    .then(function(d){renderRange(d.report);if(!d.report.ready)return false;el('st2n').textContent='Checked: '+d.report.matches+' similar weeks.';});
+    .then(function(d){renderRange(d.report);if(!d.report.ready)return false;el('st2n').textContent='Based on '+d.report.matches+' similar weeks.'+(d.report.few_matches?' Below your minimum.':'');});
   });
 };
 function renderRange(r){
@@ -346,8 +350,9 @@ function renderRange(r){
      (c.vix_terciles?' · history thirds: below '+num(c.vix_terciles[0],1)+' is low, '+num(c.vix_terciles[1],1)+'+ is high':'')+
      ' · NIFTY 5-day <b class="mono">'+pct(c.nifty_5d_pct)+'</b> · NIFTY '+Math.round(r.spot).toLocaleString('en-IN')+' ('+esc(r.spot_date)+')</div>';
   var on=(r.matched_on||[]).map(function(k){return DIM_LABEL[k]+' = '+esc(c.buckets[k]);});
-  h+='<div style="font-weight:700;margin-top:4px">'+(r.matches?r.matches+' past '+esc(r.weekday)+'s matched ('+r.episodes+' separate spells)':'No close matches — all days only')+
+  h+='<div style="font-weight:700;margin-top:4px">'+(r.matches?'Based on '+r.matches+' similar weeks ('+r.episodes+' separate spells)':'No close matches — all weeks only')+
      ' <span class="note">out of '+r.all_windows+' since '+esc(r.history_from)+'</span></div>';
+  if(r.few_matches)h+='<div class="note" style="color:var(--gold);font-size:13px">Only '+r.matches+' similar weeks, below your minimum of '+r.warn_below+'. Treat these odds as rough.</div>';
   if(on.length){
     var dropped=['vix_band','us_bucket','trend_bucket'].filter(function(k){return (r.matched_on||[]).indexOf(k)<0&&c.buckets[k];});
     h+='<div class="note" style="font-size:13px">Matched on: '+on.join(' · ')+
@@ -393,7 +398,39 @@ window.prepare=function(){
     });
   });
 };
-window.resetTicket=function(){state.ticket=null;el('ticketBox').innerHTML='';el('heroBox').classList.remove('hide');};
+// ---------- skip flow ----------
+window.skipToday=function(){
+  showError('');
+  api('/api/live/desk/skip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:state.ticket})})
+  .then(function(d){state.skip=d.skip;renderSkip();}).catch(function(e){showError(e.message);});
+};
+window.undoSkip=function(){
+  api('/api/live/desk/skip',{method:'DELETE'}).then(function(){
+    state.skip=null;state.ticket=null;state.viewOnly=false;steps[3]=false;
+    el('ticketBox').innerHTML='';el('skipBox').innerHTML='';el('heroBox').classList.remove('hide');el('st3n').textContent='Ticket, checks and orders. You place them in Kite.';renderSteps();
+  }).catch(function(e){showError(e.message);});
+};
+window.viewSkippedTicket=function(){state.ticket=state.skip.ticket;state.viewOnly=true;renderTicket();};
+function renderSkip(){
+  var s=state.skip,box=el('skipBox');if(!s){box.innerHTML='';return;}
+  state.ticket=null;state.viewOnly=false;el('ticketBox').innerHTML='';el('heroBox').classList.add('hide');el('fillBox').innerHTML='';
+  steps[3]=true;el('st3n').textContent='Skipped today.';renderSteps();
+  box.innerHTML='<div class="card hero"><div class="stamp none">SKIPPED</div>'+
+    '<div style="font-size:18px;font-weight:700">'+esc(fmtDate(s.skip_date))+'</div>'+
+    '<div style="color:var(--soft);max-width:620px">'+esc(s.reason||'Chose to skip')+'</div>'+
+    '<div class="note" style="font-size:14px">Next eligible entry day: <b>'+(s.next_entry?esc(fmtDate(s.next_entry)):'none found in the next 60 days')+'</b>. The ticket is saved in your journal.</div>'+
+    '<div class="note">'+(s.ticket?'<a href="#" onclick="viewSkippedTicket();return false;">View ticket anyway</a> · ':'')+'<a href="#" onclick="undoSkip();return false;">Undo skip</a></div></div>';
+}
+function loadToday(){
+  api('/api/live/desk/today').then(function(d){if(d.skip){state.skip=d.skip;renderSkip();}}).catch(function(){});
+}
+function holdNote(t){
+  var h=t.hold;if(!h)return '';
+  var s='<div class="note"><b>'+h.trading_days+' trading day'+(h.trading_days===1?'':'s')+'</b> from entry to exit-by.';
+  (h.holidays||[]).forEach(function(x){s+=' <span style="color:var(--gold)">NSE holiday inside the hold: '+esc(x.name)+', '+esc(fmtDate(x.date))+'.</span>';});
+  if(!h.covered)s+=' <span style="color:var(--gold)">The holiday list on file does not cover this expiry, so dates may be off.</span>';
+  return s+'</div>';
+}
 function legQuote(o){
   if(o.has_depth===undefined)return '';
   var age=o.previous_session?'<span style="color:var(--red)">no trade this session</span>':
@@ -407,7 +444,7 @@ window.copyOrder=function(i){
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,done);}else{done();}
 };
 
-var ICON={pass:'✓',fail:'✕',unset:'–',unknown:'?'};
+var ICON={pass:'✓',fail:'✕',unset:'–',unknown:'?',warn:'!'};
 
 function renderTicket(){
   var t=state.ticket,box=el('ticketBox');if(!t){box.innerHTML='';return;}
@@ -415,7 +452,7 @@ function renderTicket(){
     box.innerHTML='<div class="card hero"><div class="stamp none">NO TRADE</div><div style="font-size:18px;font-weight:700">'+esc(t.skip_reason)+'</div>'+
       '<button class="btn ghost" onclick="prepare()">Check again</button></div>';return;
   }
-  var go=t.verdict==='GO',live=t.pricing==='kite_live';
+  var go=t.verdict==='GO',live=t.pricing==='kite_live',view=!!state.viewOnly,ev=t.event_alert;
   var stamp=go?'<div class="stamp go">GO</div>':'<div class="stamp nogo">NO-GO · '+t.failed.length+' rule'+(t.failed.length>1?'s':'')+'</div>';
   var rr=t.reward_risk!=null?num(t.reward_risk)+' : 1':'—';
   var h='<div class="grid2"><div class="card ticket">';
@@ -427,6 +464,12 @@ function renderTicket(){
      '<div><div class="k">Max loss</div><div class="v" style="color:var(--red)">'+inr(t.max_loss)+'</div></div>'+
      '<div><div class="k">Reward : risk</div><div class="v">'+rr+'</div></div>'+
      '<div><div class="k">Margin (Kite)</div><div class="v">'+inr(t.margin.required)+'</div></div></div>';
+  if(view)h+='<div class="err" style="margin:12px 20px 0;color:var(--gold);border-color:rgba(245,181,68,.35);background:rgba(245,181,68,.08)"><div style="font-weight:800">Skipped '+esc(fmtDate(state.skip&&state.skip.skip_date))+'</div></div>';
+  if(ev){
+    h+='<div class="err" style="margin:12px 20px 0"><div style="font-weight:800">'+esc(ev.name)+' · '+esc(ev.tier)+' tier</div>'+
+       '<div style="font-size:13px">On '+esc(fmtDate(ev.date))+(ev.impact_date!==ev.date?', hits the '+esc(fmtDate(ev.impact_date))+' session':'')+'.'+
+       (t.next_clear_entry?' Next clear entry day: <b>'+esc(fmtDate(t.next_clear_entry))+'</b>.':'')+'</div></div>';
+  }
   if(t.prices_unreliable){
     var bad=(t.checks||[]).filter(function(c){return c.key==='legs_consistent';})[0];
     h+='<div class="err" style="margin:12px 20px 0"><div style="font-weight:800">Prices unreliable — rebuild</div><div style="font-size:13px">'+esc(bad?bad.detail.replace('Prices unreliable — rebuild: ',''):'')+'</div></div>';
@@ -446,11 +489,16 @@ function renderTicket(){
      '<div><div class="note">Loss exit</div><div class="mono" style="font-weight:700;color:var(--red)">'+(ep.loss_exit!=null?'Open loss '+inr(-ep.loss_exit):'Not set')+'</div></div>'+
      '<div><div class="note">Exit by</div><div class="mono" style="font-weight:700">'+(ep.exit_by?esc(fmtDate(ep.exit_by)):'Not set')+'</div></div></div>'+
      '<div class="note">'+esc(ep.order||'')+'</div>'+
+     holdNote(t)+
      (t.elm_estimate?'<div class="note" style="color:var(--gold)">Expiry-day margin (ELM) estimate: about '+inr(t.elm_estimate.additional_est)+' extra, total about '+inr(t.elm_estimate.total_requirement_est)+' if held into expiry morning. Exit before expiry to avoid it. A guide only — the exchange sets the real amount.</div>':'')+'</div>';
   h+='<div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px">'+
+     (view?'<div class="note" style="font-size:14px;flex:1">Skipped ticket, for reference only. Its prices are from when you skipped.</div>':
+     (ev?'<button class="btn" style="flex:1;min-width:220px" onclick="skipToday()">Skip today: event</button>'+
+         '<button class="btn ghost" onclick="prepare()">Refresh prices</button>'+
+         '<button class="btn ghost" id="syncBtn" onclick="syncEntry()">I\'ve placed it anyway · Sync</button>':
      '<button class="btn" style="flex:1;min-width:220px" id="syncBtn" onclick="syncEntry()">I\'ve placed it · Sync my fills</button>'+
      '<button class="btn ghost" onclick="prepare()">Refresh prices</button>'+
-     '<button class="btn ghost" onclick="resetTicket()">Skip today</button></div>';
+     '<button class="btn ghost" onclick="skipToday()">Skip today</button>'))+'</div>';
   h+='</div>';
   // checklist
   var passed=t.checks.filter(function(c){return c.status==='pass';}).length;
@@ -690,7 +738,31 @@ window.tagTrade=function(id,flag,fromReview){
 function loadReview(){
   api('/api/live/desk/review').then(renderReview).catch(function(e){el('reviewBox').innerHTML='<div class="err">'+esc(e.message)+'</div>';});
 }
+function renderSkips(list){
+  var box=el('skipsBox');if(!box)return;
+  if(!list||!list.length){box.innerHTML='';return;}
+  var h='<div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700;font-size:17px">Skipped days</div>'+
+    '<div class="note" style="font-size:13px">Tickets you did not take, logged so the rules can be judged on data later.</div><div class="tblwrap"><table class="tbl"><tr><th>Date</th><th>Reason</th><th>Strikes</th><th>Credit</th><th>Expiry</th></tr>';
+  list.forEach(function(s){
+    var t=s.ticket||{},k=t.strikes;
+    h+='<tr><td>'+esc(s.skip_date)+'</td><td style="font-family:var(--font)">'+esc(s.reason||'')+'</td><td>'+(k?k.short_put+' / '+k.short_call:'—')+'</td><td>'+(t.credit!=null?inr(t.credit):'—')+'</td><td>'+esc(t.expiry||'—')+'</td></tr>';
+  });
+  box.innerHTML=h+'</table></div></div>';
+}
+function renderBreakeven(b){
+  var box=el('beBox');if(!box||!b)return;
+  var h='<div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700;font-size:17px">Break-even win rate</div><div class="kpis">'+
+    '<div class="kpi"><div class="k">Needed on your plan</div><div class="v">'+(b.plan_based!=null?num(b.plan_based,1)+'%':'—')+'</div><div class="note">'+
+      (b.plan_based!=null?'Win '+inr(b.target_win)+' at target, lose '+inr(b.loss)+' at the loss exit, after '+inr(b.charges)+' charges. Credit '+inr(b.credit_used)+' from '+esc(b.credit_source)+'.':'Needs a credit, profit target and loss exit in your plan, and a target that covers charges.')+'</div></div>'+
+    '<div class="kpi"><div class="k">Needed on your real results</div><div class="v">'+(b.actual_based!=null?num(b.actual_based,1)+'%':'—')+'</div><div class="note">'+
+      (b.actual_based!=null?'From your average win and loss. Losses can run past the loss exit, so this can be higher.':'Needs at least one win and one loss.')+'</div></div>'+
+    '<div class="kpi"><div class="k">Your actual win rate</div><div class="v"'+(b.actual_win_rate!=null&&b.actual_based!=null?' style="color:'+(b.actual_win_rate>=b.actual_based?'var(--green)':'var(--red)')+'"':'')+'>'+(b.actual_win_rate!=null?num(b.actual_win_rate,1)+'%':'—')+'</div><div class="note">'+
+      (b.trades?b.trades+' closed trade'+(b.trades===1?'':'s')+(b.trades<30?'. Too few to tell skill from luck.':'.'):'Import your tradebook or close a trade.')+'</div></div></div></div>';
+  box.innerHTML=h;
+}
 function renderReview(d){
+  renderBreakeven(d.breakeven);
+  renderSkips(d.skips);
   var s=d.stats,r=d.risk,box=el('reviewBox');
   if(!s.trades){box.innerHTML='<div class="card hero"><div style="font-size:18px;font-weight:700">No closed trades yet</div><div class="note">Close a trade from Position, or import your Kite tradebook below.</div></div>';return;}
   function sgn(n){return n==null?'—':(n>=0?'+':'')+inr(n);}
@@ -741,7 +813,7 @@ window.importTradebook=function(){
 };
 
 el('todayDate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',timeZone:'Asia/Kolkata'});
-loadKite();loadPlan();loadHistoryStatus();
+loadKite();loadPlan();loadHistoryStatus();loadToday();
 })();
 </script>
 </body>

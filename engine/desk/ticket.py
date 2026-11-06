@@ -4,12 +4,14 @@ when available) into one ticket: GO / NO-GO checks, the 4 entry orders in
 sequence, credit / max loss / reward : risk, margin, and the exit plan.
 
 build_ticket() is pure (no I/O) so it can be tested without Kite.
-Statuses per check: "pass", "fail", "unset" (rule not in your plan),
-"unknown" (data needed for the check is unavailable).
+Statuses per check: "pass", "fail", "warn" (does not block the trade), "unset" (rule not in
+your plan), "unknown" (data needed for the check is unavailable).
 """
 
 from datetime import date, timedelta
 
+from engine.desk.market_calendar import (calendar_stale, event_hits, hold_info, is_trading_day, next_clear_entry,
+                                         on_or_after, plan_events, weekly_expiry_after)
 from engine.desk.leg_prices import (VOL_RATIO_MAX, VOL_RATIO_MIN, has_depth, leg_quality, mid, open_price, vol_ratio)
 from engine.signals.simple_ic_engine import RISK_CAP_PCT
 
@@ -28,10 +30,10 @@ def _fmt_num(n, places=2):
 
 
 def subtract_trading_days(d: date, n: int) -> date:
-    """d minus n weekdays (NSE holidays are not known here)."""
+    """d minus n NSE trading days (weekends and listed holidays are skipped)."""
     while n > 0:
         d -= timedelta(days=1)
-        if d.weekday() < 5:
+        if is_trading_day(d):
             n -= 1
     return d
 
@@ -44,13 +46,15 @@ def _legs_from_signal(signal):
 
 
 def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quotes=None,
-                 margin_required=None, funds_available=None, kite_errors=None, kite_connected=False, risk=None):
+                 margin_required=None, funds_available=None, kite_errors=None, kite_connected=False, risk=None,
+                 calendar=None):
     """
     signal:  dict from generate_daily_signal() (action "trade" or "skip").
     plan:    dict from engine.desk.plan (unset rules are None / []).
     today:   IST date.
     symbols: {(strike, "CE"|"PE"): tradingsymbol} from Kite, or None.
     quotes:  {tradingsymbol: {"ltp","bid","ask","last_trade_time","quote_time"}} from Kite, or None.
+    calendar: market_calendar.load_events() — the event calendar — or None for the plan's events only.
     """
     kite_errors = list(kite_errors or [])
     cond = signal.get("conditions") or {}
@@ -73,11 +77,10 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     trade = signal.get("trade") or {}
     wing = trade.get("width") or (sp - lp)
     # Kite's instrument list confirms the real expiry (holiday shifts included);
-    # without it, assume the next Tuesday after today and say it is unconfirmed.
+    # without it, assume the next Tuesday (moved for holidays) and say it is unconfirmed.
     expiry_confirmed = expiry is not None
     if expiry is None:
-        days = (1 - today.weekday()) % 7 or 7
-        expiry = today + timedelta(days=days)
+        expiry = weekly_expiry_after(today)
 
     # Prices: live Kite best bid (sells) / best ask (buys) when every leg has a quote, else the
     # signal's model estimates. See leg_prices.py for why not the last traded price.
@@ -165,15 +168,29 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         add("vix", "India VIX in your band", "pass" if lo_ok and hi_ok else "fail",
             f"{vix:.1f} {'within' if lo_ok and hi_ok else 'outside'} {band}")
 
-    events = plan.get("events") or []
-    if not events:
-        add("events", "No event before expiry", "unset", "No event dates in your plan")
+    # Window: today through expiry, in case the position is still held. Overnight events count on
+    # the Indian session they hit. High tier blocks, medium warns.
+    events = plan_events(plan) + list((calendar or {}).get("events") or [])
+    hits = event_hits(events, today, expiry)
+    high = [h for h in hits if h["tier"] == "high"]
+    medium = [h for h in hits if h["tier"] != "high"]
+
+    def describe(h):
+        hit = f", hits the {h['impact_date']} session" if h["impact_date"] != h["date"] else ""
+        return f"{h['name']} on {h['date']}{hit} ({h['tier']})"
+
+    event_label = "No event before expiry"
+    if high:
+        add("events", event_label, "fail", "; ".join(describe(h) for h in hits))
+    elif medium:
+        add("events", event_label, "warn", "; ".join(describe(h) for h in medium))
+    elif calendar is not None and calendar_stale(calendar, today):
+        add("events", event_label, "unset", "Not set — calendar stale: refresh data/historical/nifty_events.json")
+    elif not events:
+        add("events", event_label, "unset", "No event dates in your plan")
     else:
-        hits = [e for e in events if today <= date.fromisoformat(e["date"]) <= expiry]
-        if hits:
-            add("events", "No event before expiry", "fail", "; ".join(f"{e['label']} on {e['date']}" for e in hits))
-        else:
-            add("events", "No event before expiry", "pass", f"None of your {len(events)} listed events fall before {expiry.isoformat()}")
+        add("events", event_label, "pass", f"No listed event hits a session from {today.isoformat()} to expiry {expiry.isoformat()}")
+    clear = next_clear_entry(plan, today, events) if high else None
 
     def threshold(key, label, value, limit, ok, fmt):
         if limit is None:
@@ -188,14 +205,41 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     threshold("min_rr", "Reward : risk at or above your minimum", rr, plan.get("min_rr"), lambda v, l: v >= l, lambda v: _fmt_num(v))
     threshold("max_loss", "Max loss within your per-trade limit", max_loss, plan.get("max_loss_per_trade"), lambda v, l: v <= l, _inr)
 
+    n_before = plan.get("exit_days_before_expiry")
+    exit_by_d = subtract_trading_days(expiry, int(n_before)) if n_before is not None else None
+
     buffer = plan.get("expiry_margin_buffer") or 0
+    cushion = plan.get("margin_cushion_pct") or 0
+    reserve = plan.get("topup_reserve") or 0
+    margin_label = "Margin available (cushion and expiry buffer)"
     if margin_required is None or funds_available is None:
-        add("margin", "Margin plus expiry buffer available", "unknown",
+        add("margin", margin_label, "unknown",
             "Needs Kite login" if not kite_connected else "Kite margin or funds not available")
     else:
-        need = margin_required + buffer
-        add("margin", "Margin plus expiry buffer available", "pass" if need <= funds_available else "fail",
-            f"{_inr(margin_required)} + {_inr(buffer)} buffer vs {_inr(funds_available)} available")
+        entry_need = margin_required * (1 + cushion / 100)
+        full_need = entry_need + buffer
+        have = f"{_inr(funds_available)} available"
+        if funds_available < entry_need:
+            add("margin", margin_label, "fail",
+                f"Entry needs {_inr(margin_required)} + {_fmt_num(cushion)}% cushion = {_inr(entry_need)}; {have}. "
+                f"Short by {_inr(entry_need - funds_available)}")
+        elif funds_available >= full_need:
+            add("margin", margin_label, "pass",
+                f"{_inr(entry_need)} entry with cushion + {_inr(buffer)} expiry buffer; {have}")
+        else:
+            add_now = full_need - funds_available
+            exits_early = exit_by_d is not None and exit_by_d < expiry
+            if funds_available + reserve >= full_need:
+                add("margin", margin_label, "warn",
+                    f"Entry is covered. You may need to add {_inr(add_now)} from your reserve if still holding on expiry morning")
+            elif exits_early:
+                add("margin", margin_label, "warn",
+                    f"Entry is covered. The {_inr(buffer)} expiry buffer is short by {_inr(add_now)} with {_inr(reserve)} reserve; "
+                    f"your plan exits by {exit_by_d.isoformat()}, before it applies")
+            else:
+                add("margin", margin_label, "fail",
+                    f"Exit-by is not before expiry and the {_inr(buffer)} expiry buffer is short by {_inr(add_now)}, "
+                    f"even with {_inr(reserve)} reserve")
 
     if not risk or not risk.get("configured"):
         add("risk_budget", "Loss limits and losing streak", "unset", "No weekly / monthly loss limit or pause rule in your plan")
@@ -251,18 +295,14 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         if any(o["previous_session"] for o in orders):
             notes.append("Some legs have no trade yet this session")
         if notes:
-            add("leg_quality", "Leg spreads and freshness", "unknown", " · ".join(notes))
+            add("leg_quality", "Leg spreads and freshness", "warn", " · ".join(notes))
         else:
             add("leg_quality", "Leg spreads and freshness", "pass", "All spreads within 5% and last trades within 2 minutes")
     else:
         add("legs_consistent", "Leg prices consistent with spot", "unknown", "Needs live Kite quotes")
 
     # Time to hold: the next session you could enter in must come before the exit-by day.
-    n_before = plan.get("exit_days_before_expiry")
-    exit_by_d = subtract_trading_days(expiry, int(n_before)) if n_before is not None else None
-    session = today
-    while session.weekday() >= 5:
-        session += timedelta(days=1)
+    session = on_or_after(today)
     if exit_by_d is None:
         add("time_to_hold", "Time to hold before exit-by", "unset", "No exit-before-expiry rule in your plan")
     elif exit_by_d <= session:
@@ -294,12 +334,15 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "failed": [c["label"] for c in fails], "unset_count": len(unset),
             "pricing": "kite_live" if live else "estimate",
             "prices_unreliable": bool(unreliable), "vol_ratio": ratio,
+            "hold": hold_info(session, exit_by_d, expiry),
+            "event_alert": high[0] if high else None, "next_clear_entry": clear.isoformat() if clear else None,
             "expiry": expiry.isoformat(), "expiry_confirmed": expiry_confirmed,
             "strikes": {"long_put": lp, "short_put": sp, "short_call": sc, "long_call": lc, "wing": wing},
             "lot": lot, "orders": orders,
             "credit_per_share": credit_ps, "credit": credit, "max_loss": max_loss, "reward_risk": rr,
             "charges_est": charges,
-            "margin": {"required": margin_required, "buffer": buffer, "funds": funds_available},
+            "margin": {"required": margin_required, "buffer": buffer, "cushion_pct": cushion, "reserve": reserve,
+                       "funds": funds_available},
             "elm_estimate": trade.get("elm_estimate"),
             "risk": risk,
             "checks": checks,

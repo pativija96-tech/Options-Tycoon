@@ -106,14 +106,12 @@ def _estimate_premium(spot: float, strike: float, days: int, option_type: str, i
 
 
 def _get_expiry_date() -> tuple:
-    """Get nearest Tuesday (NIFTY weekly expiry) and formatted string."""
+    """Get the nearest NIFTY weekly expiry (Tuesday, moved earlier for NSE holidays) and formatted string."""
+    from engine.desk.market_calendar import weekly_expiry_after
     today = date.today()
-    days_until_tuesday = (1 - today.weekday()) % 7
-    if days_until_tuesday == 0:
-        days_until_tuesday = 7
-    expiry = today + timedelta(days=days_until_tuesday)
+    expiry = weekly_expiry_after(today)
     days_to_exp = (expiry - today).days
-    expiry_str = expiry.strftime("%d %b %Y") + " (Tue)"
+    expiry_str = expiry.strftime("%d %b %Y (%a)")
     return expiry, days_to_exp, expiry_str
 
 

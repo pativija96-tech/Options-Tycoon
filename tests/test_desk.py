@@ -149,7 +149,7 @@ class TestTicket:
 
     def test_clean_day_is_go(self):
         t = build_ticket(make_signal(), full_plan(min_rr=0.3), WED, symbols=SYMBOLS, quotes=QUOTES,
-                         expiry=date(2026, 9, 1), margin_required=67234, funds_available=130000, kite_connected=True)
+                         expiry=date(2026, 9, 1), margin_required=67234, funds_available=140000, kite_connected=True)
         assert t["verdict"] == "GO", t["failed"]
         assert check(t, "margin")["status"] == "pass"
 
@@ -181,10 +181,10 @@ class TestTicket:
         plan = full_plan(events=[{"date": "2026-09-05", "label": "Later"}])
         assert check(build_ticket(make_signal(), plan, WED, expiry=date(2026, 9, 1)), "events")["status"] == "pass"
 
-    def test_margin_shortfall_fails(self):
+    def test_margin_below_entry_with_cushion_fails(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1),
-                         margin_required=67234, funds_available=100000, kite_connected=True)
-        assert check(t, "margin")["status"] == "fail"   # 67,234 + 54,000 buffer > 1,00,000
+                         margin_required=67234, funds_available=80000, kite_connected=True)
+        assert check(t, "margin")["status"] == "fail"   # 67,234 × 1.2 = 80,681 > 80,000
 
     def test_exit_plan_from_plan_values(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
@@ -430,19 +430,15 @@ class TestBookRules:
     def test_every_value_has_a_source_and_unsourced_fields_are_left_alone(self):
         p = self._preset()
         assert set(p["values"]) == set(p["sources"])
-        assert set(p["not_filled"]) == {"vix_min", "max_loss_per_trade", "weekly_loss_limit", "pause_after_losses"}
+        assert set(p["not_filled"]) == {"vix_min", "max_loss_per_trade", "weekly_loss_limit", "pause_after_losses", "topup_reserve"}
         assert not set(p["not_filled"]) & set(p["values"])
 
     def test_preset_is_a_valid_plan(self):
         plan = validate_plan(self._preset()["values"])
         assert plan["max_loss_per_trade"] is None and plan["min_credit"] == 2167
 
-    def test_events_are_upcoming_nifty_or_all_and_weekends_flagged(self):
-        p = self._preset()
-        dates = [e["date"] for e in p["values"]["events"]]
-        assert dates == sorted(dates) and all(d >= "2026-10-30" for d in dates)
-        assert "2026-11-05" not in dates                # FOMC is tagged QQQ in the calendar
-        assert any("2026-12-05" in n and "Saturday" in n for n in p["notes"])
+    def test_events_are_not_copied_into_the_plan(self):
+        assert "events" not in self._preset()["values"] and default_plan()["events"] == []
 
     def test_engine_elm_estimate_unchanged_by_shared_constant(self):
         from engine.signals.simple_ic_engine import ELM_FACTOR
@@ -528,7 +524,7 @@ class TestLegPrices:
         c = check(t, "legs_consistent")
         assert c["status"] == "fail" and "no trade yet this session" in c["detail"]
         assert all(o["previous_session"] and o["stale"] for o in t["orders"])
-        assert check(t, "leg_quality")["status"] == "unknown"       # never reported as fresh
+        assert check(t, "leg_quality")["status"] == "warn"          # never reported as fresh
 
     def test_never_traded_counts_as_no_trade_this_session(self):
         t = nov_ticket(nov_quotes(*TICKET_2, traded=None))
@@ -557,7 +553,7 @@ class TestLegPrices:
         q["P23250"]["last_trade_time"] = "2026-11-03 09:35:00"                  # 5.5 min before the quote
         t = nov_ticket(q)
         c = check(t, "leg_quality")
-        assert c["status"] == "unknown" and "C23950" in c["detail"] and "P23250" in c["detail"]
+        assert c["status"] == "warn" and "C23950" in c["detail"] and "P23250" in c["detail"]
         assert check(t, "legs_consistent")["status"] == "pass"
 
     def test_quality_shown_per_leg(self):
@@ -581,3 +577,190 @@ class TestLegPrices:
         q = {"ltp": 10, "bid": 9.5, "ask": 10.5}
         assert close_price("SELL", q) == 10.5 and close_price("BUY", q) == 9.5
         assert close_price("SELL", {"ltp": 10}) == 10
+
+
+# ── Margin (action item 2): cushion, expiry buffer, top-up reserve ──────────
+
+class TestMargin:
+    # Real 3 Nov numbers: margin 64,810, funds 76,737, buffer 53,600, exit-by Fri before Mon expiry.
+    def _check(self, funds=76737, margin=64810, **plan_over):
+        plan = engine_plan()
+        plan.update(expiry_margin_buffer=53600, margin_cushion_pct=20, topup_reserve=None)
+        plan.update(plan_over)
+        t = build_ticket(make_signal(), plan, WED, expiry=date(2026, 9, 1), margin_required=margin,
+                         funds_available=funds, kite_connected=True)
+        return check(t, "margin"), t
+
+    def test_below_entry_margin_with_cushion_fails(self):
+        c, t = self._check()                                    # 64,810 × 1.2 = 77,772 > 76,737
+        assert c["status"] == "fail" and "Short by" in c["detail"] and t["verdict"] == "NO-GO"
+
+    def test_covers_everything_passes(self):
+        assert self._check(funds=131372)[0]["status"] == "pass"  # 77,772 + 53,600
+
+    def test_covered_only_with_reserve_warns_how_much_to_add(self):
+        c, t = self._check(funds=90000, topup_reserve=50000)
+        assert c["status"] == "warn" and "add ₹41,372" in c["detail"] and "expiry morning" in c["detail"]
+        assert "Margin" not in " ".join(t["failed"])
+
+    def test_buffer_short_even_with_reserve_only_warns_when_exiting_before_expiry(self):
+        c, _ = self._check(funds=90000, topup_reserve=1000)
+        assert c["status"] == "warn" and "before it applies" in c["detail"]
+
+    def test_buffer_short_fails_when_exit_by_is_expiry_day(self):
+        c, _ = self._check(funds=90000, topup_reserve=1000, exit_days_before_expiry=0)
+        assert c["status"] == "fail" and "not before expiry" in c["detail"]
+
+    def test_buffer_short_with_reserve_covering_warns_even_when_holding_to_expiry(self):
+        assert self._check(funds=90000, topup_reserve=50000, exit_days_before_expiry=0)[0]["status"] == "warn"
+
+    def test_no_exit_rule_counts_as_holding_to_expiry(self):
+        assert self._check(funds=90000, exit_days_before_expiry=None)[0]["status"] == "fail"
+
+    def test_empty_cushion_and_buffer_are_treated_as_none(self):
+        c, _ = self._check(funds=64810, margin_cushion_pct=None, expiry_margin_buffer=None)
+        assert c["status"] == "pass"
+
+    def test_reserve_never_counts_towards_entry(self):
+        assert self._check(funds=70000, topup_reserve=500000)[0]["status"] == "fail"
+
+    def test_default_plan_has_the_cushion_but_no_invented_reserve(self):
+        plan = default_plan()
+        assert plan["margin_cushion_pct"] == 20 and plan["topup_reserve"] is None
+
+
+# ── Events (action item 3): tiers, overnight impact, stale calendar ─────────
+
+class TestEvents:
+    CAL = {"last_updated": "2026-11-20", "events": [
+        {"date": "2026-12-04", "name": "RBI policy decision", "tier": "high", "session": "india"},
+        {"date": "2026-12-04", "name": "US jobs report", "tier": "medium", "session": "overnight"},
+        {"date": "2026-12-09", "name": "Fed decision", "tier": "high", "session": "overnight"},
+        {"date": "2026-11-27", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    ]}
+
+    def _t(self, today, expiry, calendar=None, plan=None):
+        return build_ticket(make_signal(), plan or engine_plan(), today, expiry=expiry, calendar=calendar or self.CAL)
+
+    def test_high_tier_blocks_and_names_the_session(self):
+        t = self._t(date(2026, 12, 1), date(2026, 12, 8))
+        c = check(t, "events")
+        assert c["status"] == "fail" and t["verdict"] == "NO-GO" and "RBI policy decision" in c["detail"]
+        assert t["event_alert"]["name"] == "RBI policy decision" and t["event_alert"]["tier"] == "high"
+
+    def test_medium_tier_only_warns(self):
+        t = self._t(date(2026, 11, 24), date(2026, 12, 1))
+        c = check(t, "events")
+        assert c["status"] == "warn" and "US CPI" in c["detail"] and t["event_alert"] is None
+        assert "No event before expiry" not in t["failed"]
+
+    def test_overnight_event_hits_the_next_session_not_its_own_date(self):
+        # Fed on Wed 9 Dec hits Thu 10 Dec: a contract expiring on the 9th is clear of it.
+        assert "Fed" not in check(self._t(date(2026, 12, 7), date(2026, 12, 9)), "events")["detail"]
+        c = check(self._t(date(2026, 12, 7), date(2026, 12, 10)), "events")
+        assert c["status"] == "fail" and "hits the 2026-12-10 session" in c["detail"]
+
+    def test_overnight_event_yesterday_still_hits_today(self):
+        c = check(self._t(date(2026, 12, 10), date(2026, 12, 15)), "events")
+        assert c["status"] == "fail" and "Fed decision" in c["detail"]
+
+    def test_window_runs_to_expiry_not_exit_by(self):
+        # RBI on Fri 4 Dec is after exit-by (Thu 3 Dec) but on the expiry day: still blocks.
+        t = self._t(date(2026, 12, 1), date(2026, 12, 4))
+        assert t["exit_plan"]["exit_by"] == "2026-12-03" and check(t, "events")["status"] == "fail"
+
+    def test_overnight_skips_a_holiday(self):
+        from engine.desk.market_calendar import impact_date
+        # US CPI on Mon 9 Nov would hit Tue 10 Nov, a Diwali holiday: it hits Wed 11 Nov.
+        assert impact_date({"date": "2026-11-09", "session": "overnight"}) == date(2026, 11, 11)
+
+    def test_stale_by_age_or_empty_window_shows_not_set(self):
+        old = {"last_updated": "2026-10-01", "events": self.CAL["events"]}
+        c = check(self._t(date(2026, 11, 16), date(2026, 11, 17), calendar=old), "events")
+        assert c["status"] == "unset" and "calendar stale" in c["detail"]
+        empty = {"last_updated": "2026-11-20", "events": []}
+        assert "calendar stale" in check(self._t(date(2026, 11, 23), date(2026, 11, 24), calendar=empty), "events")["detail"]
+
+    def test_known_event_still_blocks_when_calendar_is_stale(self):
+        old = {"last_updated": "2026-10-01", "events": self.CAL["events"]}
+        assert check(self._t(date(2026, 12, 1), date(2026, 12, 8), calendar=old), "events")["status"] == "fail"
+
+    def test_fresh_calendar_with_nothing_in_window_passes(self):
+        assert check(self._t(date(2026, 11, 23), date(2026, 11, 26)), "events")["status"] == "pass"
+
+    def test_plans_own_events_block_as_high(self):
+        plan = engine_plan()
+        plan["events"] = [{"date": "2026-11-25", "label": "Bihar results"}]
+        c = check(self._t(date(2026, 11, 23), date(2026, 11, 26), plan=plan), "events")
+        assert c["status"] == "fail" and "Bihar results" in c["detail"]
+
+    def test_next_clear_entry_skips_high_event_weeks(self):
+        plan = engine_plan()
+        plan["entry_days"] = ["Tue"]
+        t = self._t(date(2026, 12, 1), date(2026, 12, 8), plan=plan)
+        assert t["next_clear_entry"] == "2026-12-15"            # Tue 8 Dec's week holds the Fed
+
+    def test_real_calendar_file_is_valid_and_sourced(self):
+        from engine.desk.market_calendar import load_events, impact_date
+        cal = load_events()
+        assert cal["last_updated"] and cal["sources"] and cal["not_covered"]
+        for e in cal["events"]:
+            assert e["tier"] in ("high", "medium") and e["session"] in ("india", "overnight") and impact_date(e)
+        assert {"date": "2026-12-04", "name": "RBI policy decision", "tier": "high", "session": "india"} in cal["events"]
+        assert not any(e["date"] == "2026-12-05" for e in cal["events"])   # the old calendar's wrong RBI date
+
+
+# ── Holidays (action item 5) ────────────────────────────────────────────────
+
+class TestHolidays:
+    def test_exit_by_moves_earlier_for_a_holiday(self):
+        # Expiry Wed 25 Nov, Tue 24 Nov is a holiday: one trading day before is Mon 23 Nov.
+        assert subtract_trading_days(date(2026, 11, 25), 1) == date(2026, 11, 23)
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 18), expiry=date(2026, 11, 25))
+        assert t["exit_plan"]["exit_by"] == "2026-11-23"
+
+    def test_fallback_expiry_moves_for_a_tuesday_holiday(self):
+        # Without Kite on Tue 3 Nov: Tue 10 Nov is Diwali, so the expected expiry is Mon 9 Nov (NSE's real one).
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 3))
+        assert t["expiry"] == "2026-11-09" and t["expiry_confirmed"] is False
+        assert t["exit_plan"]["exit_by"] == "2026-11-06"
+
+    def test_on_a_shifted_expiry_day_the_next_week_is_used(self):
+        from engine.desk.market_calendar import weekly_expiry_after
+        assert weekly_expiry_after(date(2026, 11, 9)) == date(2026, 11, 17)
+        assert weekly_expiry_after(date(2026, 11, 3)) == date(2026, 11, 9)
+        assert weekly_expiry_after(date(2026, 11, 2)) == date(2026, 11, 3)
+
+    def test_kite_expiry_always_wins(self):
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 3), expiry=date(2026, 11, 12))
+        assert t["expiry"] == "2026-11-12" and t["expiry_confirmed"] is True
+
+    def test_hold_counts_trading_days_and_notes_the_holiday(self):
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 3), expiry=date(2026, 11, 12))
+        h = t["hold"]                                  # Tue 3 → Wed 11 Nov, without weekends and Tue 10 Nov
+        assert t["exit_plan"]["exit_by"] == "2026-11-11"
+        assert h["trading_days"] == 6 and h["covered"] is True
+        assert h["holidays"] == [{"date": "2026-11-10", "name": "Diwali-Balipratipada"}]
+
+    def test_expiry_beyond_the_holiday_list_is_flagged(self):
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 12, 29), expiry=date(2027, 1, 5))
+        assert t["hold"]["covered"] is False
+
+    def test_a_holiday_today_means_the_next_session_counts(self):
+        # On Diwali Tue 10 Nov, with exit-by Wed 11 Nov: the next session is the exit-by day.
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 10), expiry=date(2026, 11, 12))
+        assert check(t, "time_to_hold")["status"] == "fail"
+
+    def test_engine_expiry_uses_the_holiday_calendar(self):
+        from unittest.mock import patch as p
+        import engine.signals.simple_ic_engine as E
+
+        class D(date):
+            @classmethod
+            def today(cls):
+                return date(2026, 11, 3)
+
+        with p.object(E, "date", D):
+            import engine.desk.market_calendar  # noqa: F401
+            expiry, days, label = E._get_expiry_date()
+        assert expiry == date(2026, 11, 9) and days == 6 and label == "09 Nov 2026 (Mon)"

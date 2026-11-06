@@ -325,3 +325,107 @@ class TestDeskPage:
             assert path in html, path
         assert "X-User-Id" not in html
         assert "live-execute" not in html      # the desk never places orders
+
+
+# ── Skip flow (action item 4) ───────────────────────────────────────────────
+
+class TestSkipFlow:
+    @pytest.fixture(autouse=True)
+    def client(self, tmp_path, monkeypatch):
+        import db.database as dbm
+        if dbm.USE_POSTGRES:
+            pytest.skip("endpoint test runs on SQLite only")
+        path = str(tmp_path / "test.db")
+        monkeypatch.setattr(dbm, "get_db_path", lambda: path)
+        dbm.init_db(path)
+        from db.migrations import run_migrations
+        run_migrations()
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from engine.session import require_founder
+        from engine.desk import kite_data
+        from routes.live import router
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[require_founder] = lambda: {"user_id": 7, "email": "t@t.com", "name": "T"}
+        monkeypatch.setattr(kite_data, "ist_today", lambda: date(2026, 12, 1))
+        self.c = TestClient(app)
+        self.ticket = {"verdict": "NO-GO", "failed": ["No event before expiry", "Credit at or above your minimum"],
+                       "event_alert": {"name": "RBI policy decision", "date": "2026-12-04", "impact_date": "2026-12-04", "tier": "high"},
+                       "next_clear_entry": "2026-12-15", "credit": 1649, "expiry": "2026-12-08",
+                       "strikes": {"short_put": 23350, "short_call": 23850}}
+
+    def test_skip_locks_the_day_and_survives_a_reload(self):
+        assert self.c.get("/api/live/desk/today").json()["skip"] is None
+        s = self.c.post("/api/live/desk/skip", json={"ticket": self.ticket}).json()["skip"]
+        assert s["skip_date"] == "2026-12-01" and s["next_entry"] == "2026-12-15"
+        assert s["reason"] == "NO-GO: RBI policy decision event; Credit at or above your minimum"
+        again = self.c.get("/api/live/desk/today").json()["skip"]
+        assert again["ticket"]["credit"] == 1649                    # View ticket anyway reads this, day stays locked
+
+    def test_skip_is_logged_for_review(self):
+        self.c.post("/api/live/desk/skip", json={"ticket": self.ticket})
+        skips = self.c.get("/api/live/desk/review").json()["skips"]
+        assert len(skips) == 1 and skips[0]["ticket"]["strikes"]["short_put"] == 23350
+
+    def test_skipping_twice_keeps_one_row(self):
+        self.c.post("/api/live/desk/skip", json={"ticket": self.ticket})
+        self.c.post("/api/live/desk/skip", json={"ticket": {**self.ticket, "credit": 1700}})
+        skips = self.c.get("/api/live/desk/review").json()["skips"]
+        assert len(skips) == 1 and skips[0]["ticket"]["credit"] == 1700
+
+    def test_undo_unlocks_the_day(self):
+        self.c.post("/api/live/desk/skip", json={"ticket": self.ticket})
+        assert self.c.delete("/api/live/desk/skip").json()["success"]
+        assert self.c.get("/api/live/desk/today").json()["skip"] is None
+
+    def test_skip_without_a_ticket_finds_the_next_clear_day_itself(self):
+        s = self.c.post("/api/live/desk/skip", json={}).json()["skip"]
+        assert s["reason"] == "Chose to skip" and s["next_entry"] and s["next_entry"] > "2026-12-01"
+
+    def test_oversized_ticket_is_refused(self):
+        r = self.c.post("/api/live/desk/skip", json={"ticket": {"x": "y" * 100001}})
+        assert r.status_code == 400
+
+    def test_good_ticket_skip_has_a_plain_reason(self):
+        from engine.desk.skips import skip_reason
+        assert skip_reason({"verdict": "GO", "failed": []}) == "Chose to skip"
+        assert skip_reason({"verdict": "NO-GO", "failed": ["Reward : risk"]}) == "NO-GO: Reward : risk"
+
+
+# ── Break-even win rate (action item 6) ─────────────────────────────────────
+
+def _closed_trade(pnl, credit=47.1, day="2026-11-06"):
+    return {"status": "closed", "pnl_net": pnl, "entry_credit": credit, "lot": 65, "closed_on": day, "opened_on": day}
+
+
+class TestBreakeven:
+    PLAN = {"profit_target_pct": 0.5, "loss_exit_rupees": 1500, "min_credit": 2167}
+
+    def test_list_example_about_57_percent(self):
+        from engine.desk.review import breakeven
+        # The action list: ₹1,292 net win and ₹1,739 loss. A ₹3,061.60 credit gives that win.
+        b = breakeven([_closed_trade(1000, credit=3061.6 / 65)], self.PLAN)
+        assert b["target_win"] == pytest.approx(1292.0) and b["loss"] == pytest.approx(1738.8)
+        assert b["plan_based"] == pytest.approx(57.4, abs=0.1)
+
+    def test_without_trades_uses_the_plans_minimum_credit(self):
+        from engine.desk.review import breakeven
+        b = breakeven([], self.PLAN)
+        assert b["credit_used"] == 2167 and "minimum credit" in b["credit_source"]
+        assert b["target_win"] == pytest.approx(2167 * 0.5 - 238.8)
+        assert b["plan_based"] == pytest.approx(1738.8 / (844.7 + 1738.8) * 100, abs=0.1)
+        assert b["actual_win_rate"] is None and b["actual_based"] is None
+
+    def test_real_results_set_their_own_bar_and_win_rate(self):
+        from engine.desk.review import breakeven
+        b = breakeven([_closed_trade(1000), _closed_trade(1000), _closed_trade(-3000)], self.PLAN)
+        assert b["actual_win_rate"] == pytest.approx(66.7, abs=0.1)
+        assert b["actual_based"] == pytest.approx(75.0)         # 3,000 ÷ (1,000 + 3,000)
+        assert b["trades"] == 3
+
+    def test_no_loss_exit_or_uncovered_target_gives_no_plan_figure(self):
+        from engine.desk.review import breakeven
+        assert breakeven([], {"profit_target_pct": 0.5, "min_credit": 2167})["plan_based"] is None
+        assert breakeven([], {"profit_target_pct": 0.5, "loss_exit_rupees": 1500, "min_credit": 300})["plan_based"] is None
+        assert breakeven([], {})["plan_based"] is None
