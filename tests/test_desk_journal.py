@@ -269,6 +269,24 @@ class TestJournalEndpoints:
         assert self.c.post(f"/api/live/desk/trades/{tid}/review", json={"followed_plan": "yes", "note": "clean"}).status_code == 200
         assert self.c.get("/api/live/desk/review").json()["stats"]["followed"]["trades"] == 1
 
+    def test_position_pnl_uses_cost_to_close(self):
+        kite = self._kite(ENTRY_ORDERS)
+        with patch("routes.live._kite_or_none", return_value=kite):
+            assert self.c.post("/api/live/desk/sync-entry", json={"ticket": self.ticket}).status_code == 200
+            depth = lambda b, a: {"last_trade_time": "2026-08-27 10:00:00", "timestamp": "2026-08-27 10:00:05",
+                                  "depth": {"buy": [{"price": b}], "sell": [{"price": a}]}}
+            kite.quote.return_value = {
+                "NFO:NIFTY2690124100PE": {"last_price": 8, **depth(7.5, 8.5)},     # short: buy back at the ask
+                "NFO:NIFTY2690124600CE": {"last_price": 15, **depth(14.5, 15.5)},  # short: buy back at the ask
+                "NFO:NIFTY2690124000PE": {"last_price": 3, **depth(2.5, 3.5)},     # hedge: sell at the bid
+                "NFO:NIFTY2690124700CE": {"last_price": 5, **depth(4.5, 5.5)},     # hedge: sell at the bid
+            }
+            pos = self.c.get("/api/live/desk/position").json()["position"]
+        # close cost 8.5 + 15.5 − 2.5 − 4.5 = 17 per share; (27.80 − 17) × 65 = 702
+        assert pos["pnl"] == pytest.approx(702.0)
+        assert pos["pricing"] == "bid_ask"
+        assert {o["symbol"]: o["price"] for o in pos["exit_orders"]}["NIFTY2690124100PE"] == 8.5
+
     def test_manual_open_and_close_without_kite(self):
         prices = {o["symbol"]: o["price"] for o in TICKET_ORDERS}
         with patch("routes.live._kite_or_none", return_value=None):

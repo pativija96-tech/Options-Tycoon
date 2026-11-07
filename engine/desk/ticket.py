@@ -10,6 +10,7 @@ Statuses per check: "pass", "fail", "unset" (rule not in your plan),
 
 from datetime import date, timedelta
 
+from engine.desk.leg_prices import (VOL_RATIO_MAX, VOL_RATIO_MIN, has_depth, leg_quality, mid, open_price, vol_ratio)
 from engine.signals.simple_ic_engine import RISK_CAP_PCT
 
 DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -49,7 +50,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     plan:    dict from engine.desk.plan (unset rules are None / []).
     today:   IST date.
     symbols: {(strike, "CE"|"PE"): tradingsymbol} from Kite, or None.
-    quotes:  {tradingsymbol: {"ltp","bid","ask"}} from Kite, or None.
+    quotes:  {tradingsymbol: {"ltp","bid","ask","last_trade_time","quote_time"}} from Kite, or None.
     """
     kite_errors = list(kite_errors or [])
     cond = signal.get("conditions") or {}
@@ -78,13 +79,14 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         days = (1 - today.weekday()) % 7 or 7
         expiry = today + timedelta(days=days)
 
-    # Prices: live Kite quotes when every leg has one, else the signal's model estimates.
+    # Prices: live Kite best bid (sells) / best ask (buys) when every leg has a quote, else the
+    # signal's model estimates. See leg_prices.py for why not the last traded price.
     est = {(l["strike"], l["option"]): float(l.get("premium_est") or 0) for l in trade.get("legs", [])}
     live = bool(symbols and quotes and all(symbols.get(k) in quotes for k in [(lp, "PE"), (sp, "PE"), (sc, "CE"), (lc, "CE")]))
 
-    def price(strike, opt):
+    def price(side, strike, opt):
         if live:
-            return quotes[symbols[(strike, opt)]]["ltp"]
+            return open_price(side, quotes[symbols[(strike, opt)]])
         return est.get((strike, opt), 0.0)
 
     def symbol(strike, opt):
@@ -105,11 +107,15 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     orders = []
     for i, (side, strike, opt, note) in enumerate(order_defs, 1):
         bid, ask = bidask(strike, opt)
-        orders.append({"step": i, "side": side, "strike": strike, "option": opt, "symbol": symbol(strike, opt),
-                       "qty": lot, "product": "NRML", "price": round(price(strike, opt), 2), "bid": bid, "ask": ask,
-                       "note": note})
+        order = {"step": i, "side": side, "strike": strike, "option": opt, "symbol": symbol(strike, opt),
+                 "qty": lot, "product": "NRML", "price": round(price(side, strike, opt), 2), "bid": bid, "ask": ask,
+                 "note": note}
+        if live:
+            q = quotes[symbols[(strike, opt)]]
+            order.update(ltp=q.get("ltp"), has_depth=has_depth(side, q), **leg_quality(q, today))
+        orders.append(order)
 
-    credit_ps = round(price(sp, "PE") + price(sc, "CE") - price(lp, "PE") - price(lc, "CE"), 2)
+    credit_ps = round(price("SELL", sp, "PE") + price("SELL", sc, "CE") - price("BUY", lp, "PE") - price("BUY", lc, "CE"), 2)
     credit = round(credit_ps * lot, 2)
     max_loss = round((wing - credit_ps) * lot, 2)
     rr = round(credit / max_loss, 2) if max_loss > 0 else None
@@ -212,9 +218,44 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             f"Delayed data ({market['data_source']}) — log in to Kite and prepare again for live prices")
 
     if live:
-        add("prices_live", "Leg prices from Kite", "pass", "Live last-traded prices")
+        add("prices_live", "Leg prices from Kite", "pass", "Live best bid (sells) and best ask (buys)")
     else:
         add("prices_live", "Leg prices from Kite", "unknown", "Model estimates — Kite quotes not available")
+
+    # Quotes must be real prices for this session and fit one NIFTY level.
+    unreliable = []
+    ratio = None
+    if live:
+        no_depth = [o["symbol"] for o in orders if not o["has_depth"]]
+        if no_depth:
+            unreliable.append("no " + "bid/ask" + " for " + ", ".join(no_depth))
+        old = [o["symbol"] for o in orders if o["previous_session"]]
+        if old:
+            unreliable.append("no trade yet this session for " + ", ".join(old))
+        ratio = vol_ratio([(o["strike"], o["option"], mid(quotes[o["symbol"]])) for o in orders],
+                          market["spot"], (expiry - today).days)
+        if ratio is not None and not VOL_RATIO_MIN <= ratio <= VOL_RATIO_MAX:
+            unreliable.append(f"put/call volatility ratio {ratio:.2f} is outside the normal "
+                              f"{VOL_RATIO_MIN}–{VOL_RATIO_MAX}, so the legs don't fit NIFTY at {market['spot']:,.0f}")
+        if unreliable:
+            add("legs_consistent", "Leg prices consistent with spot", "fail",
+                "Prices unreliable — rebuild: " + "; ".join(unreliable))
+        elif ratio is None:
+            add("legs_consistent", "Leg prices consistent with spot", "unknown", "Could not compare the legs with NIFTY")
+        else:
+            add("legs_consistent", "Leg prices consistent with spot", "pass",
+                f"Put/call volatility ratio {ratio:.2f} (normal {VOL_RATIO_MIN}–{VOL_RATIO_MAX})")
+        wide = [f"{o['symbol']} {o['spread_pct']:.1f}%" for o in orders if o["wide"]]
+        stale = [o["symbol"] for o in orders if o["stale"] and not o["previous_session"]]
+        notes = ([f"Wide spread: {', '.join(wide)}"] if wide else []) + ([f"Last trade over 2 min ago: {', '.join(stale)}"] if stale else [])
+        if any(o["previous_session"] for o in orders):
+            notes.append("Some legs have no trade yet this session")
+        if notes:
+            add("leg_quality", "Leg spreads and freshness", "unknown", " · ".join(notes))
+        else:
+            add("leg_quality", "Leg spreads and freshness", "pass", "All spreads within 5% and last trades within 2 minutes")
+    else:
+        add("legs_consistent", "Leg prices consistent with spot", "unknown", "Needs live Kite quotes")
 
     # Time to hold: the next session you could enter in must come before the exit-by day.
     n_before = plan.get("exit_days_before_expiry")
@@ -252,6 +293,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "action": "trade", "verdict": verdict,
             "failed": [c["label"] for c in fails], "unset_count": len(unset),
             "pricing": "kite_live" if live else "estimate",
+            "prices_unreliable": bool(unreliable), "vol_ratio": ratio,
             "expiry": expiry.isoformat(), "expiry_confirmed": expiry_confirmed,
             "strikes": {"long_put": lp, "short_put": sp, "short_call": sc, "long_call": lc, "wing": wing},
             "lot": lot, "orders": orders,

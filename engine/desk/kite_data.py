@@ -79,7 +79,7 @@ def resolve_symbols(kite, legs, today, errors):
 
 
 def fetch_quotes(kite, symbols, errors):
-    """{tradingsymbol: {"ltp", "bid", "ask"}} from kite.quote, or None."""
+    """{tradingsymbol: {"ltp", "bid", "ask", "last_trade_time", "quote_time"}} from kite.quote, or None."""
     try:
         data = kite.quote([f"NFO:{s}" for s in symbols])
     except Exception as e:
@@ -95,7 +95,8 @@ def fetch_quotes(kite, symbols, errors):
         if not ltp:
             errors.append(f"No live price for {s}")
             return None
-        out[s] = {"ltp": float(ltp), "bid": float(buy.get("price") or 0) or None, "ask": float(sell.get("price") or 0) or None}
+        out[s] = {"ltp": float(ltp), "bid": float(buy.get("price") or 0) or None, "ask": float(sell.get("price") or 0) or None,
+                  "last_trade_time": q.get("last_trade_time"), "quote_time": q.get("timestamp")}
     return out
 
 
