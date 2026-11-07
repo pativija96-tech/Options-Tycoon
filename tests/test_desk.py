@@ -764,3 +764,30 @@ class TestHolidays:
             import engine.desk.market_calendar  # noqa: F401
             expiry, days, label = E._get_expiry_date()
         assert expiry == date(2026, 11, 9) and days == 6 and label == "09 Nov 2026 (Mon)"
+
+
+class TestNoLiveDepth:
+    """Market closed: Kite gives last prices but no bid/ask. Seen for real on Sat 7 Nov 2026."""
+
+    def _closed(self):
+        q = nov_quotes(*TICKET_2, traded="2026-11-02 15:29:59")
+        for v in q.values():
+            v["bid"] = v["ask"] = None
+        return q
+
+    def test_labelled_as_last_traded_not_live(self):
+        t = nov_ticket(self._closed())
+        assert t["pricing"] == "kite_last"
+        c = check(t, "prices_live")
+        assert c["status"] == "warn" and "4 of 4 legs" in c["detail"] and "best bid" not in c["detail"]
+        assert t["prices_unreliable"] is True and t["verdict"] == "NO-GO"
+
+    def test_one_leg_without_depth_is_not_called_live(self):
+        q = nov_quotes(*TICKET_2)
+        q["C23950"]["ask"] = None                       # a buy needs the ask
+        t = nov_ticket(q)
+        assert t["pricing"] == "kite_last" and "1 of 4 legs" in check(t, "prices_live")["detail"]
+
+    def test_full_depth_is_still_live(self):
+        t = nov_ticket(nov_quotes(*TICKET_2))
+        assert t["pricing"] == "kite_live" and check(t, "prices_live")["status"] == "pass"

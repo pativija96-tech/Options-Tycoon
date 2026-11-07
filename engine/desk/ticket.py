@@ -261,7 +261,11 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         add("data_live", "Signal built on live Kite data", "unknown",
             f"Delayed data ({market['data_source']}) — log in to Kite and prepare again for live prices")
 
-    if live:
+    no_depth = [o["symbol"] for o in orders if not o["has_depth"]] if live else []
+    if live and no_depth:
+        add("prices_live", "Leg prices from Kite", "warn",
+            f"Last traded prices for {len(no_depth)} of {len(orders)} legs: no live bid/ask (market closed, or nothing quoted yet)")
+    elif live:
         add("prices_live", "Leg prices from Kite", "pass", "Live best bid (sells) and best ask (buys)")
     else:
         add("prices_live", "Leg prices from Kite", "unknown", "Model estimates — Kite quotes not available")
@@ -270,7 +274,6 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     unreliable = []
     ratio = None
     if live:
-        no_depth = [o["symbol"] for o in orders if not o["has_depth"]]
         if no_depth:
             unreliable.append("no " + "bid/ask" + " for " + ", ".join(no_depth))
         old = [o["symbol"] for o in orders if o["previous_session"]]
@@ -332,7 +335,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     return {**base,
             "action": "trade", "verdict": verdict,
             "failed": [c["label"] for c in fails], "unset_count": len(unset),
-            "pricing": "kite_live" if live else "estimate",
+            "pricing": ("kite_last" if no_depth else "kite_live") if live else "estimate",
             "prices_unreliable": bool(unreliable), "vol_ratio": ratio,
             "hold": hold_info(session, exit_by_d, expiry),
             "event_alert": high[0] if high else None, "next_clear_entry": clear.isoformat() if clear else None,
