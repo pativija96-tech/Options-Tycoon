@@ -8,7 +8,7 @@ filled; a field with no reliable book number stays as the user had it.
   tastylive iron condor studies       — collect ⅓ of the wing width; manage winners at 50%
   This repo's signal engine          — VIX above 40 skip, expiry-day ELM estimate, 1-day-early exit
   The user's own practice            — Tuesday entry
-  data/historical/event_calendar.json — upcoming NIFTY / ALL high-impact events
+Market events are not part of the preset: the ticket reads data/historical/nifty_events.json directly.
 """
 
 import json
@@ -34,32 +34,12 @@ def _nifty_settings():
         return {}
 
 
-def _events(today: date):
-    try:
-        with open(ROOT / "data" / "historical" / "event_calendar.json") as f:
-            rows = json.load(f)
-    except Exception:
-        return [], ["Event calendar not found"]
-    out, notes = [], []
-    for e in rows:
-        try:
-            d = date.fromisoformat(e["date"])
-        except (KeyError, ValueError):
-            continue
-        if d < today or e.get("market") not in ("NIFTY", "ALL") or e.get("impact") != "high":
-            continue
-        out.append({"date": d.isoformat(), "label": str(e.get("name", "Event"))[:80]})
-        if d.weekday() >= 5:
-            notes.append(f"{e.get('name')} on {d.isoformat()} falls on a {d.strftime('%A')} — check the official date")
-    return sorted(out, key=lambda e: e["date"]), notes
-
-
 def book_preset(today: date) -> dict:
     nifty = _nifty_settings()
     capital = nifty.get("capital")
     margin = nifty.get("margin_per_lot")
     min_credit_ps = WING_WIDTH * TASTY_CREDIT_SHARE_OF_WIDTH
-    events, notes = _events(today)
+    notes = []
 
     values, sources = {}, {}
 
@@ -86,7 +66,6 @@ def book_preset(today: date) -> dict:
             f"{ELDER}: 6% rule — stop for the month at {ELDER_MONTHLY_STOP:.0%} of ₹{capital:,} capital")
     else:
         notes.append("No NIFTY capital in settings — loss exit and monthly limit not filled")
-    put("events", events, "Upcoming high-impact NIFTY / all-market events from your event calendar")
 
     unsourced = {
         "vix_min": "No book gives an India VIX level (tastylive uses IV rank, which the app doesn't have)",

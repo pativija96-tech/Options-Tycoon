@@ -40,7 +40,7 @@ PLAN_FIELDS = {
     "weekly_loss_limit": ("number", "Stop new trades after losing this much in a week (₹)"),
     "monthly_loss_limit": ("number", "Stop new trades after losing this much in a month (₹)"),
     "pause_after_losses": ("number", "Pause after this many losses in a row"),
-    "events": ("events", "Event dates to avoid (RBI, Budget, elections…)"),
+    "events": ("events", "Your own extra event dates (RBI, Fed and US data are already on the desk's calendar)"),
 }
 
 

@@ -437,12 +437,8 @@ class TestBookRules:
         plan = validate_plan(self._preset()["values"])
         assert plan["max_loss_per_trade"] is None and plan["min_credit"] == 2167
 
-    def test_events_are_upcoming_nifty_or_all_and_weekends_flagged(self):
-        p = self._preset()
-        dates = [e["date"] for e in p["values"]["events"]]
-        assert dates == sorted(dates) and all(d >= "2026-10-30" for d in dates)
-        assert "2026-11-05" not in dates                # FOMC is tagged QQQ in the calendar
-        assert any("2026-12-05" in n and "Saturday" in n for n in p["notes"])
+    def test_events_are_not_copied_into_the_plan(self):
+        assert "events" not in self._preset()["values"] and default_plan()["events"] == []
 
     def test_engine_elm_estimate_unchanged_by_shared_constant(self):
         from engine.signals.simple_ic_engine import ELM_FACTOR
@@ -631,3 +627,84 @@ class TestMargin:
     def test_default_plan_has_the_cushion_but_no_invented_reserve(self):
         plan = default_plan()
         assert plan["margin_cushion_pct"] == 20 and plan["topup_reserve"] is None
+
+
+# ── Events (action item 3): tiers, overnight impact, stale calendar ─────────
+
+class TestEvents:
+    CAL = {"last_updated": "2026-11-20", "events": [
+        {"date": "2026-12-04", "name": "RBI policy decision", "tier": "high", "session": "india"},
+        {"date": "2026-12-04", "name": "US jobs report", "tier": "medium", "session": "overnight"},
+        {"date": "2026-12-09", "name": "Fed decision", "tier": "high", "session": "overnight"},
+        {"date": "2026-11-27", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    ]}
+
+    def _t(self, today, expiry, calendar=None, plan=None):
+        return build_ticket(make_signal(), plan or engine_plan(), today, expiry=expiry, calendar=calendar or self.CAL)
+
+    def test_high_tier_blocks_and_names_the_session(self):
+        t = self._t(date(2026, 12, 1), date(2026, 12, 8))
+        c = check(t, "events")
+        assert c["status"] == "fail" and t["verdict"] == "NO-GO" and "RBI policy decision" in c["detail"]
+        assert t["event_alert"]["name"] == "RBI policy decision" and t["event_alert"]["tier"] == "high"
+
+    def test_medium_tier_only_warns(self):
+        t = self._t(date(2026, 11, 24), date(2026, 12, 1))
+        c = check(t, "events")
+        assert c["status"] == "warn" and "US CPI" in c["detail"] and t["event_alert"] is None
+        assert "No event before expiry" not in t["failed"]
+
+    def test_overnight_event_hits_the_next_session_not_its_own_date(self):
+        # Fed on Wed 9 Dec hits Thu 10 Dec: a contract expiring on the 9th is clear of it.
+        assert "Fed" not in check(self._t(date(2026, 12, 7), date(2026, 12, 9)), "events")["detail"]
+        c = check(self._t(date(2026, 12, 7), date(2026, 12, 10)), "events")
+        assert c["status"] == "fail" and "hits the 2026-12-10 session" in c["detail"]
+
+    def test_overnight_event_yesterday_still_hits_today(self):
+        c = check(self._t(date(2026, 12, 10), date(2026, 12, 15)), "events")
+        assert c["status"] == "fail" and "Fed decision" in c["detail"]
+
+    def test_window_runs_to_expiry_not_exit_by(self):
+        # RBI on Fri 4 Dec is after exit-by (Thu 3 Dec) but on the expiry day: still blocks.
+        t = self._t(date(2026, 12, 1), date(2026, 12, 4))
+        assert t["exit_plan"]["exit_by"] == "2026-12-03" and check(t, "events")["status"] == "fail"
+
+    def test_overnight_skips_a_holiday(self):
+        from engine.desk.market_calendar import impact_date
+        # US CPI on Mon 9 Nov would hit Tue 10 Nov, a Diwali holiday: it hits Wed 11 Nov.
+        assert impact_date({"date": "2026-11-09", "session": "overnight"}) == date(2026, 11, 11)
+
+    def test_stale_by_age_or_empty_window_shows_not_set(self):
+        old = {"last_updated": "2026-10-01", "events": self.CAL["events"]}
+        c = check(self._t(date(2026, 11, 16), date(2026, 11, 17), calendar=old), "events")
+        assert c["status"] == "unset" and "calendar stale" in c["detail"]
+        empty = {"last_updated": "2026-11-20", "events": []}
+        assert "calendar stale" in check(self._t(date(2026, 11, 23), date(2026, 11, 24), calendar=empty), "events")["detail"]
+
+    def test_known_event_still_blocks_when_calendar_is_stale(self):
+        old = {"last_updated": "2026-10-01", "events": self.CAL["events"]}
+        assert check(self._t(date(2026, 12, 1), date(2026, 12, 8), calendar=old), "events")["status"] == "fail"
+
+    def test_fresh_calendar_with_nothing_in_window_passes(self):
+        assert check(self._t(date(2026, 11, 23), date(2026, 11, 26)), "events")["status"] == "pass"
+
+    def test_plans_own_events_block_as_high(self):
+        plan = engine_plan()
+        plan["events"] = [{"date": "2026-11-25", "label": "Bihar results"}]
+        c = check(self._t(date(2026, 11, 23), date(2026, 11, 26), plan=plan), "events")
+        assert c["status"] == "fail" and "Bihar results" in c["detail"]
+
+    def test_next_clear_entry_skips_high_event_weeks(self):
+        plan = engine_plan()
+        plan["entry_days"] = ["Tue"]
+        t = self._t(date(2026, 12, 1), date(2026, 12, 8), plan=plan)
+        assert t["next_clear_entry"] == "2026-12-15"            # Tue 8 Dec's week holds the Fed
+
+    def test_real_calendar_file_is_valid_and_sourced(self):
+        from engine.desk.market_calendar import load_events, impact_date
+        cal = load_events()
+        assert cal["last_updated"] and cal["sources"] and cal["not_covered"]
+        for e in cal["events"]:
+            assert e["tier"] in ("high", "medium") and e["session"] in ("india", "overnight") and impact_date(e)
+        assert {"date": "2026-12-04", "name": "RBI policy decision", "tier": "high", "session": "india"} in cal["events"]
+        assert not any(e["date"] == "2026-12-05" for e in cal["events"])   # the old calendar's wrong RBI date

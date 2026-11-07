@@ -1862,8 +1862,10 @@ async def prepare_trade_ticket(request: Request, founder: dict = Depends(require
     from engine.desk.trades import list_trades
     from engine.desk.review import risk_budget
     risk = risk_budget(list_trades(_desk_user_id(founder)), plan, today)
+    from engine.desk.market_calendar import load_events
+    calendar = load_events()
     ticket = build_ticket(signal, plan, today, lot=lot, expiry=expiry, symbols=symbols, quotes=quotes,
-                          funds_available=funds, kite_errors=errors, kite_connected=connected, risk=risk)
+                          funds_available=funds, kite_errors=errors, kite_connected=connected, risk=risk, calendar=calendar)
 
     # 3. Margin needs the final order prices, so it is checked after the ticket is priced
     if kite and ticket.get("action") == "trade" and symbols:
@@ -1871,7 +1873,7 @@ async def prepare_trade_ticket(request: Request, founder: dict = Depends(require
         if margin is not None:
             ticket = build_ticket(signal, plan, today, lot=lot, expiry=expiry, symbols=symbols, quotes=quotes,
                                   margin_required=margin, funds_available=funds, kite_errors=errors,
-                                  kite_connected=connected, risk=risk)
+                                  kite_connected=connected, risk=risk, calendar=calendar)
     return {"success": True, "ticket": ticket}
 
 

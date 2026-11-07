@@ -1,0 +1,31 @@
+{
+  "maintained": "Hand-kept, not fetched. Refresh at least every 14 days; the ticket shows the event check as 'not set — calendar stale' otherwise.",
+  "last_updated": "2026-11-06",
+  "tiers": "high blocks the trade (elections, RBI policy, Union Budget, Fed decisions); medium warns (US CPI and jobs, big NIFTY-weight earnings).",
+  "sessions": "india = hits that day's session. overnight = after NSE's close, so it hits the next trading session (Fed 11:30 PM IST, US CPI and jobs 7:00 PM IST).",
+  "sources": {
+    "rbi": "https://www.rbi.org.in/Scripts/AnnualPolicy.aspx (schedule 2026-27; decision is the last day)",
+    "fed": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm (decision is the last day; dates tentative until the preceding meeting)",
+    "cpi": "https://www.bls.gov/schedule/news_release/cpi.htm",
+    "jobs": "https://www.bls.gov/schedule/news_release/empsit.htm"
+  },
+  "not_covered": "Union Budget 2027 (date not announced), state election results, NIFTY-weight earnings dates. Add them here, or to the Trading Plan's own events, when known.",
+  "events": [
+    {"date": "2026-11-10", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    {"date": "2026-12-04", "name": "RBI policy decision", "tier": "high", "session": "india"},
+    {"date": "2026-12-04", "name": "US jobs report", "tier": "medium", "session": "overnight"},
+    {"date": "2026-12-09", "name": "Fed decision", "tier": "high", "session": "overnight"},
+    {"date": "2026-12-10", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    {"date": "2027-01-08", "name": "US jobs report", "tier": "medium", "session": "overnight"},
+    {"date": "2027-01-13", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    {"date": "2027-01-27", "name": "Fed decision", "tier": "high", "session": "overnight"},
+    {"date": "2027-02-05", "name": "RBI policy decision", "tier": "high", "session": "india"},
+    {"date": "2027-02-05", "name": "US jobs report", "tier": "medium", "session": "overnight"},
+    {"date": "2027-02-11", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    {"date": "2027-03-05", "name": "US jobs report", "tier": "medium", "session": "overnight"},
+    {"date": "2027-03-10", "name": "US CPI", "tier": "medium", "session": "overnight"},
+    {"date": "2027-03-17", "name": "Fed decision", "tier": "high", "session": "overnight"},
+    {"date": "2027-04-28", "name": "Fed decision", "tier": "high", "session": "overnight"},
+    {"date": "2027-06-09", "name": "Fed decision", "tier": "high", "session": "overnight"}
+  ]
+}

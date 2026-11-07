@@ -10,6 +10,7 @@ your plan), "unknown" (data needed for the check is unavailable).
 
 from datetime import date, timedelta
 
+from engine.desk.market_calendar import calendar_stale, event_hits, next_clear_entry, plan_events
 from engine.desk.leg_prices import (VOL_RATIO_MAX, VOL_RATIO_MIN, has_depth, leg_quality, mid, open_price, vol_ratio)
 from engine.signals.simple_ic_engine import RISK_CAP_PCT
 
@@ -44,13 +45,15 @@ def _legs_from_signal(signal):
 
 
 def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quotes=None,
-                 margin_required=None, funds_available=None, kite_errors=None, kite_connected=False, risk=None):
+                 margin_required=None, funds_available=None, kite_errors=None, kite_connected=False, risk=None,
+                 calendar=None):
     """
     signal:  dict from generate_daily_signal() (action "trade" or "skip").
     plan:    dict from engine.desk.plan (unset rules are None / []).
     today:   IST date.
     symbols: {(strike, "CE"|"PE"): tradingsymbol} from Kite, or None.
     quotes:  {tradingsymbol: {"ltp","bid","ask","last_trade_time","quote_time"}} from Kite, or None.
+    calendar: market_calendar.load_events() — the event calendar — or None for the plan's events only.
     """
     kite_errors = list(kite_errors or [])
     cond = signal.get("conditions") or {}
@@ -165,15 +168,29 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         add("vix", "India VIX in your band", "pass" if lo_ok and hi_ok else "fail",
             f"{vix:.1f} {'within' if lo_ok and hi_ok else 'outside'} {band}")
 
-    events = plan.get("events") or []
-    if not events:
-        add("events", "No event before expiry", "unset", "No event dates in your plan")
+    # Window: today through expiry, in case the position is still held. Overnight events count on
+    # the Indian session they hit. High tier blocks, medium warns.
+    events = plan_events(plan) + list((calendar or {}).get("events") or [])
+    hits = event_hits(events, today, expiry)
+    high = [h for h in hits if h["tier"] == "high"]
+    medium = [h for h in hits if h["tier"] != "high"]
+
+    def describe(h):
+        hit = f", hits the {h['impact_date']} session" if h["impact_date"] != h["date"] else ""
+        return f"{h['name']} on {h['date']}{hit} ({h['tier']})"
+
+    event_label = "No event before expiry"
+    if high:
+        add("events", event_label, "fail", "; ".join(describe(h) for h in hits))
+    elif medium:
+        add("events", event_label, "warn", "; ".join(describe(h) for h in medium))
+    elif calendar is not None and calendar_stale(calendar, today):
+        add("events", event_label, "unset", "Not set — calendar stale: refresh data/historical/nifty_events.json")
+    elif not events:
+        add("events", event_label, "unset", "No event dates in your plan")
     else:
-        hits = [e for e in events if today <= date.fromisoformat(e["date"]) <= expiry]
-        if hits:
-            add("events", "No event before expiry", "fail", "; ".join(f"{e['label']} on {e['date']}" for e in hits))
-        else:
-            add("events", "No event before expiry", "pass", f"None of your {len(events)} listed events fall before {expiry.isoformat()}")
+        add("events", event_label, "pass", f"No listed event hits a session from {today.isoformat()} to expiry {expiry.isoformat()}")
+    clear = next_clear_entry(plan, today, events) if high else None
 
     def threshold(key, label, value, limit, ok, fmt):
         if limit is None:
@@ -319,6 +336,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "failed": [c["label"] for c in fails], "unset_count": len(unset),
             "pricing": "kite_live" if live else "estimate",
             "prices_unreliable": bool(unreliable), "vol_ratio": ratio,
+            "event_alert": high[0] if high else None, "next_clear_entry": clear.isoformat() if clear else None,
             "expiry": expiry.isoformat(), "expiry_confirmed": expiry_confirmed,
             "strikes": {"long_put": lp, "short_put": sp, "short_call": sc, "long_call": lc, "wing": wing},
             "lot": lot, "orders": orders,
