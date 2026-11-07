@@ -2089,10 +2089,52 @@ async def desk_review(founder: dict = Depends(require_founder)):
     from engine.desk.review import review_stats, risk_budget
     from engine.desk.plan import load_plan
     from engine.desk import kite_data
+    from engine.desk.skips import list_skips
     uid = _desk_user_id(founder)
     trades = list_trades(uid)
     return {"success": True, "stats": review_stats(trades),
-            "risk": risk_budget(trades, load_plan(uid), kite_data.ist_today())}
+            "risk": risk_budget(trades, load_plan(uid), kite_data.ist_today()),
+            "skips": list_skips(uid)}
+
+
+@router.get("/desk/today")
+async def desk_today(founder: dict = Depends(require_founder)):
+    """Today's state for the Today tab: a skip, if the day has been skipped."""
+    from engine.desk.skips import get_skip
+    from engine.desk import kite_data
+    return {"success": True, "skip": get_skip(_desk_user_id(founder), kite_data.ist_today())}
+
+
+@router.post("/desk/skip")
+async def desk_skip(request: Request, founder: dict = Depends(require_founder)):
+    """Skip today: locks the Today tab and logs the untaken ticket in the journal."""
+    from engine.desk.skips import record_skip
+    from engine.desk.plan import load_plan
+    from engine.desk.market_calendar import load_events, next_clear_entry, plan_events
+    from engine.desk import kite_data
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ticket = body.get("ticket") if isinstance(body, dict) else None
+    if ticket is not None and (not isinstance(ticket, dict) or len(json.dumps(ticket)) > 100_000):
+        return JSONResponse(status_code=400, content={"success": False, "error": "Bad ticket"})
+    uid, today = _desk_user_id(founder), kite_data.ist_today()
+    plan = load_plan(uid)
+    nxt = (ticket or {}).get("next_clear_entry")
+    if not nxt:
+        d = next_clear_entry(plan, today, plan_events(plan) + list(load_events().get("events") or []))
+        nxt = d.isoformat() if d else None
+    return {"success": True, "skip": record_skip(uid, today, ticket, nxt)}
+
+
+@router.delete("/desk/skip")
+async def desk_skip_undo(founder: dict = Depends(require_founder)):
+    """Undo today's skip, for a mis-click."""
+    from engine.desk.skips import undo_skip
+    from engine.desk import kite_data
+    undo_skip(_desk_user_id(founder), kite_data.ist_today())
+    return {"success": True}
 
 
 @router.post("/desk/history/load")

@@ -131,6 +131,20 @@ MIGRATIONS = [
             PRIMARY KEY (symbol, date)
         )
     """),
+    # Migration 10: skipped trading days, with the untaken ticket (one per user, market and day).
+    (10, "Add desk_skips table", """
+        CREATE TABLE IF NOT EXISTS desk_skips (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            market TEXT NOT NULL,
+            skip_date TEXT NOT NULL,
+            reason TEXT,
+            next_entry TEXT,
+            ticket_json TEXT,
+            created_at TEXT,
+            UNIQUE (user_id, market, skip_date)
+        )
+    """),
 ]
 
 

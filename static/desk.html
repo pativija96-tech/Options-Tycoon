@@ -167,6 +167,7 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
       <div style="color:var(--muted);max-width:560px" id="heroText">One click regenerates today's signal, checks it against your Trading Plan, prices the four legs from Kite when you're logged in, and sets your exit plan. Nothing is ever placed for you.</div>
       <button class="btn big" id="prepareBtn" onclick="prepare()">Step 3 · Prepare today's trade</button>
     </div>
+    <div id="skipBox"></div>
     <div id="ticketBox"></div>
     <div id="fillBox"></div>
   </section>
@@ -187,6 +188,7 @@ select.sel{min-height:44px;padding:0 12px;border-radius:12px;border:1px solid rg
   <section id="screenReview" class="hide" style="flex-direction:column;gap:20px">
     <div><div class="eyebrow">Your journal · real fills only</div><h1>Review</h1></div>
     <div id="reviewBox"><div class="card hero"><div class="note">Loading…</div></div></div>
+    <div id="skipsBox"></div>
     <div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:12px">
       <div style="font-weight:700;font-size:17px">Import your Kite tradebook</div>
       <div class="note" style="font-size:13px">Kite Console → Reports → Tradebook → F&amp;O → download CSV. Only 4-leg NIFTY iron condors are imported; scalps and other indices are listed as skipped. Re-uploading the same file adds nothing twice.</div>
@@ -394,7 +396,32 @@ window.prepare=function(){
     });
   });
 };
-window.resetTicket=function(){state.ticket=null;el('ticketBox').innerHTML='';el('heroBox').classList.remove('hide');};
+// ---------- skip flow ----------
+window.skipToday=function(){
+  showError('');
+  api('/api/live/desk/skip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket:state.ticket})})
+  .then(function(d){state.skip=d.skip;renderSkip();}).catch(function(e){showError(e.message);});
+};
+window.undoSkip=function(){
+  api('/api/live/desk/skip',{method:'DELETE'}).then(function(){
+    state.skip=null;state.ticket=null;state.viewOnly=false;steps[3]=false;
+    el('ticketBox').innerHTML='';el('skipBox').innerHTML='';el('heroBox').classList.remove('hide');el('st3n').textContent='Ticket, checks and orders. You place them in Kite.';renderSteps();
+  }).catch(function(e){showError(e.message);});
+};
+window.viewSkippedTicket=function(){state.ticket=state.skip.ticket;state.viewOnly=true;renderTicket();};
+function renderSkip(){
+  var s=state.skip,box=el('skipBox');if(!s){box.innerHTML='';return;}
+  state.ticket=null;state.viewOnly=false;el('ticketBox').innerHTML='';el('heroBox').classList.add('hide');el('fillBox').innerHTML='';
+  steps[3]=true;el('st3n').textContent='Skipped today.';renderSteps();
+  box.innerHTML='<div class="card hero"><div class="stamp none">SKIPPED</div>'+
+    '<div style="font-size:18px;font-weight:700">'+esc(fmtDate(s.skip_date))+'</div>'+
+    '<div style="color:var(--soft);max-width:620px">'+esc(s.reason||'Chose to skip')+'</div>'+
+    '<div class="note" style="font-size:14px">Next eligible entry day: <b>'+(s.next_entry?esc(fmtDate(s.next_entry)):'none found in the next 60 days')+'</b>. The ticket is saved in your journal.</div>'+
+    '<div class="note">'+(s.ticket?'<a href="#" onclick="viewSkippedTicket();return false;">View ticket anyway</a> · ':'')+'<a href="#" onclick="undoSkip();return false;">Undo skip</a></div></div>';
+}
+function loadToday(){
+  api('/api/live/desk/today').then(function(d){if(d.skip){state.skip=d.skip;renderSkip();}}).catch(function(){});
+}
 function legQuote(o){
   if(o.has_depth===undefined)return '';
   var age=o.previous_session?'<span style="color:var(--red)">no trade this session</span>':
@@ -416,7 +443,7 @@ function renderTicket(){
     box.innerHTML='<div class="card hero"><div class="stamp none">NO TRADE</div><div style="font-size:18px;font-weight:700">'+esc(t.skip_reason)+'</div>'+
       '<button class="btn ghost" onclick="prepare()">Check again</button></div>';return;
   }
-  var go=t.verdict==='GO',live=t.pricing==='kite_live';
+  var go=t.verdict==='GO',live=t.pricing==='kite_live',view=!!state.viewOnly,ev=t.event_alert;
   var stamp=go?'<div class="stamp go">GO</div>':'<div class="stamp nogo">NO-GO · '+t.failed.length+' rule'+(t.failed.length>1?'s':'')+'</div>';
   var rr=t.reward_risk!=null?num(t.reward_risk)+' : 1':'—';
   var h='<div class="grid2"><div class="card ticket">';
@@ -428,6 +455,12 @@ function renderTicket(){
      '<div><div class="k">Max loss</div><div class="v" style="color:var(--red)">'+inr(t.max_loss)+'</div></div>'+
      '<div><div class="k">Reward : risk</div><div class="v">'+rr+'</div></div>'+
      '<div><div class="k">Margin (Kite)</div><div class="v">'+inr(t.margin.required)+'</div></div></div>';
+  if(view)h+='<div class="err" style="margin:12px 20px 0;color:var(--gold);border-color:rgba(245,181,68,.35);background:rgba(245,181,68,.08)"><div style="font-weight:800">Skipped '+esc(fmtDate(state.skip&&state.skip.skip_date))+'</div></div>';
+  if(ev){
+    h+='<div class="err" style="margin:12px 20px 0"><div style="font-weight:800">'+esc(ev.name)+' · '+esc(ev.tier)+' tier</div>'+
+       '<div style="font-size:13px">On '+esc(fmtDate(ev.date))+(ev.impact_date!==ev.date?', hits the '+esc(fmtDate(ev.impact_date))+' session':'')+'.'+
+       (t.next_clear_entry?' Next clear entry day: <b>'+esc(fmtDate(t.next_clear_entry))+'</b>.':'')+'</div></div>';
+  }
   if(t.prices_unreliable){
     var bad=(t.checks||[]).filter(function(c){return c.key==='legs_consistent';})[0];
     h+='<div class="err" style="margin:12px 20px 0"><div style="font-weight:800">Prices unreliable — rebuild</div><div style="font-size:13px">'+esc(bad?bad.detail.replace('Prices unreliable — rebuild: ',''):'')+'</div></div>';
@@ -449,9 +482,13 @@ function renderTicket(){
      '<div class="note">'+esc(ep.order||'')+'</div>'+
      (t.elm_estimate?'<div class="note" style="color:var(--gold)">Expiry-day margin (ELM) estimate: about '+inr(t.elm_estimate.additional_est)+' extra, total about '+inr(t.elm_estimate.total_requirement_est)+' if held into expiry morning. Exit before expiry to avoid it. A guide only — the exchange sets the real amount.</div>':'')+'</div>';
   h+='<div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px">'+
+     (view?'<div class="note" style="font-size:14px;flex:1">Skipped ticket, for reference only. Its prices are from when you skipped.</div>':
+     (ev?'<button class="btn" style="flex:1;min-width:220px" onclick="skipToday()">Skip today: event</button>'+
+         '<button class="btn ghost" onclick="prepare()">Refresh prices</button>'+
+         '<button class="btn ghost" id="syncBtn" onclick="syncEntry()">I\'ve placed it anyway · Sync</button>':
      '<button class="btn" style="flex:1;min-width:220px" id="syncBtn" onclick="syncEntry()">I\'ve placed it · Sync my fills</button>'+
      '<button class="btn ghost" onclick="prepare()">Refresh prices</button>'+
-     '<button class="btn ghost" onclick="resetTicket()">Skip today</button></div>';
+     '<button class="btn ghost" onclick="skipToday()">Skip today</button>'))+'</div>';
   h+='</div>';
   // checklist
   var passed=t.checks.filter(function(c){return c.status==='pass';}).length;
@@ -691,7 +728,19 @@ window.tagTrade=function(id,flag,fromReview){
 function loadReview(){
   api('/api/live/desk/review').then(renderReview).catch(function(e){el('reviewBox').innerHTML='<div class="err">'+esc(e.message)+'</div>';});
 }
+function renderSkips(list){
+  var box=el('skipsBox');if(!box)return;
+  if(!list||!list.length){box.innerHTML='';return;}
+  var h='<div class="card" style="padding:22px 24px;display:flex;flex-direction:column;gap:10px"><div style="font-weight:700;font-size:17px">Skipped days</div>'+
+    '<div class="note" style="font-size:13px">Tickets you did not take, logged so the rules can be judged on data later.</div><div class="tblwrap"><table class="tbl"><tr><th>Date</th><th>Reason</th><th>Strikes</th><th>Credit</th><th>Expiry</th></tr>';
+  list.forEach(function(s){
+    var t=s.ticket||{},k=t.strikes;
+    h+='<tr><td>'+esc(s.skip_date)+'</td><td style="font-family:var(--font)">'+esc(s.reason||'')+'</td><td>'+(k?k.short_put+' / '+k.short_call:'—')+'</td><td>'+(t.credit!=null?inr(t.credit):'—')+'</td><td>'+esc(t.expiry||'—')+'</td></tr>';
+  });
+  box.innerHTML=h+'</table></div></div>';
+}
 function renderReview(d){
+  renderSkips(d.skips);
   var s=d.stats,r=d.risk,box=el('reviewBox');
   if(!s.trades){box.innerHTML='<div class="card hero"><div style="font-size:18px;font-weight:700">No closed trades yet</div><div class="note">Close a trade from Position, or import your Kite tradebook below.</div></div>';return;}
   function sgn(n){return n==null?'—':(n>=0?'+':'')+inr(n);}
@@ -742,7 +791,7 @@ window.importTradebook=function(){
 };
 
 el('todayDate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'short',timeZone:'Asia/Kolkata'});
-loadKite();loadPlan();loadHistoryStatus();
+loadKite();loadPlan();loadHistoryStatus();loadToday();
 })();
 </script>
 </body>
