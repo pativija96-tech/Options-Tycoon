@@ -2181,10 +2181,13 @@ async def desk_range_odds(horizon: int = 5, weekday: str = None, founder: dict =
     except Exception:
         min_matches = 20
     wd = WEEKDAYS.index(weekday) if weekday else None
+    from engine.desk.plan import load_plan
+    warn_below = load_plan(_desk_user_id(founder)).get("min_range_matches")
     loop = asyncio.get_event_loop()
     with ThreadPoolExecutor() as pool:
         rep = await loop.run_in_executor(
-            pool, lambda: report(load_series(), kite_data.ist_today(), horizon=horizon, weekday=wd, min_matches=min_matches))
+            pool, lambda: report(load_series(), kite_data.ist_today(), horizon=horizon, weekday=wd, min_matches=min_matches,
+                                 warn_below=warn_below))
     return {"success": True, "report": rep}
 
 

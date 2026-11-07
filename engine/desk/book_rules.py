@@ -58,6 +58,7 @@ def book_preset(today: date) -> dict:
     if margin:
         put("expiry_margin_buffer", round(margin * ELM_FACTOR),
             f"Your signal engine's expiry-day margin estimate: ₹{margin:,} × {ELM_FACTOR} (seen on 24 Aug 2026)")
+    put("min_range_matches", 30, "Your 3 Nov action list: warn below 30 similar weeks")
     put("margin_cushion_pct", 20, "Your 3 Nov action list: keep 20% above Kite's entry margin")
     if capital:
         put("loss_exit_rupees", round(capital * ELDER_RISK_PER_TRADE),

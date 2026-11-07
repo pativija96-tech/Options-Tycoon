@@ -193,7 +193,8 @@ def walk_forward(samples, w_pct, min_matches, train_years=3, test_months=6):
             "skill_pct": round(skill, 1), "t_stat": round(t, 2), "verdict": verdict}
 
 
-def report(series, today: date, horizon: int = 5, weekday: int = None, min_matches: int = 20, widths=WIDTHS):
+def report(series, today: date, horizon: int = 5, weekday: int = None, min_matches: int = 20, widths=WIDTHS,
+           warn_below: int = None):
     weekday = today.weekday() if weekday is None else weekday
     notes = []
     nifty = series.get("nifty") or []
@@ -255,7 +256,8 @@ def report(series, today: date, horizon: int = 5, weekday: int = None, min_match
                        "vix_terciles": [round(t, 2) for t in terc] if terc else None},
         "matched_on": dims, "matches": len(matched), "episodes": episodes(matched) if matched else 0,
         "all_windows": len(samples), "history_from": samples[0]["date"], "history_to": samples[-1]["date"],
-        "min_matches": min_matches, "rows": rows, "worst": worst,
+        "min_matches": min_matches, "rows": rows, "worst": worst, "warn_below": warn_below,
+        "few_matches": bool(warn_below and len(matched) < warn_below),
         "walk_forward": walk_forward(samples, 250 / spot * 100, min_matches),
         "notes": notes,
         "method": (f"Each past {WEEKDAYS[weekday]}: NIFTY's open, then the highest high and lowest low over "
