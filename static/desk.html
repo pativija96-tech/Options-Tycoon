@@ -73,6 +73,7 @@ h1{margin:4px 0 0;font-size:34px;font-weight:800;letter-spacing:-.8px}
 .ico.fail{background:rgba(251,113,133,.18);color:var(--red)}
 .ico.unset{background:rgba(148,163,184,.14);color:var(--muted)}
 .ico.unknown{background:rgba(245,181,68,.14);color:var(--gold)}
+.ico.warn{background:rgba(245,181,68,.22);color:var(--gold)}
 .badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700}
 .badge.live{background:rgba(52,211,153,.14);color:var(--green-t)}.badge.est{background:rgba(245,181,68,.14);color:#FCD38A}
 .notes{margin:0;padding-left:18px;color:var(--muted);font-size:13px}
@@ -407,7 +408,7 @@ window.copyOrder=function(i){
   if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,done);}else{done();}
 };
 
-var ICON={pass:'✓',fail:'✕',unset:'–',unknown:'?'};
+var ICON={pass:'✓',fail:'✕',unset:'–',unknown:'?',warn:'!'};
 
 function renderTicket(){
   var t=state.ticket,box=el('ticketBox');if(!t){box.innerHTML='';return;}

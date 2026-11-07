@@ -4,8 +4,8 @@ when available) into one ticket: GO / NO-GO checks, the 4 entry orders in
 sequence, credit / max loss / reward : risk, margin, and the exit plan.
 
 build_ticket() is pure (no I/O) so it can be tested without Kite.
-Statuses per check: "pass", "fail", "unset" (rule not in your plan),
-"unknown" (data needed for the check is unavailable).
+Statuses per check: "pass", "fail", "warn" (does not block the trade), "unset" (rule not in
+your plan), "unknown" (data needed for the check is unavailable).
 """
 
 from datetime import date, timedelta
@@ -188,14 +188,41 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     threshold("min_rr", "Reward : risk at or above your minimum", rr, plan.get("min_rr"), lambda v, l: v >= l, lambda v: _fmt_num(v))
     threshold("max_loss", "Max loss within your per-trade limit", max_loss, plan.get("max_loss_per_trade"), lambda v, l: v <= l, _inr)
 
+    n_before = plan.get("exit_days_before_expiry")
+    exit_by_d = subtract_trading_days(expiry, int(n_before)) if n_before is not None else None
+
     buffer = plan.get("expiry_margin_buffer") or 0
+    cushion = plan.get("margin_cushion_pct") or 0
+    reserve = plan.get("topup_reserve") or 0
+    margin_label = "Margin available (cushion and expiry buffer)"
     if margin_required is None or funds_available is None:
-        add("margin", "Margin plus expiry buffer available", "unknown",
+        add("margin", margin_label, "unknown",
             "Needs Kite login" if not kite_connected else "Kite margin or funds not available")
     else:
-        need = margin_required + buffer
-        add("margin", "Margin plus expiry buffer available", "pass" if need <= funds_available else "fail",
-            f"{_inr(margin_required)} + {_inr(buffer)} buffer vs {_inr(funds_available)} available")
+        entry_need = margin_required * (1 + cushion / 100)
+        full_need = entry_need + buffer
+        have = f"{_inr(funds_available)} available"
+        if funds_available < entry_need:
+            add("margin", margin_label, "fail",
+                f"Entry needs {_inr(margin_required)} + {_fmt_num(cushion)}% cushion = {_inr(entry_need)}; {have}. "
+                f"Short by {_inr(entry_need - funds_available)}")
+        elif funds_available >= full_need:
+            add("margin", margin_label, "pass",
+                f"{_inr(entry_need)} entry with cushion + {_inr(buffer)} expiry buffer; {have}")
+        else:
+            add_now = full_need - funds_available
+            exits_early = exit_by_d is not None and exit_by_d < expiry
+            if funds_available + reserve >= full_need:
+                add("margin", margin_label, "warn",
+                    f"Entry is covered. You may need to add {_inr(add_now)} from your reserve if still holding on expiry morning")
+            elif exits_early:
+                add("margin", margin_label, "warn",
+                    f"Entry is covered. The {_inr(buffer)} expiry buffer is short by {_inr(add_now)} with {_inr(reserve)} reserve; "
+                    f"your plan exits by {exit_by_d.isoformat()}, before it applies")
+            else:
+                add("margin", margin_label, "fail",
+                    f"Exit-by is not before expiry and the {_inr(buffer)} expiry buffer is short by {_inr(add_now)}, "
+                    f"even with {_inr(reserve)} reserve")
 
     if not risk or not risk.get("configured"):
         add("risk_budget", "Loss limits and losing streak", "unset", "No weekly / monthly loss limit or pause rule in your plan")
@@ -251,15 +278,13 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         if any(o["previous_session"] for o in orders):
             notes.append("Some legs have no trade yet this session")
         if notes:
-            add("leg_quality", "Leg spreads and freshness", "unknown", " · ".join(notes))
+            add("leg_quality", "Leg spreads and freshness", "warn", " · ".join(notes))
         else:
             add("leg_quality", "Leg spreads and freshness", "pass", "All spreads within 5% and last trades within 2 minutes")
     else:
         add("legs_consistent", "Leg prices consistent with spot", "unknown", "Needs live Kite quotes")
 
     # Time to hold: the next session you could enter in must come before the exit-by day.
-    n_before = plan.get("exit_days_before_expiry")
-    exit_by_d = subtract_trading_days(expiry, int(n_before)) if n_before is not None else None
     session = today
     while session.weekday() >= 5:
         session += timedelta(days=1)
@@ -299,7 +324,8 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "lot": lot, "orders": orders,
             "credit_per_share": credit_ps, "credit": credit, "max_loss": max_loss, "reward_risk": rr,
             "charges_est": charges,
-            "margin": {"required": margin_required, "buffer": buffer, "funds": funds_available},
+            "margin": {"required": margin_required, "buffer": buffer, "cushion_pct": cushion, "reserve": reserve,
+                       "funds": funds_available},
             "elm_estimate": trade.get("elm_estimate"),
             "risk": risk,
             "checks": checks,

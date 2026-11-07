@@ -78,6 +78,7 @@ def book_preset(today: date) -> dict:
     if margin:
         put("expiry_margin_buffer", round(margin * ELM_FACTOR),
             f"Your signal engine's expiry-day margin estimate: ₹{margin:,} × {ELM_FACTOR} (seen on 24 Aug 2026)")
+    put("margin_cushion_pct", 20, "Your 3 Nov action list: keep 20% above Kite's entry margin")
     if capital:
         put("loss_exit_rupees", round(capital * ELDER_RISK_PER_TRADE),
             f"{ELDER}: 2% rule — {ELDER_RISK_PER_TRADE:.0%} of ₹{capital:,} capital. A gap can still go past it, up to the full max loss")
@@ -93,5 +94,6 @@ def book_preset(today: date) -> dict:
                                "block every condor (structural max loss ≈ ₹4,700); your engine's 25%-of-capital cap still applies"),
         "weekly_loss_limit": "No book number found — Elder's rule is monthly",
         "pause_after_losses": "No book number found",
+        "topup_reserve": "Your own number: money you keep ready to add to Zerodha. It is separate from capital",
     }
     return {"values": values, "sources": sources, "not_filled": unsourced, "capital": capital, "notes": notes}

@@ -35,6 +35,8 @@ PLAN_FIELDS = {
     "loss_exit_rupees": ("number", "Exit when the open loss reaches (₹)"),
     "exit_days_before_expiry": ("number", "Exit this many trading days before expiry"),
     "expiry_margin_buffer": ("number", "Extra funds kept for expiry-day margin (₹)"),
+    "margin_cushion_pct": ("number", "Cushion above Kite's entry margin (%)"),
+    "topup_reserve": ("number", "Top-up reserve: money in the bank, ready to add to Zerodha (₹)"),
     "weekly_loss_limit": ("number", "Stop new trades after losing this much in a week (₹)"),
     "monthly_loss_limit": ("number", "Stop new trades after losing this much in a month (₹)"),
     "pause_after_losses": ("number", "Pause after this many losses in a row"),

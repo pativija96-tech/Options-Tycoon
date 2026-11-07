@@ -149,7 +149,7 @@ class TestTicket:
 
     def test_clean_day_is_go(self):
         t = build_ticket(make_signal(), full_plan(min_rr=0.3), WED, symbols=SYMBOLS, quotes=QUOTES,
-                         expiry=date(2026, 9, 1), margin_required=67234, funds_available=130000, kite_connected=True)
+                         expiry=date(2026, 9, 1), margin_required=67234, funds_available=140000, kite_connected=True)
         assert t["verdict"] == "GO", t["failed"]
         assert check(t, "margin")["status"] == "pass"
 
@@ -181,10 +181,10 @@ class TestTicket:
         plan = full_plan(events=[{"date": "2026-09-05", "label": "Later"}])
         assert check(build_ticket(make_signal(), plan, WED, expiry=date(2026, 9, 1)), "events")["status"] == "pass"
 
-    def test_margin_shortfall_fails(self):
+    def test_margin_below_entry_with_cushion_fails(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1),
-                         margin_required=67234, funds_available=100000, kite_connected=True)
-        assert check(t, "margin")["status"] == "fail"   # 67,234 + 54,000 buffer > 1,00,000
+                         margin_required=67234, funds_available=80000, kite_connected=True)
+        assert check(t, "margin")["status"] == "fail"   # 67,234 × 1.2 = 80,681 > 80,000
 
     def test_exit_plan_from_plan_values(self):
         t = build_ticket(make_signal(), full_plan(), WED, symbols=SYMBOLS, quotes=QUOTES, expiry=date(2026, 9, 1))
@@ -430,7 +430,7 @@ class TestBookRules:
     def test_every_value_has_a_source_and_unsourced_fields_are_left_alone(self):
         p = self._preset()
         assert set(p["values"]) == set(p["sources"])
-        assert set(p["not_filled"]) == {"vix_min", "max_loss_per_trade", "weekly_loss_limit", "pause_after_losses"}
+        assert set(p["not_filled"]) == {"vix_min", "max_loss_per_trade", "weekly_loss_limit", "pause_after_losses", "topup_reserve"}
         assert not set(p["not_filled"]) & set(p["values"])
 
     def test_preset_is_a_valid_plan(self):
@@ -528,7 +528,7 @@ class TestLegPrices:
         c = check(t, "legs_consistent")
         assert c["status"] == "fail" and "no trade yet this session" in c["detail"]
         assert all(o["previous_session"] and o["stale"] for o in t["orders"])
-        assert check(t, "leg_quality")["status"] == "unknown"       # never reported as fresh
+        assert check(t, "leg_quality")["status"] == "warn"          # never reported as fresh
 
     def test_never_traded_counts_as_no_trade_this_session(self):
         t = nov_ticket(nov_quotes(*TICKET_2, traded=None))
@@ -557,7 +557,7 @@ class TestLegPrices:
         q["P23250"]["last_trade_time"] = "2026-11-03 09:35:00"                  # 5.5 min before the quote
         t = nov_ticket(q)
         c = check(t, "leg_quality")
-        assert c["status"] == "unknown" and "C23950" in c["detail"] and "P23250" in c["detail"]
+        assert c["status"] == "warn" and "C23950" in c["detail"] and "P23250" in c["detail"]
         assert check(t, "legs_consistent")["status"] == "pass"
 
     def test_quality_shown_per_leg(self):
@@ -581,3 +581,53 @@ class TestLegPrices:
         q = {"ltp": 10, "bid": 9.5, "ask": 10.5}
         assert close_price("SELL", q) == 10.5 and close_price("BUY", q) == 9.5
         assert close_price("SELL", {"ltp": 10}) == 10
+
+
+# ── Margin (action item 2): cushion, expiry buffer, top-up reserve ──────────
+
+class TestMargin:
+    # Real 3 Nov numbers: margin 64,810, funds 76,737, buffer 53,600, exit-by Fri before Mon expiry.
+    def _check(self, funds=76737, margin=64810, **plan_over):
+        plan = engine_plan()
+        plan.update(expiry_margin_buffer=53600, margin_cushion_pct=20, topup_reserve=None)
+        plan.update(plan_over)
+        t = build_ticket(make_signal(), plan, WED, expiry=date(2026, 9, 1), margin_required=margin,
+                         funds_available=funds, kite_connected=True)
+        return check(t, "margin"), t
+
+    def test_below_entry_margin_with_cushion_fails(self):
+        c, t = self._check()                                    # 64,810 × 1.2 = 77,772 > 76,737
+        assert c["status"] == "fail" and "Short by" in c["detail"] and t["verdict"] == "NO-GO"
+
+    def test_covers_everything_passes(self):
+        assert self._check(funds=131372)[0]["status"] == "pass"  # 77,772 + 53,600
+
+    def test_covered_only_with_reserve_warns_how_much_to_add(self):
+        c, t = self._check(funds=90000, topup_reserve=50000)
+        assert c["status"] == "warn" and "add ₹41,372" in c["detail"] and "expiry morning" in c["detail"]
+        assert "Margin" not in " ".join(t["failed"])
+
+    def test_buffer_short_even_with_reserve_only_warns_when_exiting_before_expiry(self):
+        c, _ = self._check(funds=90000, topup_reserve=1000)
+        assert c["status"] == "warn" and "before it applies" in c["detail"]
+
+    def test_buffer_short_fails_when_exit_by_is_expiry_day(self):
+        c, _ = self._check(funds=90000, topup_reserve=1000, exit_days_before_expiry=0)
+        assert c["status"] == "fail" and "not before expiry" in c["detail"]
+
+    def test_buffer_short_with_reserve_covering_warns_even_when_holding_to_expiry(self):
+        assert self._check(funds=90000, topup_reserve=50000, exit_days_before_expiry=0)[0]["status"] == "warn"
+
+    def test_no_exit_rule_counts_as_holding_to_expiry(self):
+        assert self._check(funds=90000, exit_days_before_expiry=None)[0]["status"] == "fail"
+
+    def test_empty_cushion_and_buffer_are_treated_as_none(self):
+        c, _ = self._check(funds=64810, margin_cushion_pct=None, expiry_margin_buffer=None)
+        assert c["status"] == "pass"
+
+    def test_reserve_never_counts_towards_entry(self):
+        assert self._check(funds=70000, topup_reserve=500000)[0]["status"] == "fail"
+
+    def test_default_plan_has_the_cushion_but_no_invented_reserve(self):
+        plan = default_plan()
+        assert plan["margin_cushion_pct"] == 20 and plan["topup_reserve"] is None
