@@ -2090,11 +2090,13 @@ async def desk_review(founder: dict = Depends(require_founder)):
     from engine.desk.plan import load_plan
     from engine.desk import kite_data
     from engine.desk.skips import list_skips
+    from engine.desk.review import breakeven
     uid = _desk_user_id(founder)
     trades = list_trades(uid)
+    plan = load_plan(uid)
     return {"success": True, "stats": review_stats(trades),
-            "risk": risk_budget(trades, load_plan(uid), kite_data.ist_today()),
-            "skips": list_skips(uid)}
+            "risk": risk_budget(trades, plan, kite_data.ist_today()),
+            "breakeven": breakeven(trades, plan), "skips": list_skips(uid)}
 
 
 @router.get("/desk/today")
