@@ -10,7 +10,8 @@ your plan), "unknown" (data needed for the check is unavailable).
 
 from datetime import date, timedelta
 
-from engine.desk.market_calendar import calendar_stale, event_hits, next_clear_entry, plan_events
+from engine.desk.market_calendar import (calendar_stale, event_hits, hold_info, is_trading_day, next_clear_entry,
+                                         on_or_after, plan_events, weekly_expiry_after)
 from engine.desk.leg_prices import (VOL_RATIO_MAX, VOL_RATIO_MIN, has_depth, leg_quality, mid, open_price, vol_ratio)
 from engine.signals.simple_ic_engine import RISK_CAP_PCT
 
@@ -29,10 +30,10 @@ def _fmt_num(n, places=2):
 
 
 def subtract_trading_days(d: date, n: int) -> date:
-    """d minus n weekdays (NSE holidays are not known here)."""
+    """d minus n NSE trading days (weekends and listed holidays are skipped)."""
     while n > 0:
         d -= timedelta(days=1)
-        if d.weekday() < 5:
+        if is_trading_day(d):
             n -= 1
     return d
 
@@ -76,11 +77,10 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
     trade = signal.get("trade") or {}
     wing = trade.get("width") or (sp - lp)
     # Kite's instrument list confirms the real expiry (holiday shifts included);
-    # without it, assume the next Tuesday after today and say it is unconfirmed.
+    # without it, assume the next Tuesday (moved for holidays) and say it is unconfirmed.
     expiry_confirmed = expiry is not None
     if expiry is None:
-        days = (1 - today.weekday()) % 7 or 7
-        expiry = today + timedelta(days=days)
+        expiry = weekly_expiry_after(today)
 
     # Prices: live Kite best bid (sells) / best ask (buys) when every leg has a quote, else the
     # signal's model estimates. See leg_prices.py for why not the last traded price.
@@ -302,9 +302,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
         add("legs_consistent", "Leg prices consistent with spot", "unknown", "Needs live Kite quotes")
 
     # Time to hold: the next session you could enter in must come before the exit-by day.
-    session = today
-    while session.weekday() >= 5:
-        session += timedelta(days=1)
+    session = on_or_after(today)
     if exit_by_d is None:
         add("time_to_hold", "Time to hold before exit-by", "unset", "No exit-before-expiry rule in your plan")
     elif exit_by_d <= session:
@@ -336,6 +334,7 @@ def build_ticket(signal, plan, today, *, lot=65, expiry=None, symbols=None, quot
             "failed": [c["label"] for c in fails], "unset_count": len(unset),
             "pricing": "kite_live" if live else "estimate",
             "prices_unreliable": bool(unreliable), "vol_ratio": ratio,
+            "hold": hold_info(session, exit_by_d, expiry),
             "event_alert": high[0] if high else None, "next_clear_entry": clear.isoformat() if clear else None,
             "expiry": expiry.isoformat(), "expiry_confirmed": expiry_confirmed,
             "strikes": {"long_put": lp, "short_put": sp, "short_call": sc, "long_call": lc, "wing": wing},

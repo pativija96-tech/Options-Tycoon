@@ -708,3 +708,59 @@ class TestEvents:
             assert e["tier"] in ("high", "medium") and e["session"] in ("india", "overnight") and impact_date(e)
         assert {"date": "2026-12-04", "name": "RBI policy decision", "tier": "high", "session": "india"} in cal["events"]
         assert not any(e["date"] == "2026-12-05" for e in cal["events"])   # the old calendar's wrong RBI date
+
+
+# ── Holidays (action item 5) ────────────────────────────────────────────────
+
+class TestHolidays:
+    def test_exit_by_moves_earlier_for_a_holiday(self):
+        # Expiry Wed 25 Nov, Tue 24 Nov is a holiday: one trading day before is Mon 23 Nov.
+        assert subtract_trading_days(date(2026, 11, 25), 1) == date(2026, 11, 23)
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 18), expiry=date(2026, 11, 25))
+        assert t["exit_plan"]["exit_by"] == "2026-11-23"
+
+    def test_fallback_expiry_moves_for_a_tuesday_holiday(self):
+        # Without Kite on Tue 3 Nov: Tue 10 Nov is Diwali, so the expected expiry is Mon 9 Nov (NSE's real one).
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 3))
+        assert t["expiry"] == "2026-11-09" and t["expiry_confirmed"] is False
+        assert t["exit_plan"]["exit_by"] == "2026-11-06"
+
+    def test_on_a_shifted_expiry_day_the_next_week_is_used(self):
+        from engine.desk.market_calendar import weekly_expiry_after
+        assert weekly_expiry_after(date(2026, 11, 9)) == date(2026, 11, 17)
+        assert weekly_expiry_after(date(2026, 11, 3)) == date(2026, 11, 9)
+        assert weekly_expiry_after(date(2026, 11, 2)) == date(2026, 11, 3)
+
+    def test_kite_expiry_always_wins(self):
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 3), expiry=date(2026, 11, 12))
+        assert t["expiry"] == "2026-11-12" and t["expiry_confirmed"] is True
+
+    def test_hold_counts_trading_days_and_notes_the_holiday(self):
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 3), expiry=date(2026, 11, 12))
+        h = t["hold"]                                  # Tue 3 → Wed 11 Nov, without weekends and Tue 10 Nov
+        assert t["exit_plan"]["exit_by"] == "2026-11-11"
+        assert h["trading_days"] == 6 and h["covered"] is True
+        assert h["holidays"] == [{"date": "2026-11-10", "name": "Diwali-Balipratipada"}]
+
+    def test_expiry_beyond_the_holiday_list_is_flagged(self):
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 12, 29), expiry=date(2027, 1, 5))
+        assert t["hold"]["covered"] is False
+
+    def test_a_holiday_today_means_the_next_session_counts(self):
+        # On Diwali Tue 10 Nov, with exit-by Wed 11 Nov: the next session is the exit-by day.
+        t = build_ticket(make_signal(), engine_plan(), date(2026, 11, 10), expiry=date(2026, 11, 12))
+        assert check(t, "time_to_hold")["status"] == "fail"
+
+    def test_engine_expiry_uses_the_holiday_calendar(self):
+        from unittest.mock import patch as p
+        import engine.signals.simple_ic_engine as E
+
+        class D(date):
+            @classmethod
+            def today(cls):
+                return date(2026, 11, 3)
+
+        with p.object(E, "date", D):
+            import engine.desk.market_calendar  # noqa: F401
+            expiry, days, label = E._get_expiry_date()
+        assert expiry == date(2026, 11, 9) and days == 6 and label == "09 Nov 2026 (Mon)"

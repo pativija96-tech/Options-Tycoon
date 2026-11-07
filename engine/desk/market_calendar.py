@@ -63,6 +63,32 @@ def on_or_after(d: date) -> date:
     return d if is_trading_day(d) else next_trading_day(d)
 
 
+def weekly_expiry_after(today: date, weekday: int = 1) -> date:
+    """
+    The expected weekly expiry after today when Kite's list isn't available: the next Tuesday,
+    moved to the previous trading day if that Tuesday is a holiday (NSE's practice, e.g. Mon 9 Nov
+    2026 for the Tue 10 Nov Diwali holiday). Kite's instrument list always takes priority.
+    """
+    d = today + timedelta(days=(weekday - today.weekday()) % 7 or 7)
+    while on_or_before(d) <= today:
+        d += timedelta(days=7)
+    return on_or_before(d)
+
+
+def hold_info(start: date, exit_by, expiry: date) -> dict:
+    """Trading days in the hold, NSE holidays falling inside it, and whether the list covers it."""
+    hols = holidays()
+    last = exit_by or expiry
+    count, d = 0, start
+    while d <= last:
+        count += is_trading_day(d)
+        d += timedelta(days=1)
+    inside = [{"date": k.isoformat(), "name": v} for k, v in sorted(hols.items())
+              if start <= k <= expiry and k.weekday() < 5]
+    covered = covers_through()
+    return {"trading_days": count, "holidays": inside, "covered": bool(covered and expiry <= covered)}
+
+
 def load_events() -> dict:
     """{"last_updated", "events", ...} from the event calendar; empty if it can't be read."""
     try:

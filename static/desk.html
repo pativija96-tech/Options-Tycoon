@@ -422,6 +422,13 @@ function renderSkip(){
 function loadToday(){
   api('/api/live/desk/today').then(function(d){if(d.skip){state.skip=d.skip;renderSkip();}}).catch(function(){});
 }
+function holdNote(t){
+  var h=t.hold;if(!h)return '';
+  var s='<div class="note"><b>'+h.trading_days+' trading day'+(h.trading_days===1?'':'s')+'</b> from entry to exit-by.';
+  (h.holidays||[]).forEach(function(x){s+=' <span style="color:var(--gold)">NSE holiday inside the hold: '+esc(x.name)+', '+esc(fmtDate(x.date))+'.</span>';});
+  if(!h.covered)s+=' <span style="color:var(--gold)">The holiday list on file does not cover this expiry, so dates may be off.</span>';
+  return s+'</div>';
+}
 function legQuote(o){
   if(o.has_depth===undefined)return '';
   var age=o.previous_session?'<span style="color:var(--red)">no trade this session</span>':
@@ -480,6 +487,7 @@ function renderTicket(){
      '<div><div class="note">Loss exit</div><div class="mono" style="font-weight:700;color:var(--red)">'+(ep.loss_exit!=null?'Open loss '+inr(-ep.loss_exit):'Not set')+'</div></div>'+
      '<div><div class="note">Exit by</div><div class="mono" style="font-weight:700">'+(ep.exit_by?esc(fmtDate(ep.exit_by)):'Not set')+'</div></div></div>'+
      '<div class="note">'+esc(ep.order||'')+'</div>'+
+     holdNote(t)+
      (t.elm_estimate?'<div class="note" style="color:var(--gold)">Expiry-day margin (ELM) estimate: about '+inr(t.elm_estimate.additional_est)+' extra, total about '+inr(t.elm_estimate.total_requirement_est)+' if held into expiry morning. Exit before expiry to avoid it. A guide only — the exchange sets the real amount.</div>':'')+'</div>';
   h+='<div class="sec" style="flex-direction:row;flex-wrap:wrap;gap:10px">'+
      (view?'<div class="note" style="font-size:14px;flex:1">Skipped ticket, for reference only. Its prices are from when you skipped.</div>':
