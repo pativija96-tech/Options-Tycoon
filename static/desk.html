@@ -452,13 +452,13 @@ function renderTicket(){
     box.innerHTML='<div class="card hero"><div class="stamp none">NO TRADE</div><div style="font-size:18px;font-weight:700">'+esc(t.skip_reason)+'</div>'+
       '<button class="btn ghost" onclick="prepare()">Check again</button></div>';return;
   }
-  var go=t.verdict==='GO',live=t.pricing==='kite_live',view=!!state.viewOnly,ev=t.event_alert;
+  var go=t.verdict==='GO',live=t.pricing==='kite_live',lastOnly=t.pricing==='kite_last',view=!!state.viewOnly,ev=t.event_alert;
   var stamp=go?'<div class="stamp go">GO</div>':'<div class="stamp nogo">NO-GO · '+t.failed.length+' rule'+(t.failed.length>1?'s':'')+'</div>';
   var rr=t.reward_risk!=null?num(t.reward_risk)+' : 1':'—';
   var h='<div class="grid2"><div class="card ticket">';
   h+='<div class="tk-head"><div><div class="eyebrow" style="font-size:12px">Trade ticket · NIFTY '+esc(fmtDate(t.expiry))+' expiry'+(t.expiry_confirmed?'':' (expected)')+'</div>'+
      '<div style="font-size:22px;font-weight:800;margin-top:2px">Iron condor '+t.strikes.short_put+' / '+t.strikes.short_call+' · '+t.lot+' qty</div>'+
-     '<div style="margin-top:6px"><span class="badge '+(live?'live':'est')+'">'+(live?'Live Kite bid / ask':'Model estimates — not Kite prices')+'</span></div></div>'+stamp+'</div>';
+     '<div style="margin-top:6px"><span class="badge '+(live?'live':'est')+'">'+(live?'Live Kite bid / ask':(lastOnly?'Last traded prices — no live bid / ask':'Model estimates — not Kite prices'))+'</span></div></div>'+stamp+'</div>';
   h+='<div class="metrics">'+
      '<div><div class="k">Credit</div><div class="v" style="color:var(--green)">'+inr(t.credit)+'</div></div>'+
      '<div><div class="k">Max loss</div><div class="v" style="color:var(--red)">'+inr(t.max_loss)+'</div></div>'+
@@ -482,7 +482,7 @@ function renderTicket(){
        '<div class="mono" style="font-weight:700">₹'+num(o.price)+'</div>'+
        '<button class="copy'+(done?' done':'')+'" aria-label="Copy order '+o.step+'" onclick="copyOrder('+i+')">'+(done?'Copied':'Copy')+'</button></div>';
   });
-  h+='<div class="note">Place each order in Kite and wait for COMPLETE before the next. Never use basket orders.'+(live?' Sells show the best bid and buys the best ask. Prices move, so check Kite before placing.':' Prices shown are estimates: check live prices in Kite before placing.')+'</div></div>';
+  h+='<div class="note">Place each order in Kite and wait for COMPLETE before the next. Never use basket orders.'+(live?' Sells show the best bid and buys the best ask. Prices move, so check Kite before placing.':(lastOnly?' Some legs have no live bid or ask, so these are last traded prices and may be old: rebuild when the market is open.':' Prices shown are estimates: check live prices in Kite before placing.'))+'</div></div>';
   var ep=t.exit_plan||{},tg=ep.target;
   h+='<div class="sec"><div class="exitgrid">'+
      '<div><div class="note">Profit target'+(tg?' '+Math.round(tg.pct*100)+'%':'')+'</div><div class="mono" style="font-weight:700;color:var(--green)">'+(tg?'+'+inr(tg.profit)+' · buy back ≤ '+inr(tg.buyback_total):'Not set')+'</div>'+(tg&&tg.profit_net!=null?'<div class="note">≈ '+inr(tg.profit_net)+' after '+inr(t.charges_est)+' charges</div>':'')+'</div>'+

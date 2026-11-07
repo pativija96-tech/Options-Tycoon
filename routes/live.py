@@ -2014,6 +2014,8 @@ async def desk_position(founder: dict = Depends(require_founder)):
         errors.append("Not logged in to Kite — live P&L unavailable")
     pos = monitor_position(trade, kite_data.ist_today(), quotes=quotes, spot=spot, plan=load_plan(uid))
     pos["kite_notes"] = errors
+    if any(n.startswith("No bid/ask") for n in errors):
+        pos["pricing"] = "last_traded"
     pos["legs"] = trade["legs"]
     return {"success": True, "position": pos}
 

@@ -285,6 +285,10 @@ class TestJournalEndpoints:
         # close cost 8.5 + 15.5 − 2.5 − 4.5 = 17 per share; (27.80 − 17) × 65 = 702
         assert pos["pnl"] == pytest.approx(702.0)
         assert pos["pricing"] == "bid_ask"
+        kite.quote.return_value = {k: {**v, "depth": {"buy": [{"price": 0}], "sell": [{"price": 0}]}}
+                                   for k, v in kite.quote.return_value.items()}
+        with patch("routes.live._kite_or_none", return_value=kite):
+            assert self.c.get("/api/live/desk/position").json()["position"]["pricing"] == "last_traded"
         assert {o["symbol"]: o["price"] for o in pos["exit_orders"]}["NIFTY2690124100PE"] == 8.5
 
     def test_manual_open_and_close_without_kite(self):
